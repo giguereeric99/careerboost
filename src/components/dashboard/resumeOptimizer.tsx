@@ -21,9 +21,12 @@ const ResumeOptimizer = () => {
   const [resumeContent, setResumeContent] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("basic");
   const [showProDialog, setShowProDialog] = useState(false);
+  const [rawText, setRawText] = useState<string>("");
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
   const {
-    selectedFile,
     isUploading,
     isParsing,
     isOptimizing,
@@ -35,7 +38,11 @@ const ResumeOptimizer = () => {
     optimizeResumeData,
     applyTemplateToResume,
     applySuggestion,
-    setSelectedFile
+    optimize,
+    optimizedText,
+    loading,
+    fallbackUsed,
+    language,
   } = useResumeOptimizer();
 
   // Keywords the AI suggested to add
@@ -206,6 +213,35 @@ const ResumeOptimizer = () => {
     .filter(keyword => keyword.applied)
     .map(keyword => keyword.text);
 
+  const handleSubmit = async () => {
+    if (!fileUrl && !rawText) {
+      toast({
+        title: "No content provided",
+        description: "Please upload a file or paste your resume content.",
+        variant: "destructive",
+      });
+      return;
+    }
+  
+    toast({
+      title: "Optimizing your resume...",
+      description: "Please wait while we process your document.",
+    });
+  
+    await optimize({
+      fileUrl: fileUrl || undefined,
+      rawText: rawText || undefined,
+    });
+  
+    toast({
+      title: fallbackUsed
+        ? "Optimized with Gemini (OpenAI fallback)"
+        : "Optimized successfully with OpenAI",
+      description: `Detected language: ${language}`,
+    });
+  };
+    
+
   return (
     <div className="py-8">
       <div className="text-center mb-8">
@@ -220,15 +256,19 @@ const ResumeOptimizer = () => {
         </TabsList>
         
         <TabsContent value="upload" className="space-y-4">
-          <UploadSection
-            isUploading={isUploading}
-            isParsing={isParsing}
-            selectedFile={selectedFile}
-            resumeContent={resumeContent}
-            onFileChange={handleFileChange}
-            onContentChange={handleContentChange}
-            onContinue={handleContinue}
-          />
+        <UploadSection
+          isUploading={loading}
+          isParsing={loading}
+          selectedFile={selectedFile}
+          resumeContent={rawText}
+          onFileChange={() => {}} // facultatif ici
+          onContentChange={(e) => setRawText(e.target.value)}
+          onContinue={handleSubmit}
+          onFileUpload={(url, name) => {
+            setFileUrl(url);
+            setFileName(name);
+          }}
+        />
         </TabsContent>
         
         <TabsContent value="preview" className="space-y-6">

@@ -34,10 +34,10 @@ interface SuggestionsListProps {
 }
 
 const SuggestionsList: React.FC<SuggestionsListProps> = ({ 
-  suggestions, 
-  isOptimizing,
-  onApplySuggestion 
-}) => {
+    suggestions, 
+    isOptimizing,
+    onApplySuggestion 
+  }) => {
   return (
     <div className="bg-brand-50 border border-brand-100 rounded-lg p-4">
       <div className="flex items-center gap-2 mb-3">
