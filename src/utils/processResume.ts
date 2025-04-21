@@ -40,7 +40,7 @@ export async function processResume(filePath: string | null, rawText?: string) {
   try {
     const completion = await openai.chat.completions.create({
       messages: [{ role: "user", content: prompt }],
-      model: "gpt-3.5-turbo",
+      model: "gpt-4",
     });
 
     return {
