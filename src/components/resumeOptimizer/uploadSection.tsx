@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { FileUp, CheckCircle } from "lucide-react";
 import { UploadButton } from "@/utils/uploadthing";
 import { toast } from "sonner";
-import "@uploadthing/react/styles.css";
+import { useUser, SignInButton } from "@clerk/nextjs";
 
 interface UploadSectionProps {
   isUploading: boolean;
@@ -30,13 +30,22 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const { isSignedIn } = useUser();
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files[0];
     if (!file) return;
+
+    if (!isSignedIn) {
+      toast.error("You must be signed in to upload a resume.");
+      return;
+    }
+
     toast.loading("Uploading " + file.name);
+    setUploadProgress(0);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -54,13 +63,16 @@ const UploadSection: React.FC<UploadSectionProps> = ({
       if (result?.fileUrl) {
         onFileUpload(result.fileUrl, file.name);
         toast.success("Resume uploaded and optimized");
+        setUploadProgress(100);
+        setTimeout(() => setUploadProgress(0), 2000);
       } else {
-        toast.error("No result returned from optimization.");
+        throw new Error("Missing fileUrl in response");
       }
     } catch (err: any) {
       toast.error("Error uploading resume", {
         description: err.message,
       });
+      setUploadProgress(0);
     }
   };
 
@@ -92,40 +104,72 @@ const UploadSection: React.FC<UploadSectionProps> = ({
               Drag & Drop your resume here or use the button below.
             </div>
 
-            <div className="relative w-full flex justify-center items-center flex-col">
-              {isUploading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-10">
-                  <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                  </svg>
-                </div>
+            
+
+            <div className="relative w-full flex justify-center items-center">
+              {isSignedIn ? (
+                <UploadButton
+                  className="custom-btn ut-button:bg-blue-600 ut-button:text-white ut-button:rounded-md ut-button:px-4 ut-button:py-2 ut-button:hover:hover:bg-primary/90"
+                  endpoint="resumeUploader"
+                  onClientUploadComplete={async (res) => {
+                    if (!res?.[0]?.url) return;
+                    const fileUrl = res[0].url;
+                    const fileName = res[0].name;
+
+                    toast.loading("Analyzing uploaded resume...");
+
+                    const formData = new FormData();
+                    formData.append("fileUrl", fileUrl);
+
+                    try {
+                      const optimizeRes = await fetch("/api/optimize", {
+                        method: "POST",
+                        body: formData,
+                      });
+
+                      const result = await optimizeRes.json();
+
+                      if (optimizeRes.ok && result?.fileUrl) {
+                        onFileUpload(fileUrl, fileName);
+                        setUploadProgress(100);
+                        toast.success("Resume uploaded and optimized");
+                        setTimeout(() => setUploadProgress(0), 2000);
+                      } else {
+                        throw new Error(result?.error || "Optimization failed");
+                      }
+                    } catch (err: any) {
+                      toast.error("Upload analysis error", {
+                        description: err.message,
+                      });
+                      setUploadProgress(0);
+                    }
+                  }}
+                  onUploadError={(error) => {
+                    toast.error("Upload error", {
+                      description: error.message,
+                    });
+                  }}
+                />
+              ) : (
+                <SignInButton mode="modal">
+                  <Button className="w-full">You must be signed in to upload</Button>
+                </SignInButton>
               )}
-
-              <div className="mb-3">Or</div>
-
-              <UploadButton
-                className="ut-button:bg-blue-600 ut-button:text-white ut-button:rounded-md ut-button:px-4 ut-button:py-2 ut-button:hover:hover:bg-primary/90"
-                endpoint="resumeUploader"
-                onClientUploadComplete={(res) => {
-                  if (!res?.[0]?.url) return;
-                  onFileUpload(res[0].url, res[0].name);
-                  toast.message("Upload successful", {
-                    description: `File: ${res[0].name}`,
-                  });
-                }}
-                onUploadError={(error) => {
-                  toast.error("Upload error", {
-                    description: error.message,
-                  });
-                }}
-              />
             </div>
 
+            {uploadProgress === 100 && (
+              <div className="flex items-center text-sm bg-green-50 text-green-600 px-3 py-1 rounded-full animate-fade-in-up">
+                <CheckCircle className="h-4 w-4 mr-2 animate-scale-in" />
+                Upload complete
+              </div>
+            )}
+
             {selectedFile && (
-              <div className="flex items-center text-sm bg-brand-50 text-brand-600 px-3 py-1 rounded-full">
-                <CheckCircle className="h-4 w-4 mr-2" />
-                {selectedFile.name}
+              <div className="mt-2 text-sm text-muted-foreground animate-fade-in-up">
+                <span className="font-medium">Uploaded file:</span> {selectedFile.name}
+                <div className="text-xs text-gray-500">
+                  ({(selectedFile.size / 1024).toFixed(1)} KB, {selectedFile.type || "unknown type"})
+                </div>
               </div>
             )}
           </div>
@@ -149,10 +193,23 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 
           <div className="flex justify-end">
             <Button
-              onClick={onContinue}
+              onClick={() => {
+                onContinue();
+                toast.success("Resume analysis completed");
+              }}
               disabled={isUploading || isParsing || resumeContent.length < 50}
             >
-              {isParsing ? "Analyzing..." : "Continue"}
+              {isParsing ? (
+                <div className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                  </svg>
+                  Analyzing...
+                </div>
+              ) : (
+                "Continue"
+              )}
             </Button>
           </div>
         </div>

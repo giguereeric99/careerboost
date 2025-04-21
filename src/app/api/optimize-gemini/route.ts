@@ -49,8 +49,9 @@ export async function POST(req: NextRequest) {
     const response = await result.response;
 
     return NextResponse.json({
+      fileUrl, // pour compatibilité avec fallback OpenAI
       optimizedText: response.text(),
-      language: "English", // Gemini ne détecte pas encore la langue automatiquement
+      language: "English", // optionnel
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

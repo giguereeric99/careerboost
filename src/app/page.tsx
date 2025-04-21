@@ -3,7 +3,7 @@ import HeroSection from "@/components/home/heroSection";
 import PricingSection from "@/components/home/pricingSection";
 import { Button } from "@/components/ui/button";
 import FeaturesSection from "@/components/home/featuresSection";
-import ResumeSection from "@/components/home/resumeSection";
+import ResumeOptimizer from "@/components/dashboard/resumeOptimizer";
 import JobsSection from "@/components/home/jobsSection";
 import InterviewSection from "@/components/home/interviewSection";
 
@@ -15,7 +15,7 @@ export default function Home() {
       <div className="flex flex-col">
         <HeroSection />
         <FeaturesSection />
-        <ResumeSection />
+        <ResumeOptimizer />
         <JobsSection />
         <InterviewSection />
         <PricingSection />

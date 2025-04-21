@@ -15,7 +15,7 @@ function UploadFormInput({ onSubmit }: UploadFormInputProps): JSX.Element {
         <div className="flex justify-end items-center gap-1.5">
           <Input id="file" name="file" className="" type="file" accept="application/pdf" required />
 
-          <Button className="bg-linear-to-r from-slate-900 to-blue-500 hover:from-blue-500 hover:to-slate-900 hover:text-white text-white transition duration-300 hover:no-underline">Upload your PDF</Button>
+          <Button className="bg-linear-to-r from-slate-900 to-brand-500 hover:from-brand-500 hover:to-slate-900 hover:text-white text-white transition duration-300 hover:no-underline">Upload your PDF</Button>
         </div>
       </form>
     </div>

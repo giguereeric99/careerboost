@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sparkles } from "lucide-react";
@@ -25,10 +27,10 @@ const ResumeOptimizer = () => {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isParsing, setIsParsing] = useState(false);
   
   const {
     isUploading,
-    isParsing,
     isOptimizing,
     resumeData,
     optimizedData,
@@ -215,30 +217,48 @@ const ResumeOptimizer = () => {
 
   const handleSubmit = async () => {
     if (!fileUrl && !rawText) {
-      toast({
-        title: "No content provided",
-        description: "Please upload a file or paste your resume content.",
-        variant: "destructive",
+      toast.error("Missing input", {
+        description: "Please upload a resume or paste its content.",
       });
       return;
     }
   
-    toast({
-      title: "Optimizing your resume...",
-      description: "Please wait while we process your document.",
-    });
+    toast.loading("Analyzing your resume...");
   
-    await optimize({
-      fileUrl: fileUrl || undefined,
-      rawText: rawText || undefined,
-    });
+    const form = new FormData();
+    if (fileUrl) form.append("fileUrl", fileUrl);
+    if (rawText) form.append("rawText", rawText);
+    form.append("userId", user?.id || "anonymous");
   
-    toast({
-      title: fallbackUsed
-        ? "Optimized with Gemini (OpenAI fallback)"
-        : "Optimized successfully with OpenAI",
-      description: `Detected language: ${language}`,
-    });
+    try {
+      const res = await fetch("/api/optimize", {
+        method: "POST",
+        body: form,
+      });
+  
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error("Analysis failed", {
+          description: err.error || "Unexpected error occurred.",
+        });
+        return;
+      }
+  
+      const result = await res.json();
+      toast.success("Resume optimized successfully", {
+        description: `Language detected: ${result.language}`,
+      });
+  
+      // Stocke le résultat ou mets à jour l'état
+      setOptimizedText(result.optimizedText);
+      setDetectedLang(result.language);
+      setActiveTab("preview");
+  
+    } catch (err: any) {
+      toast.error("Unexpected error", {
+        description: err.message,
+      });
+    }
   };
     
 
@@ -267,6 +287,7 @@ const ResumeOptimizer = () => {
           onFileUpload={(url, name) => {
             setFileUrl(url);
             setFileName(name);
+            setSelectedFile(new File([""], name, { type: "application/octet-stream" })); // Simule le File pour affichage
           }}
         />
         </TabsContent>

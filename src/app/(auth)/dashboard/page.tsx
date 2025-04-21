@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 import { useUser } from "@clerk/clerk-react";
 import { 
   SidebarProvider, 
@@ -18,7 +18,6 @@ import { FileText, Briefcase, Video, Plus, Trash2 } from "lucide-react";
 import ResumeOptimizer from "@/components/dashboard/resumeOptimizer";
 import JobSearch from "@/components/dashboard/jobSearch";
 import InterviewSimulator from "@/components/dashboard/interviewSimulator";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 const Page = () => {
@@ -52,7 +51,7 @@ const Page = () => {
               <Sidebar className="pt-16">
                 <SidebarContent>
                   <SidebarGroup>
-                    <SidebarGroupLabel>Dashboard</SidebarGroupLabel>
+                    <SidebarGroupLabel className="font-bold">Dashboard</SidebarGroupLabel>
                     <SidebarGroupContent>
                       <SidebarMenu>
                         {menuItems.map((item) => (
@@ -97,4 +96,4 @@ const Page = () => {
   )
 }
 
-export default Page
+export default Page;

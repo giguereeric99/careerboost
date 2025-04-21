@@ -11,7 +11,8 @@ async function extractText(filePath: string): Promise<string> {
   const ext = filePath.split(".").pop()?.toLowerCase();
 
   if (ext === "pdf") {
-    const data = await pdfParse(fs.readFileSync(filePath));
+    const buffer = fs.readFileSync(filePath);
+    const data = await pdfParse(buffer);
     return data.text;
   }
 
@@ -34,17 +35,25 @@ export async function processResume(filePath: string | null, rawText?: string) {
   const langCode = franc(text);
   const language = langs.where("3", langCode)?.name || "English";
 
-  const prompt = language === "French"
-    ? `Voici un CV. Optimise son contenu pour un recruteur et rends-le compatible avec les ATS. Suggère aussi des mots-clés :\n\n${text}`
-    : `Here is a resume. Optimize its content for recruiters and make it ATS-friendly. Suggest keywords as well:\n\n${text}`;
+  const prompt = `This resume is written in ${language}. Optimize its content for recruiters and make it ATS-friendly in the same language. Suggest relevant keywords and improvements:\n\n${text}`;
 
-  const completion = await openai.chat.completions.create({
-    messages: [{ role: "user", content: prompt }],
-    model: "gpt-4",
-  });
+  try {
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "gpt-3.5-turbo",
+    });
 
-  return {
-    optimizedText: completion.choices[0].message.content,
-    language,
-  };
+    return {
+      optimizedText: completion.choices[0].message.content,
+      language,
+    };
+  } catch (err: any) {
+    console.error("OpenAI API error:", err?.response?.data || err.message || err);
+    return {
+      optimizedText: null,
+      language,
+    };
+  }
 }
+
+export { extractText };

@@ -9,7 +9,7 @@ const NavLink = ({
   href,
   children,
   className = "",
-  activeClassName = "text-blue-600",
+  activeClassName = "text-brand-600",
   ...props
 }: {
   href: string;
@@ -21,7 +21,7 @@ const NavLink = ({
   const pathname = usePathname();
   const isActive = pathname === href || pathname.startsWith(href + "/");
   return (
-    <Link href={href} className={cn("transition-color text-sm duration-200 hover:text-blue-600", className, isActive && activeClassName)}>{children}</Link>
+    <Link href={href} className={cn("transition-color text-sm duration-200 hover:text-brand-600", className, isActive && activeClassName)}>{children}</Link>
   )
 }
 

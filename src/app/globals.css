@@ -262,6 +262,16 @@
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
+.custom-btn > *[data-ut-element="button"] {
+  font-size: 1rem;
+  color: #ffffff;
+  background-color: #2563eb !important;
+  padding-left: 1em;
+  padding-right: 1em;
+}
+.custom-btn > *[data-ut-element="button"]:hover {
+  background-color: #60a5fa !important;
+}
 
 @keyframes logo-spin {
   from {
@@ -293,4 +303,20 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/*Animation */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out both;
 }

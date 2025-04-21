@@ -5,8 +5,8 @@ import { Badge } from "@/components/ui/badge"
 const UploadHeader = () => {
   return (
     <div className="flex flex-col items-center justify-center gap-6 text-center">
-      <div className="relative p-[1px] overflow-hidden rounded-full bg-linear-to-r from-blue-200 via-blue-500 to-blue-800 animate-gradient-x group">
-        <Badge variant={'secondary'} className="bg-white relative px-6 py-2 text-base text-white hover:text-blue-500 font-medium bg-transparent rounded-full transition-colors duration-200 group-hover:bg-gray-50">
+      <div className="relative p-[1px] overflow-hidden rounded-full bg-linear-to-r from-brand-200 via-brand-500 to-brand-800 animate-gradient-x group">
+        <Badge variant={'secondary'} className="bg-white relative px-6 py-2 text-base text-white hover:text-brand-500 font-medium bg-transparent rounded-full transition-colors duration-200 group-hover:bg-gray-50">
           <Sparkles className="h-6 w-6 mr-2 text-purple-600 animate-pulse" />
           <span>AI-Powered Content Creation</span>
         </Badge>

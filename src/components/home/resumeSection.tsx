@@ -27,7 +27,7 @@ const ResumeSection = () => {
             <Card>
               <CardContent className="pt-6">
                 <div className="flex flex-col items-center justify-center space-y-4 py-8 border-2 border-dashed rounded-lg">
-                  <div className="rounded-full bg-blue-50 p-3">
+                  <div className="rounded-full bg-brand-50 p-3">
                     <FileUp className="h-6 w-6 text-brand-600" />
                   </div>
                   <div className="space-y-2 text-center">

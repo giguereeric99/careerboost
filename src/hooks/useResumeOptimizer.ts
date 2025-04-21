@@ -1,3 +1,5 @@
+'use client'
+
 import { useState } from 'react';
 import { uploadResume, parseResume, optimizeResume, ResumeData } from '@/services/resumeParser';
 import { useToast } from './useToast';
