@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { OpenAI } from "openai";
+import { extname } from "path";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,11 +13,18 @@ const supabase = createClient(
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
+const mimeLabelMap: Record<string, string> = {
+  "application/pdf": "PDF Document",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word Document",
+  "text/plain": "Text File",
+};
+
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const fileUrl = formData.get("fileUrl") as string | null;
   const rawText = formData.get("rawText") as string | null;
   const userId = formData.get("userId") as string | null;
+  const fileType = formData.get("fileType") as string | null;
 
   if (!fileUrl && !rawText) {
     return NextResponse.json({ error: "Missing input" }, { status: 400 });
@@ -24,7 +32,8 @@ export async function POST(req: NextRequest) {
 
   let text = rawText ?? "";
   let tempFilePath: string | null = null;
-  let fileName = "resume.txt";
+  let fileName = rawText ? `pasted-resume-${Date.now()}.txt` : "resume.txt";
+  let fileLabel = rawText ? "Text (pasted)" : "Uploaded Resume";
 
   try {
     if (fileUrl) {
@@ -34,17 +43,20 @@ export async function POST(req: NextRequest) {
 
       const buffer = Buffer.from(await res.arrayBuffer());
       fs.mkdirSync(path.join(process.cwd(), "tmp"), { recursive: true });
-      tempFilePath = path.join(process.cwd(), "tmp", `resume-${Date.now()}.pdf`);
+      const urlParts = fileUrl.split("/");
+      fileName = urlParts[urlParts.length - 1];
+      const ext = extname(fileName) || ".pdf";
+      tempFilePath = path.join(process.cwd(), "tmp", `resume-${Date.now()}${ext}`);
       fs.writeFileSync(tempFilePath, buffer);
       text = await extractText(tempFilePath);
       console.log("Extracted text (first 500 chars):", text.slice(0, 500));
       console.log("Extracted length:", text.length);
 
-      const urlParts = fileUrl.split("/");
-      fileName = urlParts[urlParts.length - 1];
+      if (fileType && mimeLabelMap[fileType]) {
+        fileLabel = mimeLabelMap[fileType];
+      }
     }
 
-    // Detect language from text
     const { franc } = await import("franc");
     const langs = await import("langs");
     const langCode = franc(text);
@@ -79,7 +91,6 @@ ${text}`;
     let optimizedText = completion.choices[0].message.content;
     console.log("OpenAI result:", optimizedText?.slice(0, 100));
 
-    // Fallback to Gemini if OpenAI failed or result too short
     if ((!optimizedText || optimizedText.trim().length < 100) && fileUrl) {
       console.warn("OpenAI result too short or failed, falling back to Gemini...");
 
@@ -109,25 +120,25 @@ ${text}`;
       throw new Error("No optimization result received from either OpenAI or Gemini.");
     }
 
-    // Save to Supabase
     if (userId && optimizedText) {
       const insertRes = await supabase.from("resumes").insert({
         user_id: userId,
         original_text: text,
         optimized_text: optimizedText,
         file_name: fileName,
+        file_type: fileLabel,
         language,
       });
 
       if (insertRes.error) {
         console.error("Supabase insert error:", insertRes.error);
-        throw new Error("Failed to save resume to database");
+        throw new Error(`Failed to save resume to database. Supabase says: ${JSON.stringify(insertRes.error, null, 2)}`);
       }
     }
 
     if (tempFilePath) fs.unlinkSync(tempFilePath);
 
-    return NextResponse.json({ optimizedText, language });
+    return NextResponse.json({ optimizedText, language, fileName, fileType: fileLabel });
   } catch (error: any) {
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);

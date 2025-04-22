@@ -1,20 +1,18 @@
 import { createUploadthing, type FileRouter } from "uploadthing/server";
-import { utapi } from "uploadthing/server";
 
 const f = createUploadthing();
 
 export const ourFileRouter = {
   resumeUploader: f({
-    pdf: { maxFileSize: "4MB" },
-    docx: { maxFileSize: "4MB" },
-    txt: { maxFileSize: "2MB" },
+    // Types MIME autorisés
+    "application/pdf": { maxFileSize: "4MB" },
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": { maxFileSize: "4MB" }, // .docx
+    "text/plain": { maxFileSize: "2MB" }, // .txt
   })
     .middleware(async () => {
-      // Auth ici si besoin (ex: utilisateur connecté)
       return {};
     })
     .onUploadComplete(async ({ file }) => {
       console.log("File uploaded :", file);
     }),
 } satisfies FileRouter;
-

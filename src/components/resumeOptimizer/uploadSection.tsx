@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,8 +17,14 @@ interface UploadSectionProps {
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onContentChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onContinue: () => void;
-  onFileUpload: (url: string, name: string) => void;
+  onFileUpload: (url: string, name: string, size?: number, type?: string) => void;
 }
+
+const mimeLabelMap: Record<string, string> = {
+  "application/pdf": "PDF",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "text/plain": ".txt",
+};
 
 const UploadSection: React.FC<UploadSectionProps> = ({
   isUploading,
@@ -30,51 +38,10 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
+  const [uploadedInfo, setUploadedInfo] = useState<{ name: string; size: number; type: string } | null>(null);
 
-  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-
-    if (!isSignedIn) {
-      toast.error("You must be signed in to upload a resume.");
-      return;
-    }
-
-    toast.loading("Uploading " + file.name);
-    setUploadProgress(0);
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch("/api/optimize", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) throw new Error("Upload failed");
-
-      const result = await res.json();
-
-      if (result?.fileUrl) {
-        onFileUpload(result.fileUrl, file.name);
-        toast.success("Resume uploaded and optimized");
-        setUploadProgress(100);
-        setTimeout(() => setUploadProgress(0), 2000);
-      } else {
-        throw new Error("Missing fileUrl in response");
-      }
-    } catch (err: any) {
-      toast.error("Error uploading resume", {
-        description: err.message,
-      });
-      setUploadProgress(0);
-    }
-  };
+  const readableSize = (bytes: number) => (bytes / 1024).toFixed(1) + " KB";
 
   return (
     <Card>
@@ -83,7 +50,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
           <div className="space-y-2 text-center">
             <h3 className="font-medium">Upload your resume</h3>
             <p className="text-sm text-muted-foreground">
-              Upload a file or paste your resume content below
+              Accepted formats: PDF, .docx, .txt
             </p>
           </div>
 
@@ -93,7 +60,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
             </div>
 
             <div
-              onDrop={handleDrop}
               onDragOver={(e) => {
                 e.preventDefault();
                 setIsDragOver(true);
@@ -104,8 +70,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
               Drag & Drop your resume here or use the button below.
             </div>
 
-            
-
             <div className="relative w-full flex justify-center items-center">
               {isSignedIn ? (
                 <UploadButton
@@ -113,13 +77,18 @@ const UploadSection: React.FC<UploadSectionProps> = ({
                   endpoint="resumeUploader"
                   onClientUploadComplete={async (res) => {
                     if (!res?.[0]?.url) return;
+
                     const fileUrl = res[0].url;
                     const fileName = res[0].name;
+                    const fileSize = res[0].size;
+                    const fileType = res[0].type;
 
                     toast.loading("Analyzing uploaded resume...");
 
                     const formData = new FormData();
                     formData.append("fileUrl", fileUrl);
+                    formData.append("fileType", fileType || "");
+                    formData.append("userId", user?.id || "");
 
                     try {
                       const optimizeRes = await fetch("/api/optimize", {
@@ -129,11 +98,14 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 
                       const result = await optimizeRes.json();
 
-                      if (optimizeRes.ok && result?.fileUrl) {
-                        onFileUpload(fileUrl, fileName);
-                        setUploadProgress(100);
+                      if (optimizeRes.ok && result?.optimizedText) {
+                        onFileUpload(fileUrl, fileName, fileSize, fileType);
+                        setUploadedInfo({
+                          name: fileName,
+                          size: fileSize,
+                          type: fileType,
+                        });
                         toast.success("Resume uploaded and optimized");
-                        setTimeout(() => setUploadProgress(0), 2000);
                       } else {
                         throw new Error(result?.error || "Optimization failed");
                       }
@@ -141,7 +113,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
                       toast.error("Upload analysis error", {
                         description: err.message,
                       });
-                      setUploadProgress(0);
                     }
                   }}
                   onUploadError={(error) => {
@@ -157,18 +128,11 @@ const UploadSection: React.FC<UploadSectionProps> = ({
               )}
             </div>
 
-            {uploadProgress === 100 && (
-              <div className="flex items-center text-sm bg-green-50 text-green-600 px-3 py-1 rounded-full animate-fade-in-up">
-                <CheckCircle className="h-4 w-4 mr-2 animate-scale-in" />
-                Upload complete
-              </div>
-            )}
-
-            {selectedFile && (
-              <div className="mt-2 text-sm text-muted-foreground animate-fade-in-up">
-                <span className="font-medium">Uploaded file:</span> {selectedFile.name}
+            {uploadedInfo && (
+              <div className="mt-2 text-sm text-muted-foreground animate-fade-in-up text-center">
+                <span className="font-medium">Uploaded file:</span> {uploadedInfo.name}
                 <div className="text-xs text-gray-500">
-                  ({(selectedFile.size / 1024).toFixed(1)} KB, {selectedFile.type || "unknown type"})
+                  ({readableSize(uploadedInfo.size)}, {mimeLabelMap[uploadedInfo.type] || uploadedInfo.type})
                 </div>
               </div>
             )}

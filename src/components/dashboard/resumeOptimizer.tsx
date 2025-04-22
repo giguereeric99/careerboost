@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/useToast";
 import { useResumeOptimizer } from '@/hooks/useResumeOptimizer';
 import { ResumeData } from '@/services/resumeParser';
+import { useUser } from "@clerk/nextjs";
 
 // Import refactored components
 import UploadSection from '@/components/resumeOptimizer/uploadSection';
@@ -18,6 +19,7 @@ import ProUpgradeDialog from '@/components/resumeOptimizer/proUpgradeDialog';
 import { resumeTemplates } from '../../constants/resumeTemplates';
 
 const ResumeOptimizer = () => {
+  const { user } = useUser();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("upload");
   const [resumeContent, setResumeContent] = useState("");
@@ -153,26 +155,38 @@ const ResumeOptimizer = () => {
   };
 
   const handleContinue = async () => {
-    if (resumeContent.length > 50) {
-      toast({
-        title: "Processing resume content",
-        description: "Please wait while we analyze your text..."
+    if (resumeContent.length < 50) {
+      toast.error("Please enter at least 50 characters of resume content.");
+      return;
+    }
+  
+    toast.loading("Analyzing pasted resume...");
+  
+    const formData = new FormData();
+    formData.append("rawText", resumeContent);
+    if (user?.id) formData.append("userId", user.id);
+  
+    try {
+      const res = await fetch("/api/optimize", {
+        method: "POST",
+        body: formData,
       });
-      
-      // Create a temporary file from the text content
-      const blob = new Blob([resumeContent], { type: 'text/plain' });
-      const file = new File([blob], "resume.txt", { type: "text/plain" });
-      
-      const data = await handleFileUpload(file);
-      
-      if (data) {
-        updateResumePreview(data);
-        setActiveTab("preview");
+  
+      const result = await res.json();
+  
+      if (res.ok && result?.optimizedText) {
+        toast.success("Resume optimized successfully");
+  
+        // 🔁 Appelle une fonction pour afficher dans le preview ou avancer au prochain step
+        onFileUpload(result.fileUrl ?? "", result.fileName ?? "Pasted Resume");
+        setActiveTab("preview"); // si tu utilises un système à onglets
+  
+      } else {
+        throw new Error(result?.error || "Failed to optimize resume");
       }
-    } else {
-      toast({
-        title: "Content too short",
-        description: "Please provide more detailed resume content."
+    } catch (err: any) {
+      toast.error("Optimization failed", {
+        description: err.message,
       });
     }
   };

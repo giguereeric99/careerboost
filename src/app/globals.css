@@ -320,3 +320,7 @@
 .animate-fade-in-up {
   animation: fade-in-up 0.4s ease-out both;
 }
+
+[data-ut-element="allowed-content"] {
+  display: none !important;
+}
