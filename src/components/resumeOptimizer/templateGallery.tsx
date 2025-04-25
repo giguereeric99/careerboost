@@ -13,7 +13,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({
   onTemplateSelect 
 }) => {
   return (
-    <div className="bg-gray-100 border rounded-lg p-4">
+    <div className="bg-gray-100 border rounded-lg p-4 mt-4">
       <h3 className="font-medium mb-3">Template Gallery</h3>
       <div className="grid grid-cols-3 gap-3">
         {templates.map(template => (
