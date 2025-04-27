@@ -7,18 +7,18 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 
-// Import enhanced resume parser utilities
+// Import the custom hook for resume optimization
+import { useResumeOptimizer } from '@/hooks/useResumeOptimizer';
+
+// Import only the parsing utilities that are needed directly in this component
 import { 
-  ResumeData, 
-  Suggestion,
-  uploadResume,
-  parseResume,
-  optimizeResume,
-  getLatestOptimizedResume,
   parseOptimizedText,
   extractKeywords,
   calculateAtsScore
 } from '@/services/resumeParser';
+
+// Import types
+import { ResumeData, Suggestion } from '@/types/resume';
 
 // Import components for resume optimization workflow
 import UploadSection from '@/components/resumeOptimizer/uploadSection';
@@ -43,6 +43,32 @@ import { resumeTemplates } from '../../constants/resumeTemplates';
 const ResumeOptimizer = () => {
   // Authentication state from Clerk
   const { user } = useUser();
+
+  // Use the custom hook for resume optimization
+  // This hook manages the core resume optimization logic and state
+  const {
+    isUploading,
+    isParsing,
+    isOptimizing,
+    isApplyingChanges,
+    needsRegeneration,
+    selectedFile,
+    resumeData,
+    optimizedData,
+    optimizedText,
+    resumeId,
+    suggestions,
+    keywords,
+    optimizationScore,
+    handleFileUpload,
+    optimizeResumeData,
+    loadLatestResume,
+    applyTemplateToResume,
+    applySuggestion,
+    toggleKeyword,
+    applyChanges,
+    setSelectedFile
+  } = useResumeOptimizer();
   
   // Active tab state (upload or preview)
   const [activeTab, setActiveTab] = useState("upload");
@@ -52,39 +78,12 @@ const ResumeOptimizer = () => {
   const [rawText, setRawText] = useState<string>("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
-  // Processing states
-  const [isUploading, setIsUploading] = useState(false);
-  const [isParsing, setIsParsing] = useState(false);
-  const [isOptimizing, setIsOptimizing] = useState(false);
+  // Loading states that aren't in the hook
   const [initialLoading, setInitialLoading] = useState(false);
-  
-  // Optimized resume data
-  const [resumeId, setResumeId] = useState<string | null>(null);
-  const [originalText, setOriginalText] = useState<string>("");
-  const [optimizedText, setOptimizedText] = useState<string>("");
-  const [detectedLanguage, setDetectedLanguage] = useState<string>("English");
-  
-  // Resume data models
-  const [parsedResumeData, setParsedResumeData] = useState<ResumeData | null>(null);
-  const [optimizedResumeData, setOptimizedResumeData] = useState<ResumeData | null>(null);
-  
+
   // Template selection
   const [selectedTemplate, setSelectedTemplate] = useState("basic");
-  
-  // Optimization results
-  const [atsScore, setAtsScore] = useState<number>(0);
-  const [suggestedKeywords, setSuggestedKeywords] = useState<string[]>([]);
-  const [improvementSuggestions, setImprovementSuggestions] = useState<Suggestion[]>([]);
-  
-  // User selections
-  const [keywords, setKeywords] = useState<{text: string, applied: boolean}[]>([]);
-  const [appliedSuggestions, setAppliedSuggestions] = useState<number[]>([]);
-  
-  // Regeneration state
-  const [needsRegeneration, setNeedsRegeneration] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false);
   
   // Pro upgrade dialog state
   const [showProDialog, setShowProDialog] = useState(false);
@@ -109,12 +108,13 @@ const ResumeOptimizer = () => {
 
   /**
    * Effect to reset regeneration state when changing templates
+   * Notifies the optimizer hook that changes need to be regenerated
    */
   useEffect(() => {
     if (selectedTemplate) {
-      setNeedsRegeneration(true);
+      applyTemplateToResume(selectedTemplate);
     }
-  }, [selectedTemplate]);
+  }, [selectedTemplate, applyTemplateToResume]);
   
   /**
    * Effect to load optimized resume when tab changes to preview
@@ -122,92 +122,46 @@ const ResumeOptimizer = () => {
    */
   useEffect(() => {
     if (activeTab === "preview" && user && !optimizedText) {
-      loadLatestOptimizedResume();
+      loadLatestOptimizedResumeWrapper();
     }
-  }, [activeTab, user]);
+  }, [activeTab, user, optimizedText]);
   
   /**
    * Effect to parse optimized text into resume sections when it becomes available
+   * This effect updates the UI with the optimized resume data
    */
   useEffect(() => {
     if (optimizedText && optimizedText.length > 0) {
       // Parse the optimized text into structured data
       const parsedData = parseOptimizedText(optimizedText);
-      setOptimizedResumeData(parsedData);
       
       // Update resume sections for preview
       updateResumeSectionsFromData(parsedData);
-      
-      // Extract keywords from the optimized text
-      const extractedKeywords = extractKeywords(optimizedText);
-      setSuggestedKeywords(extractedKeywords);
-      
-      // Convert to keyword objects with applied=false
-      setKeywords(extractedKeywords.map(keyword => ({
-        text: keyword,
-        applied: false
-      })));
-      
-      // Calculate initial ATS score
-      const initialScore = calculateAtsScore(parsedData);
-      setAtsScore(initialScore);
     }
   }, [optimizedText]);
   
   /**
    * Loads the most recent optimized resume for the current user
-   * Includes improved error handling to prevent blocking the UI flow
+   * Wrapper around the hook's loadLatestResume function
    */
-  const loadLatestOptimizedResume = async () => {
+  const loadLatestOptimizedResumeWrapper = async () => {
     if (!user?.id) return;
     
     setInitialLoading(true);
     
     try {
-      console.log("Attempting to load resume for user:", user.id);
-      const { data, error } = await getLatestOptimizedResume(user.id);
+      // Use the hook's function to load the resume
+      const data = await loadLatestResume(user.id);
       
-      if (error) {
-        console.error("Error loading resume:", error);
-        
-        // Display a warning but allow user to continue in Preview tab
-        toast.warning("Couldn't load previous resume", {
-          description: "You can upload a new resume or paste content to begin."
-        });
-        
-        // Don't redirect, let the user stay in Preview with empty state
+      if (!data) {
+        // No resume found or error occurred, handled by the hook
         setInitialLoading(false);
         return;
       }
       
-      if (data) {
-        // Resume found - save the data
-        console.log("Resume loaded successfully");
-        setResumeId(data.id);
-        setOriginalText(data.original_text);
-        setOptimizedText(data.optimized_text);
-        setDetectedLanguage(data.language || "English");
-        
-        toast.success("Resume loaded successfully", {
-          description: `Language: ${data.language}`,
-        });
-      } else {
-        // No resume found for this user
-        console.log("No previous resume found for user");
-        toast.info("No previous resume found", {
-          description: "Please upload a resume to begin optimization."
-        });
-        
-        // User can stay in Preview and see empty state ready for new upload
-      }
     } catch (error: any) {
-      // Handle any unexpected exceptions
-      console.error("Exception in loadLatestOptimizedResume:", error);
-      toast.error("Error loading resume", {
-        description: "Please try uploading a new resume."
-      });
-      
-      // Allow user to stay in Preview tab with empty state
+      // Error already handled by the hook
+      console.error("Exception in loadLatestOptimizedResumeWrapper:", error);
     } finally {
       setInitialLoading(false);
     }
@@ -215,6 +169,7 @@ const ResumeOptimizer = () => {
   
   /**
    * Updates resume sections from parsed data for preview
+   * Transforms the parsed data into UI-friendly format
    * 
    * @param data - Parsed resume data
    */
@@ -262,84 +217,6 @@ const ResumeOptimizer = () => {
   };
 
   /**
-   * Handles file selection and uploads the resume
-   * 
-   * @param file - Selected resume file
-   */
-  const handleFileUpload = async (file: File) => {
-    if (!file) return null;
-    
-    setIsUploading(true);
-    
-    try {
-      // Upload the file to storage
-      const { path, error } = await uploadResume(file);
-      
-      if (error) throw error;
-      
-      setFileName(file.name);
-      setSelectedFile(file);
-      
-      // Parse the resume to extract structured data
-      setIsParsing(true);
-      
-      const { data: parsedData, error: parseError } = await parseResume(path);
-      
-      if (parseError) throw parseError;
-      
-      if (parsedData) {
-        setParsedResumeData(parsedData);
-        
-        // Optimize the resume with AI
-        setIsOptimizing(true);
-        
-        const { 
-          optimizedData, 
-          optimizedText: aiText, 
-          suggestions, 
-          keywordSuggestions,
-          atsScore: score,
-          error: optimizeError 
-        } = await optimizeResume(parsedData);
-        
-        if (optimizeError) throw optimizeError;
-        
-        if (optimizedData && aiText) {
-          // Save optimization results
-          setOptimizedResumeData(optimizedData);
-          setOptimizedText(aiText);
-          setImprovementSuggestions(suggestions);
-          setSuggestedKeywords(keywordSuggestions);
-          setAtsScore(score);
-          
-          // Format keywords for UI
-          setKeywords(keywordSuggestions.map(keyword => ({
-            text: keyword,
-            applied: false
-          })));
-          
-          // Navigate to preview tab
-          setActiveTab("preview");
-          
-          return optimizedData;
-        }
-      }
-      
-      return null;
-    } catch (error: any) {
-      console.error("Error in handleFileUpload:", error);
-      toast.error("Resume upload failed", {
-        description: error.message
-      });
-      return null;
-    } finally {
-      setIsUploading(false);
-      setIsParsing(false);
-      setIsOptimizing(false);
-    }
-  };
-  
-  /**
    * Handles changes to the pasted resume content
    * 
    * @param e - Textarea change event
@@ -363,111 +240,36 @@ const ResumeOptimizer = () => {
       setShowProDialog(true);
     } else {
       setSelectedTemplate(templateId);
-      // Mark that changes need to be regenerated
-      setNeedsRegeneration(true);
+      // This will trigger the useEffect that calls applyTemplateToResume
     }
   };
 
   /**
    * Toggles a keyword's applied state
-   * Updates both the local state and marks for regeneration
+   * Delegates to the hook's toggleKeyword function
    * 
    * @param index - Index of the keyword to toggle
    */
   const handleKeywordApply = (index: number) => {
-    const updatedKeywords = [...keywords];
-    updatedKeywords[index].applied = !updatedKeywords[index].applied;
-    setKeywords(updatedKeywords);
-    
-    // Mark that changes need to be regenerated
-    setNeedsRegeneration(true);
+    toggleKeyword(index);
   };
   
   /**
    * Handles applying a suggestion from the suggestions list
-   * Marks that changes need to be regenerated
+   * Delegates to the hook's applySuggestion function
    * 
    * @param index - Index of the suggestion to apply
    */
   const handleApplySuggestion = (index: number) => {
-    const updatedAppliedSuggestions = [...appliedSuggestions];
-    
-    // Toggle suggestion application
-    if (updatedAppliedSuggestions.includes(index)) {
-      // Remove if already applied
-      const suggestionIndex = updatedAppliedSuggestions.indexOf(index);
-      updatedAppliedSuggestions.splice(suggestionIndex, 1);
-    } else {
-      // Add if not applied
-      updatedAppliedSuggestions.push(index);
-    }
-    
-    setAppliedSuggestions(updatedAppliedSuggestions);
-    
-    // Mark that changes need to be regenerated
-    setNeedsRegeneration(true);
+    applySuggestion(index);
   };
 
   /**
    * Handles the regeneration of the resume with applied changes
-   * Updates the resume preview with new content based on selected keywords and applied suggestions
+   * Delegates to the hook's applyChanges function
    */
   const handleRegenerateResume = async () => {
-    if (!needsRegeneration) return;
-    
-    setIsRegenerating(true);
-    toast.loading("Applying your changes to the resume...");
-    
-    try {
-      // Get applied keywords
-      const appliedKeywordsList = keywords
-        .filter(keyword => keyword.applied)
-        .map(keyword => keyword.text);
-      
-      // Get applied suggestions
-      const appliedSuggestionsList = appliedSuggestions.map(index => improvementSuggestions[index]);
-      
-      // In a production implementation, you would call an API here to regenerate
-      // the resume with the applied keywords and suggestions
-      // For now, we'll simulate the regeneration by modifying the local data
-      
-      // 1. Add applied keywords to skills
-      const updatedSkills = [
-        ...resumeSections.skills.filter(skill => 
-          !keywords.some(k => k.text.toLowerCase() === skill.toLowerCase())
-        ),
-        ...appliedKeywordsList
-      ];
-      
-      // 2. Update resume sections with new skills
-      const updatedSections = {
-        ...resumeSections,
-        skills: updatedSkills
-      };
-      
-      // 3. Update the resume sections state
-      setResumeSections(updatedSections);
-      
-      // 4. Recalculate ATS score based on applied changes
-      const newScore = Math.min(100, atsScore + (appliedKeywordsList.length * 2) + (appliedSuggestionsList.length * 3));
-      setAtsScore(newScore);
-      
-      // Success message
-      toast.dismiss();
-      toast.success("Resume updated with your changes", {
-        description: `New ATS Score: ${newScore}/100`
-      });
-      
-      // Reset regeneration flag
-      setNeedsRegeneration(false);
-    } catch (error: any) {
-      toast.dismiss();
-      toast.error("Failed to apply changes", {
-        description: error.message || "There was an error applying your changes. Please try again."
-      });
-    } finally {
-      setIsRegenerating(false);
-    }
+    await applyChanges();
   };
 
   /**
@@ -530,9 +332,6 @@ const ResumeOptimizer = () => {
       return;
     }
   
-    setIsOptimizing(true);
-    toast.loading("Analyzing your resume...");
-  
     try {
       // Create form data for API request
       const formData = new FormData();
@@ -552,52 +351,19 @@ const ResumeOptimizer = () => {
   
       const result = await res.json();
       
-      // Save the optimized text and related data
-      setOptimizedText(result.optimizedText);
-      setDetectedLanguage(result.language || "English");
-      
-      // If we got suggestions and keywords from the API, use them
-      if (result.suggestions) {
-        setImprovementSuggestions(result.suggestions);
-      }
-      
-      if (result.keywordSuggestions) {
-        setSuggestedKeywords(result.keywordSuggestions);
-        setKeywords(result.keywordSuggestions.map((keyword: string) => ({
-          text: keyword,
-          applied: false
-        })));
-      }
-      
-      // Use ATS score from API or calculate it
-      if (result.atsScore) {
-        setAtsScore(result.atsScore);
-      } else {
-        const parsedData = parseOptimizedText(result.optimizedText);
-        const score = calculateAtsScore(parsedData);
-        setAtsScore(score);
-      }
-      
-      toast.dismiss();
-      toast.success("Resume optimized successfully", {
-        description: `Language detected: ${result.language || "English"}`
-      });
-      
-      // Navigate to preview tab
+      // Navigate to preview tab on success
       setActiveTab("preview");
   
     } catch (error: any) {
-      toast.dismiss();
       toast.error("Optimization failed", {
         description: error.message || "An unexpected error occurred."
       });
-    } finally {
-      setIsOptimizing(false);
     }
   };
     
   /**
    * File upload handler for UploadSection component
+   * Sets the file information for the UI
    * 
    * @param url - URL of the uploaded file
    * @param name - Name of the uploaded file
@@ -608,7 +374,10 @@ const ResumeOptimizer = () => {
     setSelectedFile(new File([""], name, { type: "application/octet-stream" }));
   };
 
-  // Render empty state for Preview when no resume data is available
+  /**
+   * Renders empty state for Preview when no resume data is available
+   * Provides a friendly UI for users who haven't uploaded a resume yet
+   */
   const renderEmptyPreviewState = () => (
     <div className="flex flex-col items-center justify-center h-[500px] border rounded-lg p-4">
       <Sparkles className="h-12 w-12 text-brand-600 mb-4" />
@@ -676,10 +445,10 @@ const ResumeOptimizer = () => {
                     <div className="flex justify-end">
                       <Button 
                         onClick={handleRegenerateResume}
-                        disabled={isRegenerating}
+                        disabled={isApplyingChanges}
                         className="bg-green-600 hover:bg-green-700 text-white"
                       >
-                        {isRegenerating ? (
+                        {isApplyingChanges ? (
                           <>
                             <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                             Applying changes...
@@ -704,18 +473,18 @@ const ResumeOptimizer = () => {
                         appliedKeywords={appliedKeywordsArray}
                         onDownload={handleDownload}
                         onSave={handleSave}
-                        isOptimizing={isOptimizing || isRegenerating}
+                        isOptimizing={isOptimizing || isApplyingChanges}
                       />
                     </div>
                     
                     {/* Right column (2/5) - Tools and suggestions */}
                     <div className="col-span-2 flex flex-col gap-4">
                       {/* ATS Optimization score card */}
-                      <ScoreCard optimizationScore={atsScore} />
+                      <ScoreCard optimizationScore={optimizationScore} />
 
                       {/* AI-powered improvement suggestions */}
                       <SuggestionsList
-                        suggestions={improvementSuggestions}
+                        suggestions={suggestions}
                         isOptimizing={isOptimizing}
                         onApplySuggestion={handleApplySuggestion}
                       />
