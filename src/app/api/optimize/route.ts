@@ -1,8 +1,10 @@
 /**
  * API Route for Resume Optimization
- * This route handles the optimization of resumes using AI services
- * It processes uploaded files or raw text, optimizes with OpenAI,
- * and stores the results in Supabase
+ * This route handles the complete resume optimization workflow:
+ * 1. Processing uploaded files or raw text
+ * 2. Extracting text content from files
+ * 3. Optimizing with AI services (OpenAI, Gemini, Claude)
+ * 4. Storing results in Supabase with proper UUID handling
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -10,6 +12,11 @@ import { getAdminClient } from "@/lib/supabase-admin";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Anthropic from "@anthropic-ai/sdk";
+import getResumeOptimizationPrompt from "@/utils/prompts/resumeOptimizationPrompt";
+import { extractText } from "@/utils/processResume";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 
 // Initialize OpenAI client with API key
 const openai = new OpenAI({
@@ -30,6 +37,122 @@ const OPENAI_MODELS = [
   "gpt-4", // Most widely available model
   "gpt-3.5-turbo" // Fallback option
 ];
+
+/**
+ * Gets or creates a Supabase UUID for a Clerk user ID
+ * Resolves the issue with Clerk IDs not being valid UUIDs
+ * 
+ * @param supabaseAdmin - Supabase admin client
+ * @param clerkUserId - Clerk user ID (starting with "user_")
+ * @returns A valid Supabase UUID for the user
+ */
+async function getOrCreateSupabaseUuid(supabaseAdmin: any, clerkUserId: string): Promise<string> {
+  // First check if this user already has a mapping
+  const { data: existingMapping, error: mappingError } = await supabaseAdmin
+    .from('user_mapping')
+    .select('supabase_uuid')
+    .eq('clerk_id', clerkUserId)
+    .single();
+  
+  if (mappingError) {
+    console.log("No existing mapping found, creating new one");
+    
+    // Generate a new UUID for this user
+    const newUuid = crypto.randomUUID();
+    
+    // Insert the mapping
+    const { error: insertError } = await supabaseAdmin
+      .from('user_mapping')
+      .insert({
+        clerk_id: clerkUserId,
+        supabase_uuid: newUuid
+      });
+    
+    if (insertError) {
+      console.error("Error creating user mapping:", insertError);
+      throw new Error(`Failed to create user mapping: ${insertError.message}`);
+    }
+    
+    return newUuid;
+  }
+  
+  // Return the existing UUID from the mapping
+  return existingMapping.supabase_uuid;
+}
+
+/**
+ * Downloads a file from a URL and saves it to a temporary location
+ * 
+ * @param fileUrl - URL of the file to download
+ * @returns Object containing the file path, size, and any error
+ */
+async function downloadFileFromUrl(fileUrl: string): Promise<{
+  path: string | null;
+  size: number | null;
+  error: Error | null;
+}> {
+  let tempFilePath: string | null = null;
+  
+  try {
+    console.log("Downloading file from:", fileUrl);
+    
+    // Fetch the file from the URL
+    const response = await fetch(fileUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+    }
+    
+    // Get file content as buffer
+    const fileBuffer = Buffer.from(await response.arrayBuffer());
+    const fileSize = fileBuffer.length;
+    
+    // Create temp directory if it doesn't exist
+    fs.mkdirSync(path.join(process.cwd(), "tmp"), { recursive: true });
+    
+    // Extract filename from URL and preserve extension
+    const urlParts = fileUrl.split("/");
+    const fileName = urlParts[urlParts.length - 1];
+    const ext = path.extname(fileName) || ".pdf";
+    
+    // Create a unique temp filename
+    tempFilePath = path.join(process.cwd(), "tmp", `resume-${Date.now()}${ext}`);
+    
+    // Write file to temp location
+    fs.writeFileSync(tempFilePath, fileBuffer);
+    
+    console.log(`File downloaded to ${tempFilePath}, size: ${fileSize} bytes`);
+    
+    return {
+      path: tempFilePath,
+      size: fileSize,
+      error: null
+    };
+  } catch (error: any) {
+    console.error("Error downloading file:", error);
+    return {
+      path: null,
+      size: null,
+      error
+    };
+  }
+}
+
+/**
+ * Cleans up temporary files created during processing
+ * 
+ * @param filePath - Path to the temporary file
+ */
+function cleanupTempFile(filePath: string | null): void {
+  if (filePath && fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+      console.log("Cleaned up temporary file:", filePath);
+    } catch (error) {
+      console.error("Error cleaning up temporary file:", error);
+    }
+  }
+}
 
 /**
  * Detects the language of the given text using OpenAI
@@ -65,10 +188,11 @@ async function detectLanguage(text: string): Promise<string> {
  * Tries to optimize a resume with OpenAI
  * Includes fallback mechanisms and robust error handling
  * 
- * @param prompt - The optimization prompt
+ * @param resumeText - The resume text to optimize
+ * @param language - The detected language of the resume
  * @returns The optimization result or null if failed
  */
-async function tryOptimizeWithOpenAI(prompt: string): Promise<any | null> {
+async function tryOptimizeWithOpenAI(resumeText: string, language: string): Promise<any | null> {
   try {
     console.log("Attempting resume optimization with OpenAI");
     
@@ -77,29 +201,24 @@ async function tryOptimizeWithOpenAI(prompt: string): Promise<any | null> {
       try {
         console.log(`Trying OpenAI model: ${model}`);
         
-        // Create the completion request with clear JSON instructions
+        // Get standardized prompts for OpenAI
+        const { systemPrompt, userPrompt } = getResumeOptimizationPrompt(
+          resumeText,
+          'openai',
+          { language }
+        );
+        
+        // Create the completion request with our standardized prompts
         const completion = await openai.chat.completions.create({
           model: model,
           messages: [
             {
               role: "system",
-              content: `You are an expert resume optimizer who helps improve resumes for ATS compatibility and recruiter appeal.
-              
-              IMPORTANT: Your response must be formatted as a valid JSON object with these fields:
-              {
-                "optimizedText": "The full improved resume content with better formatting",
-                "suggestions": [
-                  {"type": "section", "text": "what to improve", "impact": "why this helps"}
-                ],
-                "keywordSuggestions": ["keyword1", "keyword2", ...],
-                "atsScore": number from 0-100
-              }
-              
-              Do not include ANY explanatory text, code blocks, or other content outside the JSON structure.`
+              content: systemPrompt
             },
             {
               role: "user",
-              content: prompt
+              content: userPrompt
             }
           ],
           temperature: 0.7
@@ -109,44 +228,8 @@ async function tryOptimizeWithOpenAI(prompt: string): Promise<any | null> {
         const content = completion.choices[0].message.content || "";
         console.log("OpenAI raw response:", content.substring(0, 100) + "...");
         
-        // Try to parse the response as JSON
-        let result;
-        try {
-          // First try direct parsing
-          result = JSON.parse(content);
-        } catch (jsonError) {
-          console.log("Initial JSON parsing failed, trying to extract JSON structure");
-          
-          // Try to extract JSON by finding matching braces
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) {
-            throw new Error("Could not extract valid JSON from OpenAI response");
-          }
-          
-          // Clean potential control characters that might break JSON parsing
-          const cleanJson = jsonMatch[0].replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
-          result = JSON.parse(cleanJson);
-        }
-        
-        // Validate that all required fields are present
-        if (!result.optimizedText) {
-          throw new Error("OpenAI response missing optimizedText field");
-        }
-        
-        // Ensure suggestions is an array (even if empty)
-        if (!result.suggestions || !Array.isArray(result.suggestions)) {
-          result.suggestions = [];
-        }
-        
-        // Ensure keywordSuggestions is an array (even if empty)
-        if (!result.keywordSuggestions || !Array.isArray(result.keywordSuggestions)) {
-          result.keywordSuggestions = [];
-        }
-        
-        // Ensure atsScore is a number between 0-100
-        if (typeof result.atsScore !== 'number' || result.atsScore < 0 || result.atsScore > 100) {
-          result.atsScore = 65; // Default fallback score
-        }
+        // Parse and validate the response
+        const result = parseAIResponse(content);
         
         console.log("OpenAI optimization successful with model:", model);
         return { result, provider: "openai" };
@@ -169,10 +252,11 @@ async function tryOptimizeWithOpenAI(prompt: string): Promise<any | null> {
  * Tries to optimize a resume with Google Gemini
  * Only used as fallback if OpenAI fails
  * 
- * @param prompt - The optimization prompt
+ * @param resumeText - The resume text to optimize
+ * @param language - The detected language of the resume
  * @returns The optimization result or null if failed
  */
-async function tryOptimizeWithGemini(prompt: string): Promise<any | null> {
+async function tryOptimizeWithGemini(resumeText: string, language: string): Promise<any | null> {
   try {
     // Skip if Gemini API is not configured
     if (!genAI) {
@@ -185,53 +269,22 @@ async function tryOptimizeWithGemini(prompt: string): Promise<any | null> {
     // Create Gemini model
     const geminiModel = genAI.getGenerativeModel({ model: "gemini-pro" });
     
-    // Craft a prompt optimized for JSON output
-    const geminiPrompt = `
-      ${prompt}
-      
-      IMPORTANT: Your response must be ONLY a valid JSON object with these exact fields:
-      {
-        "optimizedText": "full optimized resume content",
-        "suggestions": [
-          {"type": "section", "text": "suggestion text", "impact": "reason"}
-        ],
-        "keywordSuggestions": ["keyword1", "keyword2", "keyword3"],
-        "atsScore": 75
-      }
-      
-      Do not include any explanations, markdown formatting, or text outside the JSON.
-    `;
+    // Get standardized prompts for Gemini
+    const { systemPrompt, userPrompt } = getResumeOptimizationPrompt(
+      resumeText,
+      'gemini',
+      { language }
+    );
+    
+    // Combine prompts for Gemini (as it doesn't have separate system/user)
+    const geminiPrompt = `${systemPrompt}\n\n${userPrompt}`;
     
     // Get Gemini response
     const geminiResponse = await geminiModel.generateContent(geminiPrompt);
     const geminiText = geminiResponse.response.text();
     
-    // Try to parse response as JSON
-    let result;
-    try {
-      result = JSON.parse(geminiText);
-    } catch (jsonError) {
-      console.log("Initial Gemini JSON parsing failed, trying to extract JSON structure");
-      
-      // Try to extract JSON by finding matching braces
-      const jsonMatch = geminiText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("Could not extract valid JSON from Gemini response");
-      }
-      
-      // Parse the extracted JSON
-      result = JSON.parse(jsonMatch[0]);
-    }
-    
-    // Validate the result has required fields
-    if (!result.optimizedText) {
-      throw new Error("Gemini response missing optimizedText field");
-    }
-    
-    // Ensure all fields exist
-    result.suggestions = result.suggestions || [];
-    result.keywordSuggestions = result.keywordSuggestions || [];
-    result.atsScore = typeof result.atsScore === 'number' ? result.atsScore : 65;
+    // Parse and validate the response
+    const result = parseAIResponse(geminiText);
     
     console.log("Gemini optimization successful");
     return { result, provider: "gemini" };
@@ -245,10 +298,11 @@ async function tryOptimizeWithGemini(prompt: string): Promise<any | null> {
  * Tries to optimize a resume with Anthropic Claude
  * Used as final fallback if both OpenAI and Gemini fail
  * 
- * @param prompt - The optimization prompt
+ * @param resumeText - The resume text to optimize
+ * @param language - The detected language of the resume
  * @returns The optimization result or throws if failed
  */
-async function tryOptimizeWithClaude(prompt: string): Promise<any> {
+async function tryOptimizeWithClaude(resumeText: string, language: string): Promise<any> {
   console.log("Attempting resume optimization with Anthropic Claude");
   
   try {
@@ -257,29 +311,23 @@ async function tryOptimizeWithClaude(prompt: string): Promise<any> {
       throw new Error("Anthropic API key not configured");
     }
     
-    // Craft a clear system prompt for Claude
-    const claudeSystemPrompt = `You are an expert resume optimizer who improves resumes for ATS compatibility and recruiter appeal.
-    
-    Your task is to return ONLY valid JSON with these fields:
-    - optimizedText: The full improved resume text
-    - suggestions: Array of objects with type, text, and impact fields
-    - keywordSuggestions: Array of relevant industry keywords
-    - atsScore: A number from 0-100 for ATS compatibility
-    
-    Your response must be a valid JSON object with NO other text or explanations.`;
+    // Get standardized prompts for Claude
+    const { systemPrompt, userPrompt } = getResumeOptimizationPrompt(
+      resumeText,
+      'claude',
+      { language }
+    );
     
     // Send request to Claude
     const claudeCompletion = await anthropic.messages.create({
       model: "claude-3-sonnet-20240229",
       max_tokens: 4000,
       temperature: 0.5,
-      system: claudeSystemPrompt,
+      system: systemPrompt,
       messages: [
         {
           role: "user",
-          content: `${prompt}
-          
-          IMPORTANT: Respond ONLY with a valid JSON object and nothing else.`
+          content: userPrompt
         }
       ]
     });
@@ -287,41 +335,8 @@ async function tryOptimizeWithClaude(prompt: string): Promise<any> {
     // Get the response text
     const claudeText = claudeCompletion.content[0].text;
     
-    // Clean up the response if it contains code blocks
-    let jsonContent = claudeText.trim();
-    if (jsonContent.startsWith("```json")) {
-      jsonContent = jsonContent.replace(/^```json\n/, '').replace(/\n```$/, '');
-    } else if (jsonContent.startsWith("```")) {
-      jsonContent = jsonContent.replace(/^```\n/, '').replace(/\n```$/, '');
-    }
-    
-    // Try to parse the JSON
-    let result;
-    try {
-      result = JSON.parse(jsonContent);
-    } catch (parseError) {
-      console.log("Initial Claude JSON parsing failed, trying to extract JSON structure");
-      
-      // Try to find JSON structure in the text
-      const jsonMatch = claudeText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("Could not extract valid JSON from Claude response");
-      }
-      
-      // Clean and parse the JSON
-      const cleanJson = jsonMatch[0].replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
-      result = JSON.parse(cleanJson);
-    }
-    
-    // Validate the result has required fields
-    if (!result.optimizedText) {
-      throw new Error("Claude response missing optimizedText field");
-    }
-    
-    // Ensure all fields exist
-    result.suggestions = result.suggestions || [];
-    result.keywordSuggestions = result.keywordSuggestions || [];
-    result.atsScore = typeof result.atsScore === 'number' ? result.atsScore : 65;
+    // Parse and validate the response
+    const result = parseAIResponse(claudeText);
     
     console.log("Claude optimization successful");
     return { result, provider: "claude" };
@@ -339,6 +354,66 @@ async function tryOptimizeWithClaude(prompt: string): Promise<any> {
       provider: "fallback"
     };
   }
+}
+
+/**
+ * Helper function to parse and validate AI response JSON
+ * Handles different formats and ensures all required fields exist
+ * 
+ * @param content - Raw response text from AI service
+ * @returns Parsed and validated JSON object
+ */
+function parseAIResponse(content: string): any {
+  // Try to parse the response as JSON
+  let result;
+  try {
+    // First try direct parsing
+    result = JSON.parse(content);
+  } catch (jsonError) {
+    console.log("Initial JSON parsing failed, trying to extract JSON structure");
+    
+    // Try to extract JSON by finding matching braces
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("Could not extract valid JSON from AI response");
+    }
+    
+    // Clean potential control characters that might break JSON parsing
+    const cleanJson = jsonMatch[0].replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
+    result = JSON.parse(cleanJson);
+  }
+  
+  // Validate that all required fields are present
+  if (!result.optimizedText) {
+    throw new Error("AI response missing optimizedText field");
+  }
+  
+  // Ensure suggestions is an array (even if empty)
+  if (!result.suggestions || !Array.isArray(result.suggestions)) {
+    result.suggestions = [];
+  }
+  
+  // Ensure keywordSuggestions is an array (even if empty)
+  if (!result.keywordSuggestions || !Array.isArray(result.keywordSuggestions)) {
+    result.keywordSuggestions = [];
+  }
+  
+  // Ensure atsScore is a number between 0-100
+  if (typeof result.atsScore !== 'number' || result.atsScore < 0 || result.atsScore > 100) {
+    result.atsScore = 65; // Default fallback score
+  }
+  
+  // Limit suggestions to a reasonable number (1-5)
+  if (result.suggestions.length > 5) {
+    result.suggestions = result.suggestions.slice(0, 5);
+  }
+  
+  // Limit keywords to a reasonable number (1-10)
+  if (result.keywordSuggestions.length > 10) {
+    result.keywordSuggestions = result.keywordSuggestions.slice(0, 10);
+  }
+  
+  return result;
 }
 
 /**
@@ -374,14 +449,16 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Pr
  * Processes the request, optimizes the resume with AI, and stores results
  */
 export async function POST(req: NextRequest) {
+  let tempFilePath: string | null = null;
+  
   try {
     // Extract data from the request
     const formData = await req.formData();
     const userId = formData.get("userId") as string;
     const rawText = formData.get("rawText") as string;
     const fileUrl = formData.get("fileUrl") as string;
-    const fileName = formData.get("fileName") as string;
-    const fileType = formData.get("fileType") as string;
+    const fileName = formData.get("fileName") as string || null;
+    const fileType = formData.get("fileType") as string || null;
     
     // Validate required fields
     if (!userId || (!rawText && !fileUrl)) {
@@ -390,30 +467,52 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
     
-    // Use text from input or placeholder for file upload
-    const resumeText = rawText || "Resume content extracted from file";
+    // Process file if URL is provided
+    let resumeText = rawText;
+    let fileSize: number | null = null;
+    
+    if (fileUrl && !rawText) {
+      console.log("Processing file from URL:", fileUrl);
+      
+      // Download file
+      const downloadResult = await downloadFileFromUrl(fileUrl);
+      
+      if (downloadResult.error) {
+        return NextResponse.json({ 
+          error: `Failed to download file: ${downloadResult.error.message}` 
+        }, { status: 500 });
+      }
+      
+      tempFilePath = downloadResult.path;
+      fileSize = downloadResult.size;
+      
+      if (!tempFilePath) {
+        return NextResponse.json({ 
+          error: "Failed to save file temporarily" 
+        }, { status: 500 });
+      }
+      
+      // Extract text from file
+      try {
+        resumeText = await extractText(tempFilePath);
+        console.log("Successfully extracted text, length:", resumeText.length);
+        
+        // Validate extracted text
+        if (!resumeText || resumeText.length < 50) {
+          return NextResponse.json({ 
+            error: "Extracted text is too short or empty. Please upload a different file or provide raw text." 
+          }, { status: 400 });
+        }
+      } catch (extractError: any) {
+        return NextResponse.json({ 
+          error: `Failed to extract text from file: ${extractError.message}` 
+        }, { status: 500 });
+      }
+    }
     
     // Detect language of resume text
     const language = await detectLanguage(resumeText);
     console.log("Detected language:", language);
-    
-    // Create optimization prompt
-    const prompt = `Optimize this resume in ${language} to improve its ATS score and appeal to recruiters.
-    
-    Resume content:
-    ${resumeText.substring(0, 6000)}
-    
-    Please improve this resume to:
-    1. Enhance its structure and formatting
-    2. Use more powerful language and action verbs
-    3. Highlight key achievements and skills
-    4. Increase its compatibility with Applicant Tracking Systems (ATS)
-    
-    Return these outputs in JSON format:
-    - optimizedText: The complete improved resume
-    - suggestions: Specific improvements (what to change and why)
-    - keywordSuggestions: Industry-relevant keywords for this resume
-    - atsScore: A score from 0-100 indicating ATS compatibility`;
     
     // Try optimization with OpenAI first (with retry)
     let result, aiProvider;
@@ -421,7 +520,7 @@ export async function POST(req: NextRequest) {
     
     try {
       console.log("Starting optimization process with OpenAI...");
-      const openAiResult = await withRetry(() => tryOptimizeWithOpenAI(prompt));
+      const openAiResult = await withRetry(() => tryOptimizeWithOpenAI(resumeText, language));
       
       if (openAiResult) {
         result = openAiResult.result;
@@ -436,7 +535,7 @@ export async function POST(req: NextRequest) {
     // If OpenAI fails, try Gemini
     if (!optimizationSuccess) {
       try {
-        const geminiResult = await withRetry(() => tryOptimizeWithGemini(prompt));
+        const geminiResult = await withRetry(() => tryOptimizeWithGemini(resumeText, language));
         
         if (geminiResult) {
           result = geminiResult.result;
@@ -452,7 +551,7 @@ export async function POST(req: NextRequest) {
     // If both OpenAI and Gemini fail, try Claude
     if (!optimizationSuccess) {
       try {
-        const claudeResult = await tryOptimizeWithClaude(prompt);
+        const claudeResult = await tryOptimizeWithClaude(resumeText, language);
         
         if (claudeResult) {
           result = claudeResult.result;
@@ -462,6 +561,7 @@ export async function POST(req: NextRequest) {
         }
       } catch (claudeError) {
         console.error("All optimization providers failed");
+        cleanupTempFile(tempFilePath);
         return NextResponse.json(
           { error: "Failed to optimize resume after trying all available services" },
           { status: 500 }
@@ -476,11 +576,25 @@ export async function POST(req: NextRequest) {
     // Save to database
     try {
       console.log("Saving optimized resume to database");
+      
+      // Get or create Supabase UUID for the Clerk user ID
+      let supabaseUserId;
+      try {
+        // Convert Clerk ID to valid Supabase UUID
+        supabaseUserId = await getOrCreateSupabaseUuid(supabaseAdmin, userId);
+        console.log("Using Supabase UUID:", supabaseUserId, "for Clerk ID:", userId);
+      } catch (uuidError) {
+        console.error("Error getting Supabase UUID:", uuidError);
+        // Fall back to using the Clerk ID directly in this case
+        supabaseUserId = userId;
+      }
+      
       const { data: resumeData, error: resumeError } = await supabaseAdmin
         .from('resumes')
         .insert({
-          user_id: userId,
-          auth_user_id: userId,
+          user_id: supabaseUserId, // Use the Supabase UUID
+          auth_user_id: userId,    // Keep the original Clerk ID for reference
+          supabase_user_id: supabaseUserId, // Set this field too for consistency
           original_text: resumeText,
           optimized_text: result.optimizedText,
           language: language,
@@ -488,6 +602,7 @@ export async function POST(req: NextRequest) {
           file_url: fileUrl || null,
           file_name: fileName || null,
           file_type: fileType || null,
+          file_size: fileSize || null,
           ai_provider: aiProvider
         })
         .select()
@@ -540,6 +655,9 @@ export async function POST(req: NextRequest) {
       // Continue to return results even if database operations fail
     }
     
+    // Clean up temporary file
+    cleanupTempFile(tempFilePath);
+    
     // Return successful response with optimization results
     return NextResponse.json({
       resumeId: resumeId || "temp-id",
@@ -552,6 +670,9 @@ export async function POST(req: NextRequest) {
     });
     
   } catch (error: any) {
+    // Clean up temporary file in case of error
+    cleanupTempFile(tempFilePath);
+    
     // Handle any unexpected errors
     console.error("Unexpected optimization error:", error);
     return NextResponse.json(

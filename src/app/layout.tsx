@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Inter as Inter } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/common/header";
-import Footer from "@/components/common/footer";
+import Header from "@/components/Common/Header";
+import Footer from "@/components/Common/Footer";
 import { ClerkProvider } from '@clerk/nextjs'
 import { Toaster } from "@/components/ui/sonner"
 

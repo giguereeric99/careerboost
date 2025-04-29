@@ -1,11 +1,11 @@
 import React from 'react'
-import HeroSection from "@/components/home/heroSection";
-import PricingSection from "@/components/home/pricingSection";
-import { Button } from "@/components/ui/button";
-import FeaturesSection from "@/components/home/featuresSection";
-import ResumeOptimizer from "@/components/dashboard/resumeOptimizer";
-import JobsSection from "@/components/home/jobsSection";
-import InterviewSection from "@/components/home/interviewSection";
+import HeroSection from "@/components/Home/HeroSection";
+import PricingSection from "@/components/Home/PricingSection";
+import { Button } from "@/components/ui/Button";
+import FeaturesSection from "@/components/Home/FeaturesSection";
+import ResumeOptimizer from "@/components/dashboard/ResumeOptimizer";
+import JobsSection from "@/components/Home/JobsSection";
+import InterviewSection from "@/components/Home/InterviewSection";
 
 export default function Home() {
 

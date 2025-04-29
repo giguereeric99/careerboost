@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { extractText } from "@/utils/processResume";
+import getResumeOptimizationPrompt from "@/utils/prompts/resumeOptimizationPrompt";
 import fs from "fs";
 import path from "path";
 
@@ -75,46 +76,14 @@ async function detectLanguage(text: string): Promise<string> {
 }
 
 /**
- * Creates an optimization prompt for Gemini based on resume text
- * 
- * @param text - The resume text to optimize
- * @param language - The detected language of the resume
- * @returns A formatted prompt for Gemini
- */
-function createOptimizationPrompt(text: string, language: string): string {
-  return `This resume is written in ${language}.
-Please optimize it to be recruiter-friendly and ATS-compatible.
-Use professional formatting and rewrite clearly.
-
-Important guidelines:
-- Make it scannable with clear sections and bullet points
-- Use strong action verbs for accomplishments
-- Quantify achievements where possible
-- Include relevant keywords for ATS systems
-- Maintain professional tone and formatting
-
-Return a complete resume with these sections:
-1. Personal Info (name, contact information)
-2. Professional Summary (concise overview of qualifications)
-3. Experience (roles, companies, dates, and key accomplishments)
-4. Education (degrees, institutions, dates)
-5. Skills (technical and soft skills relevant to the field)
-6. Additional sections if applicable (certifications, projects, etc.)
-
-Use clear, consistent formatting. Keep the content in ${language}.
-
-Original resume:
-${text}`;
-}
-
-/**
  * Attempts to optimize a resume with Gemini with multiple retries
  * 
- * @param prompt - The optimization prompt
+ * @param resumeText - The resume text to optimize
+ * @param language - The detected language of the resume
  * @param maxAttempts - Maximum number of retry attempts
- * @returns The optimized text or throws an error if all attempts fail
+ * @returns The optimization result object or throws an error if all attempts fail
  */
-async function optimizeWithGemini(prompt: string, maxAttempts = 3): Promise<string> {
+async function optimizeWithGemini(resumeText: string, language: string, maxAttempts = 3): Promise<any> {
   // Initialize the Gemini model with configuration
   const model = genAI.getGenerativeModel({
     model: "gemini-pro",
@@ -124,7 +93,13 @@ async function optimizeWithGemini(prompt: string, maxAttempts = 3): Promise<stri
 
   console.log("[Gemini] Starting optimization with up to", maxAttempts, "attempts");
   
-  let optimizedText = "";
+  // Get the standardized prompt for Gemini
+  const { systemPrompt, userPrompt } = getResumeOptimizationPrompt(resumeText, 'gemini', { language });
+  
+  // Combine system and user prompts for Gemini (as it doesn't have separate system/user inputs)
+  const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`;
+  
+  let optimizationResult = null;
   let attempts = 0;
   let lastError = null;
 
@@ -135,17 +110,20 @@ async function optimizeWithGemini(prompt: string, maxAttempts = 3): Promise<stri
       console.log(`[Gemini] Attempt ${attempts}/${maxAttempts}`);
       
       // Generate content with Gemini
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent(combinedPrompt);
       const response = await result.response;
-      optimizedText = response.text();
+      const responseText = response.text();
+      
+      // Parse and validate the JSON response
+      optimizationResult = parseGeminiResponse(responseText);
       
       // Validate response quality
-      if (optimizedText && optimizedText.length > 200) {
-        console.log(`[Gemini] Success on attempt ${attempts} - generated ${optimizedText.length} chars`);
-        return optimizedText;
+      if (optimizationResult && optimizationResult.optimizedText && optimizationResult.optimizedText.length > 200) {
+        console.log(`[Gemini] Success on attempt ${attempts} - generated ${optimizationResult.optimizedText.length} chars`);
+        return optimizationResult;
       } else {
-        console.warn(`[Gemini] Attempt ${attempts}: Response too short (${optimizedText.length} chars)`);
-        lastError = new Error("Response too short");
+        console.warn(`[Gemini] Attempt ${attempts}: Response too short or invalid`);
+        lastError = new Error("Response too short or invalid JSON structure");
       }
     } catch (genError) {
       console.error(`[Gemini] Attempt ${attempts} failed:`, genError);
@@ -161,8 +139,80 @@ async function optimizeWithGemini(prompt: string, maxAttempts = 3): Promise<stri
     }
   }
   
-  // If we get here, all attempts failed
+  // If we get here, all attempts failed - create a fallback response
+  if (!optimizationResult) {
+    console.warn("[Gemini] All optimization attempts failed, generating fallback response");
+    return {
+      optimizedText: resumeText, // Return original text as fallback
+      suggestions: generateFallbackSuggestions(resumeText),
+      keywordSuggestions: extractKeywords(resumeText),
+      atsScore: 65 // Default score
+    };
+  }
+  
+  // Should never reach here, but just in case
   throw lastError || new Error("Failed to optimize resume with Gemini");
+}
+
+/**
+ * Parses the response from Gemini into a structured optimization result
+ * 
+ * @param responseText - The raw text response from Gemini
+ * @returns A structured optimization result object
+ */
+function parseGeminiResponse(responseText: string): any {
+  try {
+    // Try direct JSON parsing first
+    let parsedResult = JSON.parse(responseText);
+    
+    // Return the parsed result if it has the expected structure
+    if (parsedResult && parsedResult.optimizedText) {
+      // Ensure suggestions is an array with 1-5 elements
+      if (!parsedResult.suggestions || !Array.isArray(parsedResult.suggestions)) {
+        parsedResult.suggestions = generateFallbackSuggestions(parsedResult.optimizedText);
+      } else if (parsedResult.suggestions.length > 5) {
+        parsedResult.suggestions = parsedResult.suggestions.slice(0, 5);
+      }
+      
+      // Ensure keywordSuggestions is an array with 1-10 elements
+      if (!parsedResult.keywordSuggestions || !Array.isArray(parsedResult.keywordSuggestions)) {
+        parsedResult.keywordSuggestions = extractKeywords(parsedResult.optimizedText);
+      } else if (parsedResult.keywordSuggestions.length > 10) {
+        parsedResult.keywordSuggestions = parsedResult.keywordSuggestions.slice(0, 10);
+      }
+      
+      // Ensure atsScore is a number between 0-100
+      if (typeof parsedResult.atsScore !== 'number' || parsedResult.atsScore < 0 || parsedResult.atsScore > 100) {
+        parsedResult.atsScore = calculateAtsScore(parsedResult.optimizedText);
+      }
+      
+      return parsedResult;
+    }
+  } catch (jsonError) {
+    console.error("[Gemini] Failed to parse JSON response:", jsonError);
+    
+    // Try to extract JSON by finding text between curly braces
+    try {
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const extractedJson = jsonMatch[0];
+        return parseGeminiResponse(extractedJson); // Recursively try to parse the extracted JSON
+      }
+    } catch (extractError) {
+      console.error("[Gemini] Failed to extract JSON from response:", extractError);
+    }
+  }
+  
+  // If we get here, we couldn't parse the JSON
+  console.warn("[Gemini] Returning raw text as optimizedText with generated suggestions");
+  
+  // If all parsing fails, treat the entire response as the optimized text
+  return {
+    optimizedText: responseText,
+    suggestions: generateFallbackSuggestions(responseText),
+    keywordSuggestions: extractKeywords(responseText),
+    atsScore: calculateAtsScore(responseText)
+  };
 }
 
 /**
@@ -219,20 +269,8 @@ export async function POST(req: NextRequest) {
     // Detect language
     const language = await detectLanguage(text);
     
-    // Create optimization prompt
-    const prompt = createOptimizationPrompt(text, language);
-    
     // Optimize with Gemini (with retries)
-    const optimizedText = await optimizeWithGemini(prompt);
-    
-    // Format response to match the expected structure from the main optimization API
-    const response = {
-      optimizedText,
-      language,
-      suggestions: generateSuggestions(text, optimizedText),
-      keywordSuggestions: extractKeywords(optimizedText),
-      atsScore: calculateAtsScore(optimizedText)
-    };
+    const optimizationResult = await optimizeWithGemini(text, language);
     
     // Clean up temporary file
     if (tempFilePath && fs.existsSync(tempFilePath)) {
@@ -240,7 +278,7 @@ export async function POST(req: NextRequest) {
       console.log("[Gemini] Cleaned up temporary file");
     }
     
-    return NextResponse.json(response);
+    return NextResponse.json(optimizationResult);
   } catch (error: any) {
     console.error("[Gemini] Error:", error);
     
@@ -258,58 +296,57 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Generates basic improvement suggestions by comparing original and optimized text
- * This is a simple implementation - in production, you might want more sophisticated analysis
+ * Generates fallback improvement suggestions when AI suggestions aren't available
  * 
- * @param originalText - The original resume text
- * @param optimizedText - The optimized resume text
+ * @param resumeText - The resume text to analyze
  * @returns An array of suggestion objects
  */
-function generateSuggestions(originalText: string, optimizedText: string): any[] {
-  // Simple suggestions based on common resume improvements
+function generateFallbackSuggestions(resumeText: string): any[] {
+  // Basic suggestions that generally apply to most resumes
   const suggestions = [
     {
-      type: "summary",
-      text: "Add a stronger professional summary",
-      impact: "Creates a better first impression and highlights your value proposition"
+      type: "structure",
+      text: "Improve the overall structure with clear section headings",
+      impact: "Makes your resume easier to scan for busy recruiters"
     },
     {
-      type: "experience",
+      type: "content",
       text: "Use more action verbs and quantify achievements",
       impact: "Makes accomplishments more impactful and demonstrates measurable results"
     },
     {
       type: "skills",
-      text: "List skills in a dedicated section",
-      impact: "Improves ATS compatibility and makes skills easier to scan"
+      text: "Create a dedicated skills section with relevant keywords",
+      impact: "Improves ATS compatibility and showcases your core competencies"
     }
   ];
   
-  // Check for specific improvements
-  if (originalText.split('\n').length < optimizedText.split('\n').length) {
+  // Add additional contextual suggestions based on the resume content
+  if (!resumeText.toLowerCase().includes("summary") && !resumeText.toLowerCase().includes("profile")) {
     suggestions.push({
-      type: "formatting",
-      text: "Improve formatting with better section breaks",
-      impact: "Enhances readability and makes content easier to scan"
+      type: "content",
+      text: "Add a professional summary at the top of your resume",
+      impact: "Provides a quick overview of your qualifications and career goals"
     });
   }
   
-  if (optimizedText.match(/[0-9]+%|increased|reduced|improved|managed|led|developed/gi)) {
+  if ((resumeText.match(/[.!?]/g) || []).length < 10) {
     suggestions.push({
-      type: "achievements",
-      text: "Highlight quantifiable achievements",
-      impact: "Shows concrete impact rather than just listing responsibilities"
+      type: "language",
+      text: "Expand descriptions of your experiences with more details",
+      impact: "Gives employers a better understanding of your capabilities and achievements"
     });
   }
   
-  return suggestions;
+  // Return 1-5 suggestions
+  return suggestions.slice(0, 5);
 }
 
 /**
  * Extracts potential keywords from the optimized text
  * 
  * @param optimizedText - The optimized resume text
- * @returns An array of keyword strings
+ * @returns An array of keyword strings (1-10 elements)
  */
 function extractKeywords(optimizedText: string): string[] {
   // Common industry keywords to look for
@@ -339,8 +376,8 @@ function extractKeywords(optimizedText: string): string[] {
       !["I", "A", "The", "An", "And", "For", "With"].includes(word)
     );
   
-  // Combine and deduplicate
-  return [...new Set([...matches, ...capitalizedKeywords])].slice(0, 15);
+  // Combine, deduplicate, and limit to 10 keywords
+  return [...new Set([...matches, ...capitalizedKeywords])].slice(0, 10);
 }
 
 /**

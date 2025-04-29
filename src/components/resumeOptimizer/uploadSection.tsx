@@ -150,6 +150,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
     // Create form data for API request
     const formData = new FormData();
     formData.append("fileUrl", fileUrl);
+    formData.append("fileName", fileName);
     formData.append("fileType", fileType || "");
     formData.append("userId", user?.id || "");
 

@@ -9,7 +9,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Button } from '../ui/button'
-import NavLink from './navLink'
+import NavLink from './NavLink'
 import {
   SignInButton,
   SignUpButton,
@@ -18,7 +18,7 @@ import {
   UserButton,
   useUser
 } from '@clerk/nextjs'
-import NavBar from './navBar';
+import NavBar from './NavBar';
 
 const Header = () => {
   const [isScrolled, setIsScrolled] = React.useState(false);

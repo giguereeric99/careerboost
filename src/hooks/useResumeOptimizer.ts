@@ -168,11 +168,14 @@ export function useResumeOptimizer() {
         throw error;
       }
       
-      if (data) {
+      if (!error && data) {
         // Update state with loaded resume data
         setResumeId(data.id);
         setOptimizedText(data.optimized_text);
         setOptimizationScore(data.ats_score || 65);
+
+        const parsedData = parseOptimizedText(data.optimized_text);
+        setOptimizedData(parsedData);
         
         // Set keywords if available
         if (data.keywords && data.keywords.length > 0) {

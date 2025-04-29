@@ -1,3 +1,14 @@
+/**
+ * ResumeOptimizer Component
+ * 
+ * Main component that orchestrates the complete resume optimization workflow:
+ * 1. File upload or text input
+ * 2. Resume parsing and analysis
+ * 3. AI-powered optimization
+ * 4. WYSIWYG editing and template preview
+ * 5. Download or save optimized resume
+ */
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -10,101 +21,75 @@ import { useUser } from "@clerk/nextjs";
 // Import the custom hook for resume optimization
 import { useResumeOptimizer } from '@/hooks/useResumeOptimizer';
 
-// Import only the parsing utilities that are needed directly in this component
-import { 
-  parseOptimizedText,
-  extractKeywords,
-  calculateAtsScore
-} from '@/services/resumeParser';
+// Import utils for HTML processing
+import { prepareOptimizedTextForEditor } from '@/utils/htmlProcessor';
 
 // Import types
-import { ResumeData, Suggestion } from '@/types/resume';
+import { Suggestion } from '@/types/resume';
 
 // Import components for resume optimization workflow
-import UploadSection from '@/components/resumeOptimizer/uploadSection';
-import ResumePreview from '@/components/resumeOptimizer/resumePreview';
-import ScoreCard from '@/components/resumeOptimizer/scoreCard';
-import SuggestionsList from '@/components/resumeOptimizer/suggestionsList';
-import KeywordList from '@/components/resumeOptimizer/keywordList';
-import TemplateGallery from '@/components/resumeOptimizer/templateGallery';
-import ProUpgradeDialog from '@/components/resumeOptimizer/proUpgradeDialog';
+import UploadSection from '@/components/ResumeOptimizer/UploadSection';
+import ResumePreview from '@/components/ResumeOptimizer/ResumePreview';
+import ScoreCard from '@/components/ResumeOptimizer/ScoreCard';
+import SuggestionsList from '@/components/ResumeOptimizer/SuggestionsList';
+import KeywordList from '@/components/ResumeOptimizer/KeywordList';
+import TemplateGallery from '@/components/ResumeOptimizer/TemplateGallery';
+import ProUpgradeDialog from '@/components/ResumeOptimizer/ProUpgradeDialog';
 import { resumeTemplates } from '../../constants/resumeTemplates';
 
 /**
  * ResumeOptimizer Component
  * 
- * Main component that orchestrates the resume optimization workflow:
- * 1. File upload or text input
- * 2. Resume parsing and analysis
- * 3. AI-powered optimization
- * 4. Preview and template selection
- * 5. Download or save optimized resume
+ * This is the main component that provides the resume optimization functionality.
+ * It handles the workflow from upload to optimization to preview and template selection.
  */
-const ResumeOptimizer = () => {
-  // Authentication state from Clerk
+const ResumeOptimizer: React.FC = () => {
+  // Get authentication state from Clerk
   const { user } = useUser();
 
   // Use the custom hook for resume optimization
   // This hook manages the core resume optimization logic and state
   const {
+    // Loading states
     isUploading,
     isParsing,
     isOptimizing,
     isApplyingChanges,
     needsRegeneration,
+    
+    // Data states
     selectedFile,
-    resumeData,
-    optimizedData,
-    optimizedText,
-    resumeId,
-    suggestions,
-    keywords,
-    optimizationScore,
-    handleFileUpload,
-    optimizeResumeData,
-    loadLatestResume,
-    applyTemplateToResume,
-    applySuggestion,
-    toggleKeyword,
-    applyChanges,
-    setSelectedFile
+    resumeData,           // Original parsed resume data
+    optimizedData,        // Optimized resume data (processed by AI)
+    optimizedText,        // Raw optimized text (as string)
+    resumeId,             // ID of the saved resume in database
+    suggestions,          // Improvement suggestions from AI
+    keywords,             // Keyword suggestions from AI
+    optimizationScore,    // ATS compatibility score
+    
+    // Action handlers
+    handleFileUpload,     // Process uploaded file
+    optimizeResumeData,   // Send data to AI for optimization
+    loadLatestResume,     // Load most recent resume for current user
+    applyTemplateToResume, // Apply selected template
+    applySuggestion,      // Apply a suggestion to the resume
+    toggleKeyword,        // Toggle a keyword's applied state
+    applyChanges,         // Apply all pending changes (regenerate)
+    setSelectedFile,      // Update the selected file
+    setOptimizedData,     // Set optimized data directly
+    setOptimizedText      // Set optimized text directly
   } = useResumeOptimizer();
   
-  // Active tab state (upload or preview)
-  const [activeTab, setActiveTab] = useState("upload");
-  
-  // Resume content and file information
-  const [resumeContent, setResumeContent] = useState("");
-  const [rawText, setRawText] = useState<string>("");
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  
-  // Loading states that aren't in the hook
-  const [initialLoading, setInitialLoading] = useState(false);
-
-  // Template selection
-  const [selectedTemplate, setSelectedTemplate] = useState("basic");
-  
-  // Pro upgrade dialog state
-  const [showProDialog, setShowProDialog] = useState(false);
-  
-  // Resume sections for preview
-  const [resumeSections, setResumeSections] = useState({
-    personalInfo: {
-      name: "",
-      title: "",
-      contact: "",
-      about: ""
-    },
-    experience: [] as any[],
-    education: {
-      degree: "",
-      school: "",
-      year: "",
-      gpa: ""
-    },
-    skills: [] as string[]
-  });
+  // UI state management
+  const [activeTab, setActiveTab] = useState("upload");  // Current active tab
+  const [resumeContent, setResumeContent] = useState(""); // Content from text input
+  const [rawText, setRawText] = useState<string>("");     // Raw text for API
+  const [fileUrl, setFileUrl] = useState<string | null>(null); // URL of uploaded file
+  const [fileName, setFileName] = useState<string | null>(null); // Name of uploaded file
+  const [initialLoading, setInitialLoading] = useState(false);  // Initial loading state
+  const [selectedTemplate, setSelectedTemplate] = useState("basic"); // Selected template ID
+  const [showProDialog, setShowProDialog] = useState(false); // Pro upgrade dialog visibility
+  const [editedHtml, setEditedHtml] = useState<string>(''); // HTML content from TipTap editor
 
   /**
    * Effect to reset regeneration state when changing templates
@@ -127,22 +112,27 @@ const ResumeOptimizer = () => {
   }, [activeTab, user, optimizedText]);
   
   /**
-   * Effect to parse optimized text into resume sections when it becomes available
-   * This effect updates the UI with the optimized resume data
+   * Effect to log when optimized text becomes available
    */
   useEffect(() => {
     if (optimizedText && optimizedText.length > 0) {
-      // Parse the optimized text into structured data
-      const parsedData = parseOptimizedText(optimizedText);
+      console.log("Optimized text received (sample):", optimizedText.substring(0, 100) + "...");
+      console.log("Full text length:", optimizedText.length);
       
-      // Update resume sections for preview
-      updateResumeSectionsFromData(parsedData);
+      // Process the text to make it suitable for the editor
+      try {
+        const processedHtml = prepareOptimizedTextForEditor(optimizedText);
+        setEditedHtml(processedHtml);
+        console.log("Processed HTML for editor (sample):", processedHtml.substring(0, 100) + "...");
+      } catch (error) {
+        console.error("Error processing optimized text:", error);
+      }
     }
   }, [optimizedText]);
   
   /**
    * Loads the most recent optimized resume for the current user
-   * Wrapper around the hook's loadLatestResume function
+   * Wrapper around the hook's loadLatestResume function with additional UI handling
    */
   const loadLatestOptimizedResumeWrapper = async () => {
     if (!user?.id) return;
@@ -150,70 +140,23 @@ const ResumeOptimizer = () => {
     setInitialLoading(true);
     
     try {
+      console.log("Loading latest resume for user:", user.id);
+      
       // Use the hook's function to load the resume
       const data = await loadLatestResume(user.id);
       
       if (!data) {
-        // No resume found or error occurred, handled by the hook
+        console.log("No resume data found or error occurred");
         setInitialLoading(false);
         return;
       }
       
+      console.log("Resume loaded successfully:", data.id);
     } catch (error: any) {
-      // Error already handled by the hook
       console.error("Exception in loadLatestOptimizedResumeWrapper:", error);
     } finally {
       setInitialLoading(false);
     }
-  };
-  
-  /**
-   * Updates resume sections from parsed data for preview
-   * Transforms the parsed data into UI-friendly format
-   * 
-   * @param data - Parsed resume data
-   */
-  const updateResumeSectionsFromData = (data: ResumeData) => {
-    // Format contact information
-    let contactInfo = "";
-    if (data.location) contactInfo += data.location;
-    if (data.email) {
-      if (contactInfo) contactInfo += " | ";
-      contactInfo += data.email;
-    }
-    if (data.phone) {
-      if (contactInfo) contactInfo += " | ";
-      contactInfo += data.phone;
-    }
-    
-    // Update resume sections for preview
-    setResumeSections({
-      personalInfo: {
-        name: data.fullName || "Your Name",
-        title: data.title || "Professional Title",
-        contact: contactInfo || "Contact Information",
-        about: data.summary || "Professional summary"
-      },
-      experience: data.experience.map(exp => ({
-        title: exp.position,
-        company: exp.company,
-        period: `${exp.startDate}${exp.endDate ? ` - ${exp.endDate}` : ''}`,
-        location: exp.location || '',
-        achievements: exp.description || []
-      })),
-      education: data.education.length > 0 ? {
-        degree: data.education[0].degree,
-        school: data.education[0].institution,
-        year: data.education[0].endDate || data.education[0].startDate || '',
-        gpa: data.education[0].gpa || ''
-      } : {
-        degree: "",
-        school: "",
-        year: "",
-        gpa: ""
-      },
-      skills: data.skills || []
-    });
   };
 
   /**
@@ -222,8 +165,24 @@ const ResumeOptimizer = () => {
    * @param e - Textarea change event
    */
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setResumeContent(e.target.value);
-    setRawText(e.target.value);
+    const newText = e.target.value;
+    setResumeContent(newText);
+    setRawText(newText);
+  };
+
+  /**
+   * Handles changes from the TipTap editor
+   * 
+   * @param html - HTML content from the editor
+   */
+  const handleEditorChange = (html: string) => {
+    console.log("Editor content changed");
+    setEditedHtml(html);
+    
+    // Also update optimizedText if it exists
+    if (typeof setOptimizedText === 'function') {
+      setOptimizedText(html);
+    }
   };
 
   /**
@@ -255,6 +214,19 @@ const ResumeOptimizer = () => {
   };
   
   /**
+   * Handles applying a keyword directly from the editor
+   * 
+   * @param keyword - Keyword to apply
+   */
+  const handleEditorKeywordApply = (keyword: string) => {
+    // Find the keyword in the keywords array
+    const keywordIndex = keywords.findIndex(k => k.text === keyword);
+    if (keywordIndex !== -1) {
+      toggleKeyword(keywordIndex);
+    }
+  };
+  
+  /**
    * Handles applying a suggestion from the suggestions list
    * Delegates to the hook's applySuggestion function
    * 
@@ -274,7 +246,7 @@ const ResumeOptimizer = () => {
 
   /**
    * Handles resume download action
-   * In production, this would generate and download a file
+   * Creates an HTML file with the edited content and template styling
    */
   const handleDownload = () => {
     // Check if changes need to be regenerated first
@@ -286,10 +258,51 @@ const ResumeOptimizer = () => {
       return;
     }
     
-    toast.success("Resume downloaded");
+    // Use the edited HTML if available, otherwise use the optimized text
+    const contentToDownload = editedHtml || optimizedText;
     
-    // In a real implementation, this would generate and download a PDF/DOCX file
-    // based on the selected template and current resume content
+    if (!contentToDownload) {
+      toast.error("No content to download");
+      return;
+    }
+    
+    // Create a temporary HTML file with the content
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Resume</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      margin: 0;
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    ${template.previewClass ? `.resume-content { ${template.previewClass.replace(/border[^;]+;/g, '')} }` : ''}
+  </style>
+</head>
+<body>
+  <div class="resume-content">
+    ${contentToDownload}
+  </div>
+</body>
+</html>`;
+    
+    // Create a blob and download link
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'resume.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success("Resume downloaded");
   };
 
   /**
@@ -306,10 +319,11 @@ const ResumeOptimizer = () => {
       return;
     }
     
-    toast.success("Resume saved to your account");
+    // TODO: Implement actual save functionality
+    // This would likely involve sending the edited HTML to your API
+    // and updating the resume in the database
     
-    // In a real implementation, this would save the current state of the resume
-    // to the user's account in the database
+    toast.success("Resume saved to your account");
   };
 
   /**
@@ -322,7 +336,7 @@ const ResumeOptimizer = () => {
 
   /**
    * Handles form submission for resume optimization from text input
-   * Processes the pasted text
+   * Processes the pasted text and calls the optimization API
    */
   const handleSubmitText = async () => {
     if (!rawText || rawText.length < 50) {
@@ -350,6 +364,7 @@ const ResumeOptimizer = () => {
       }
   
       const result = await res.json();
+      console.log("API optimization result received");
       
       // Navigate to preview tab on success
       setActiveTab("preview");
@@ -367,11 +382,14 @@ const ResumeOptimizer = () => {
    * 
    * @param url - URL of the uploaded file
    * @param name - Name of the uploaded file
+   * @param size - Size of the uploaded file
+   * @param type - MIME type of the uploaded file
    */
-  const onFileUpload = (url: string, name: string) => {
+  const onFileUpload = (url: string, name: string, size?: number, type?: string) => {
+    console.log("File uploaded:", { url, name, size, type });
     setFileUrl(url);
     setFileName(name);
-    setSelectedFile(new File([""], name, { type: "application/octet-stream" }));
+    setSelectedFile(new File([""], name, { type: type || "application/octet-stream" }));
   };
 
   /**
@@ -394,6 +412,7 @@ const ResumeOptimizer = () => {
     </div>
   );
 
+  // Main component render
   return (
     <div className="py-8">
       {/* Header section */}
@@ -466,14 +485,27 @@ const ResumeOptimizer = () => {
                   <div className="grid md:grid-cols-5 gap-6">
                     {/* Left column (3/5) - Resume preview */}
                     <div className="col-span-3">
+                      {/* New ResumePreview component with TipTap integration */}
                       <ResumePreview
-                        resumeSections={resumeSections}
+                        optimizedText={optimizedText}
                         selectedTemplate={selectedTemplate}
                         templates={resumeTemplates}
                         appliedKeywords={appliedKeywordsArray}
+                        suggestions={suggestions}
                         onDownload={handleDownload}
                         onSave={handleSave}
+                        onTextChange={handleEditorChange}
+                        onApplySuggestion={handleApplySuggestion}
+                        onApplyKeyword={handleEditorKeywordApply}
                         isOptimizing={isOptimizing || isApplyingChanges}
+                        language={optimizedData?.language || "English"}
+                      />
+
+                      {/* Resume template gallery */}
+                      <TemplateGallery
+                        templates={resumeTemplates}
+                        selectedTemplate={selectedTemplate}
+                        onTemplateSelect={handleTemplateSelect}
                       />
                     </div>
                     
@@ -494,13 +526,6 @@ const ResumeOptimizer = () => {
                         keywords={keywords}
                         onKeywordApply={handleKeywordApply}
                         needsRegeneration={needsRegeneration}
-                      />
-
-                      {/* Resume template gallery */}
-                      <TemplateGallery
-                        templates={resumeTemplates}
-                        selectedTemplate={selectedTemplate}
-                        onTemplateSelect={handleTemplateSelect}
                       />
                     </div>
                   </div>
