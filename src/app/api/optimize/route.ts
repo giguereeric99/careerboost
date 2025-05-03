@@ -34,7 +34,7 @@ const anthropic = new Anthropic({
 
 // Available models for each provider, in order of preference
 const OPENAI_MODELS = [
-  "gpt-4", // Most widely available model
+  // "gpt-4", // Most widely available model
   "gpt-3.5-turbo" // Fallback option
 ];
 

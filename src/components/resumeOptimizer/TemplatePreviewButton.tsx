@@ -1,12 +1,13 @@
 /**
  * Template Preview Button Component
  * 
- * A button that opens a modal to preview the resume with applied template
+ * A button that opens a custom modal to preview the resume with applied template
+ * Updated to use the custom modal implementation
  */
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Eye } from 'lucide-react';
-import ResumePreviewModal from './ResumePreviewModal';
+import CustomResumePreviewModal from './CustomResumePreviewModal';
 import { ResumeTemplateType } from '@/types/resumeTemplateTypes';
 import { getTemplateById } from '@/constants/resumeTemplates';
 
@@ -18,7 +19,7 @@ interface TemplatePreviewButtonProps {
 
 /**
  * TemplatePreviewButton component
- * Shows a button to preview the resume and manages the preview modal state
+ * Shows a button to preview the resume and manages the custom preview modal state
  */
 const TemplatePreviewButton: React.FC<TemplatePreviewButtonProps> = ({
   resumeContent,
@@ -36,6 +37,11 @@ const TemplatePreviewButton: React.FC<TemplatePreviewButtonProps> = ({
     setIsPreviewOpen(true);
   };
   
+  // Close the preview modal
+  const handleClosePreview = () => {
+    setIsPreviewOpen(false);
+  };
+  
   return (
     <>
       {/* Preview Button */}
@@ -49,10 +55,10 @@ const TemplatePreviewButton: React.FC<TemplatePreviewButtonProps> = ({
         {children || "Preview"}
       </Button>
       
-      {/* Preview Modal */}
-      <ResumePreviewModal
+      {/* Custom Preview Modal */}
+      <CustomResumePreviewModal
         open={isPreviewOpen}
-        onOpenChange={setIsPreviewOpen}
+        onClose={handleClosePreview}
         resumeContent={resumeContent}
         selectedTemplate={selectedTemplate}
       />

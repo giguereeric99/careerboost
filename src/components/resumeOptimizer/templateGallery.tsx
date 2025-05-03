@@ -1,8 +1,8 @@
 /**
  * Enhanced Template Gallery Component
  * 
- * Displays available resume templates with improved visual design
- * Allows users to select a template for their resume
+ * Displays available resume templates in a two-column layout
+ * Features improved visual design and clear template selection
  */
 import React from 'react';
 import { ResumeTemplateType } from '@/types/resumeTemplateTypes';
@@ -14,6 +14,12 @@ interface TemplateGalleryProps {
   onTemplateSelect: (templateId: string) => void;
 }
 
+/**
+ * TemplateGallery Component
+ * 
+ * Presents template options in a responsive two-column grid
+ * Shows template previews and allows user selection
+ */
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ 
   templates, 
   selectedTemplate, 
@@ -23,7 +29,8 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({
     <div className="bg-white border rounded-lg p-6 mt-6 shadow-sm">
       <h3 className="font-semibold text-lg mb-4">Choose Template</h3>
       
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+      {/* Two-column grid layout */}
+      <div className="grid grid-cols-2 gap-6">
         {templates.map(template => (
           <div key={template.id} className="relative group">
             {/* Template Preview Card */}

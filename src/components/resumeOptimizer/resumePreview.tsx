@@ -1,48 +1,90 @@
 /**
  * ResumePreview Component
  * 
- * This component displays a preview of the optimized resume using TipTap WYSIWYG editor.
- * It allows users to view and edit their resume content with rich formatting,
- * and provides a way to preview the resume with different templates.
- * 
- * Updated to support the new template system with enhanced preview capabilities.
+ * This component displays a preview of the optimized resume and allows editing.
+ * Features:
+ * - Toggle between view and edit modes
+ * - Section-based editing with TipTap rich text editor
+ * - Support for multiple templates
+ * - Download functionality
+ * - Reset to original version
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
-import { Download, Save } from "lucide-react";
+import { 
+  Download, Save, Eye, Edit, ChevronLeft,
+  Check, FileText, RotateCcw 
+} from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { ResumeTemplateType } from '@/types/resumeTemplateTypes';
 import { Suggestion } from '@/types/resume';
-import TipTapResumeEditor from './TipTapResumeEditor';
-import TemplatePreviewButton from './TemplatePreviewButton';
 import { createCompleteHtml } from '@/utils/templateUtils';
 import { getTemplateById } from '@/constants/resumeTemplates';
+import DOMPurify from 'dompurify';
+import { toast } from "sonner";
+
+// Import TipTap editor
+import TipTapResumeEditor from '@/components/ResumeOptimizer/TipTapResumeEditor';
+
+// Import helper components
+import { 
+  PreviewHeader,  
+  PreviewContent,
+  EditorContent,
+  LoadingState,
+  NoContentWarning,
+  AppliedKeywordsList
+} from './ResumePreviewComponents';
+
+// Import utilities
+import { 
+  normalizeHtmlContent, 
+  parseHtmlIntoSections,
+  getSectionName,
+  SECTION_NAMES,
+  SECTION_ORDER
+} from '@/utils/resumeUtils';
 
 /**
  * Interface for ResumePreview component props
  */
 interface ResumePreviewProps {
-  optimizedText: string;                // Raw optimized text from AI
+  optimizedText: string;                // Resume content to display
+  originalOptimizedText?: string;       // Original content for reset
   selectedTemplate: string;             // ID of the selected template
   templates: ResumeTemplateType[];      // Available templates
   appliedKeywords: string[];            // Keywords applied to the resume
   suggestions: Suggestion[];            // Suggestions for improvement
   onDownload: () => void;               // Handler for download button
-  onSave: () => void;                   // Handler for save button
+  onSave: (content: string) => Promise<boolean> | boolean; // Handler for save button
   onTextChange: (text: string) => void; // Handler for text changes
-  onApplySuggestion: (index: number) => void; // Handler for applying a suggestion
-  onApplyKeyword: (keyword: string) => void;  // Handler for applying a keyword
   isOptimizing: boolean;                // Whether optimization is in progress
   language?: string;                    // Language of the resume
+  onEditModeChange?: (isEditing: boolean) => void; // Optional callback for edit mode changes
+  onReset?: () => void;                 // Optional callback for reset button
+}
+
+/**
+ * Section interface for resume content sections
+ */
+interface Section {
+  id: string;
+  title: string;
+  content: string;
 }
 
 /**
  * ResumePreview Component
- * 
- * The main component for displaying and editing the optimized resume.
  */
 const ResumePreview: React.FC<ResumePreviewProps> = ({
   optimizedText,
+  originalOptimizedText,
   selectedTemplate,
   templates,
   appliedKeywords,
@@ -50,177 +92,256 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   onDownload,
   onSave,
   onTextChange,
-  onApplySuggestion,
-  onApplyKeyword,
   isOptimizing,
-  language = "English" // Default to English
+  language = "English",
+  onEditModeChange,
+  onReset
 }) => {
-  // State for storing the structured HTML content
-  const [structuredHTML, setStructuredHTML] = useState<string>('');
+  // UI state
+  const [editMode, setEditMode] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [sections, setSections] = useState<Section[]>([]);
+  const [contentModified, setContentModified] = useState(false);
   
-  // Get the selected template object
+  // Get selected template
   const template = templates.find(t => t.id === selectedTemplate) || templates[0];
 
   /**
-   * Process optimized text into structured HTML when it changes
+   * Sanitize HTML content to prevent XSS attacks
+   */
+  const sanitizeHtml = useCallback((html: string): string => {
+    if (typeof DOMPurify === 'undefined') {
+      // Basic sanitization if DOMPurify is not available
+      return html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/\son\w+\s*=\s*["']?[^"']*["']?/gi, '');
+    }
+    
+    // Use DOMPurify for comprehensive sanitization
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: [
+        'a', 'b', 'br', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'i', 'li', 'ol', 'p', 'section', 'span', 'strong', 'u', 'ul'
+      ],
+      ALLOWED_ATTR: [
+        'href', 'target', 'rel', 'id', 'class', 'style',
+        'data-section-id', 'data-section'
+      ],
+      // Additional options to preserve formatting
+      ALLOW_ARIA_ATTR: true,
+      USE_PROFILES: { html: true },
+      KEEP_CONTENT: true
+    });
+  }, []);
+
+  /**
+   * Process and normalize the HTML content
+   */
+  const processContent = useCallback((content: string): string => {
+    if (!content) return '';
+    
+    // Normalize HTML entities and ensure consistent format
+    return normalizeHtmlContent(content, sanitizeHtml);
+  }, [sanitizeHtml]);
+
+  /**
+   * Parse the resume HTML into sections when optimizedText changes
    */
   useEffect(() => {
-    if (optimizedText) {
-      try {
-        // Use optimized text directly
-        setStructuredHTML(optimizedText);
-        console.log('Editor content updated from optimized text');
-      } catch (error) {
-        console.error("Error processing optimized text:", error);
-        // Fallback to simple HTML conversion if processing fails
-        setStructuredHTML(`<div>${optimizedText.replace(/\n/g, '<br/>')}</div>`);
-      }
+    if (!optimizedText) {
+      setSections([]);
+      return;
     }
-  }, [optimizedText]);
-
-  /**
-   * Handle changes from the TipTap editor
-   * 
-   * @param html - Updated HTML content from the editor
-   */
-  const handleEditorChange = (html: string) => {
-    // Update local state
-    setStructuredHTML(html);
     
-    // Call the parent handler
-    onTextChange(html);
-  };
-
-  /**
-   * Handle applying a suggestion to the resume
-   * 
-   * @param suggestion - The suggestion to apply
-   */
-  const handleApplySuggestion = (suggestion: Suggestion) => {
-    // Find the index of the suggestion in the array
-    const index = suggestions.findIndex(s => 
-      s.text === suggestion.text && s.type === suggestion.type
-    );
-    
-    if (index !== -1) {
-      onApplySuggestion(index);
-    }
-  };
-
-  /**
-   * Handle custom download that creates HTML with the selected template applied
-   */
-  const handleCustomDownload = () => {
     try {
-      // Get the current template
-      const template = getTemplateById(selectedTemplate);
+      // Normalize and sanitize the content
+      const normalizedContent = processContent(optimizedText);
       
-      // Create complete HTML document with template applied
-      const completeHtml = createCompleteHtml(template, structuredHTML);
+      // Parse content into sections
+      const parsedSections = parseHtmlIntoSections(
+        normalizedContent, 
+        getSectionName, 
+        SECTION_NAMES,
+        SECTION_ORDER
+      );
       
-      // Create and trigger download
-      const blob = new Blob([completeHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'resume.html';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      console.log(`Parsed ${parsedSections.length} sections:`, 
+        parsedSections.map(s => s.title));
       
-      console.log("Resume downloaded with template:", template.name);
+      setSections(parsedSections);
+      setContentModified(false);
     } catch (error) {
-      console.error("Error downloading resume:", error);
-      // Fallback to original download handler
-      onDownload();
+      console.error("Error parsing optimized text into sections:", error);
+      // Fallback to simple section
+      setSections([{
+        id: 'resume-summary',
+        title: SECTION_NAMES['resume-summary'],
+        content: optimizedText
+      }]);
     }
-  };
+  }, [optimizedText, processContent]);
 
   /**
-   * Display loading state during optimization
+   * Notify parent component when edit mode changes
+   */
+  useEffect(() => {
+    if (onEditModeChange) {
+      onEditModeChange(editMode);
+    }
+  }, [editMode, onEditModeChange]);
+
+  /**
+   * Handle section content update
+   */
+  const handleSectionUpdate = useCallback((sectionId: string, newContent: string) => {
+    setSections(prevSections => {
+      const updatedSections = prevSections.map(section => 
+        section.id === sectionId ? { ...section, content: newContent } : section
+      );
+      setContentModified(true);
+      return updatedSections;
+    });
+  }, []);
+
+  /**
+   * Combine all sections into complete HTML
+   */
+  const combineAllSections = useCallback(() => {
+    return sections.map(section => 
+      `<section id="${section.id}" class="section-title">${section.content}</section>`
+    ).join('\n');
+  }, [sections]);
+
+  /**
+   * Handle save button click
+   */
+  const handleSave = useCallback(async () => {
+    if (isSaving) return;
+    
+    try {
+      setIsSaving(true);
+      
+      // Get combined HTML and normalize it
+      let combinedHtml = combineAllSections();
+      combinedHtml = processContent(combinedHtml);
+      
+      if (combinedHtml.length < 50) {
+        toast.error("Content is too short", {
+          description: "Resume content must be at least 50 characters."
+        });
+        return;
+      }
+      
+      console.log("Saving content, length:", combinedHtml.length);
+      
+      // Call parent save handler
+      const saveResult = await Promise.resolve(onSave(combinedHtml));
+      
+      if (saveResult) {
+        setContentModified(false);
+        toast.success("Resume saved successfully");
+        
+        // Notify parent component of the changes
+        onTextChange(combinedHtml);
+        
+        // Exit edit mode after saving
+        setEditMode(false);
+      }
+    } catch (error) {
+      console.error("Error saving resume:", error);
+      toast.error("Failed to save resume");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [isSaving, combineAllSections, processContent, onSave, onTextChange]);
+
+  /**
+   * Open preview in new window
+   */
+  const openPreview = useCallback(() => {
+    try {
+      const template = getTemplateById(selectedTemplate);
+      const combinedContent = combineAllSections();
+      const completeHtml = createCompleteHtml(template, combinedContent);
+      
+      const previewWindow = window.open('', '_blank');
+      if (previewWindow) {
+        previewWindow.document.write(completeHtml);
+        previewWindow.document.close();
+      }
+    } catch (error) {
+      console.error("Error opening preview:", error);
+      toast.error("Failed to open preview");
+    }
+  }, [selectedTemplate, combineAllSections]);
+
+  /**
+   * Toggle edit mode on/off
+   */
+  const toggleEditMode = useCallback(() => {
+    setEditMode(prev => !prev);
+  }, []);
+
+  /**
+   * Show loading state during optimization
    */
   if (isOptimizing) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[500px] border rounded-lg p-4">
-        <div className="h-8 w-8 text-brand-600 mb-4 animate-pulse">
-          {/* Animation for optimization in progress */}
-          ✨
-        </div>
-        <p className="text-lg font-medium">Optimizing your resume...</p>
-        <p className="text-sm text-gray-500">Please wait while our AI analyzes and enhances your resume</p>
-      </div>
-    );
+    return <LoadingState />;
   }
 
   /**
-   * Warning component for when optimized text is not available
-   */
-  const renderNoContentWarning = () => {
-    if (!optimizedText && !structuredHTML) {
-      return (
-        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4 flex items-start gap-2">
-          <span className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0">⚠️</span>
-          <p className="text-xs text-amber-700">
-            No optimized content available. Please upload a resume or paste content to optimize.
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  /**
-   * Main component render
+   * Main render
    */
   return (
-    <div>
+    <div className="bg-white border rounded-lg p-6">
       {/* Header with actions */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-bold text-lg">Resume Preview</h3>
-        <div className="flex gap-2">
-          <TemplatePreviewButton
-            resumeContent={structuredHTML}
-            selectedTemplateId={selectedTemplate}
-          >
-            See Result
-          </TemplatePreviewButton>
-          
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleCustomDownload}
-            disabled={!structuredHTML}
-          >
-            <Download className="h-4 w-4 mr-2" /> Download
-          </Button>
-          <Button 
-            size="sm" 
-            onClick={onSave}
-            disabled={!structuredHTML}
-          >
-            <Save className="h-4 w-4 mr-2" /> Save
-          </Button>
-        </div>
-      </div>
+      <PreviewHeader 
+        editMode={editMode}
+        toggleEditMode={toggleEditMode}
+        openPreview={openPreview}
+        handleSave={handleSave}
+        isSaving={isSaving}
+        contentModified={contentModified}
+        optimizedText={optimizedText}
+        onReset={onReset}
+      />
       
       {/* Warning if no content is available */}
-      {renderNoContentWarning()}
+      {!optimizedText && <NoContentWarning />}
       
-      {/* TipTap WYSIWYG Editor */}
-      {structuredHTML ? (
-        <TipTapResumeEditor 
-          content={structuredHTML}
-          onChange={handleEditorChange}
+      {/* Modified indicator */}
+      {contentModified && editMode && (
+        <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-4 text-sm text-blue-700 flex items-center">
+          <span className="h-2 w-2 bg-blue-500 rounded-full mr-2"></span>
+          You have unsaved changes. Click "Save Changes" to apply your modifications.
+        </div>
+      )}
+      
+      {/* Content Area */}
+      {editMode ? (
+        <EditorContent 
+          sections={sections}
+          handleSectionUpdate={handleSectionUpdate}
           appliedKeywords={appliedKeywords}
-          onApplyKeyword={onApplyKeyword}
           suggestions={suggestions}
-          onApplySuggestion={handleApplySuggestion}
+          handleSave={handleSave}
+          isSaving={isSaving}
+          contentModified={contentModified}
+          toggleEditMode={toggleEditMode}
         />
       ) : (
-        <div className="border rounded-lg p-6 min-h-[500px] flex items-center justify-center bg-gray-50">
-          <p className="text-gray-400">No content to display</p>
-        </div>
+        <PreviewContent 
+          optimizedText={optimizedText}
+          combinedSections={combineAllSections()}
+          sanitizeHtml={sanitizeHtml}
+          template={template}
+          onDownload={onDownload}
+        />
+      )}
+      
+      {/* Applied keywords list */}
+      {!editMode && appliedKeywords.length > 0 && (
+        <AppliedKeywordsList keywords={appliedKeywords} />
       )}
     </div>
   );

@@ -172,7 +172,7 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
     console.log("Getting latest resume for user:", userId);
     
     // Use the API route instead of direct Supabase query
-    const response = await fetch(`/api/resumes/latest?userId=${userId}`);
+    const response = await fetch(`/api/resumes?userId=${userId}`);
     
     if (!response.ok) {
       const errorData = await response.json();

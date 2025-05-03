@@ -49,6 +49,7 @@ const basicStyles = `
 /**
  * HTML structure for basic template
  * Uses placeholders for each section that will be replaced with actual content
+ * Added interests section
  */
 const basicTemplate = `
   <h1>{{resume-header}}</h1>
@@ -79,11 +80,16 @@ const basicTemplate = `
     <h2>Certifications</h2>
     {{resume-certifications}}
   </div>
+  <div class="section">
+    <h2>Centres d'intérêt</h2>
+    {{resume-interests}}
+  </div>
 `;
 
 /**
  * Custom apply function for the basic template
  * Handles section mapping and content placement in the template
+ * Ensures all contact information is properly displayed
  * 
  * @param sections - Object containing content for each section by ID
  * @returns Formatted HTML content
@@ -105,21 +111,48 @@ function applyBasicTemplate(sections: TemplateContentSections): string {
     html += `<h1>Nom Prénom</h1>`;
   }
   
-  // Contact information - try to find it in header or separate contact section
+  // Contact information - gather all available contact details
   let contactInfo = '';
+  let email = '';
+  let phone = '';
+  let address = '';
+  let linkedin = '';
+  
+  // Look for contact info in header or separate contact section
   if (sections['resume-contact']) {
     contactInfo = sections['resume-contact'];
   } else if (sections['resume-header']) {
     const headerDoc = new DOMParser().parseFromString(sections['resume-header'], 'text/html');
-    const contactElements = headerDoc.querySelectorAll('p');
-    contactElements.forEach(el => {
-      if (el.textContent?.includes('@') || el.textContent?.includes('tel')) {
-        contactInfo += el.outerHTML;
-      }
+    
+    // Extract contact elements
+    const paragraphs = headerDoc.querySelectorAll('p');
+    paragraphs.forEach(p => {
+      const text = p.textContent || '';
+      if (text.includes('@')) email = text;
+      else if (text.includes('tel') || text.includes('phone') || text.match(/\d{3}[-.\s]\d{3}[-.\s]\d{4}/)) phone = text;
+      else if (text.includes('linkedin')) linkedin = text;
+      else if (text.includes('rue') || text.includes('avenue') || text.includes('app.') || 
+               text.includes('street') || text.includes('ave')) address = text;
     });
+    
+    // If we found any contact info, format it
+    if (email || phone || address || linkedin) {
+      const parts = [];
+      if (email) parts.push(email);
+      if (phone) parts.push(phone);
+      if (address) parts.push(address);
+      if (linkedin) parts.push(linkedin);
+      
+      contactInfo = `<p>${parts.join(' | ')}</p>`;
+    }
   }
   
-  html += `<div class="contact">${contactInfo || '<p>Email : exemple@email.com | Téléphone : 06 00 00 00 00</p>'}</div>`;
+  // If no contact info was found, use a placeholder
+  if (!contactInfo) {
+    contactInfo = '<p>Email : exemple@email.com | Téléphone : 06 00 00 00 00 | Adresse : 123 Rue Exemple, Ville</p>';
+  }
+  
+  html += `<div class="contact">${contactInfo}</div>`;
   
   // Process each main section
   const sectionMapping = {

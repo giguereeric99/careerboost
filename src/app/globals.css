@@ -324,3 +324,266 @@
 [data-ut-element="allowed-content"] {
   display: none !important;
 }
+
+/**
+ * Styles for the WYSIWYG editor component
+ * 
+ * These styles enhance the editing experience and provide consistent 
+ * formatting for headings, paragraphs, lists, and other content.
+ */
+
+ .wysiwyg-editor-content {
+  min-height: 200px;
+  padding: 1rem;
+  border-radius: 0.375rem;
+  outline: none;
+  line-height: 1.5;
+}
+
+.wysiwyg-editor-content:focus {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+/* Heading styles */
+.wysiwyg-editor-content h1,
+.wysiwyg-editor-content h2,
+.wysiwyg-editor-content h3 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.wysiwyg-editor-content h1 {
+  font-size: 1.5rem;
+}
+
+.wysiwyg-editor-content h2 {
+  font-size: 1.25rem;
+}
+
+.wysiwyg-editor-content h3 {
+  font-size: 1.125rem;
+}
+
+/* Paragraph styles */
+.wysiwyg-editor-content p {
+  margin-bottom: 0.75rem;
+}
+
+/* List styles */
+.wysiwyg-editor-content ul,
+.wysiwyg-editor-content ol {
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.wysiwyg-editor-content ul li,
+.wysiwyg-editor-content ol li {
+  margin-bottom: 0.25rem;
+}
+
+/* Links */
+.wysiwyg-editor-content a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Bold and italic */
+.wysiwyg-editor-content strong,
+.wysiwyg-editor-content b {
+  font-weight: 600;
+}
+
+.wysiwyg-editor-content em,
+.wysiwyg-editor-content i {
+  font-style: italic;
+}
+
+/* Ensure consistent spacing */
+.wysiwyg-editor-content * + * {
+  margin-top: 0.25em;
+}
+
+/* Toolbar button active state */
+.wysiwyg-editor-active-button {
+  background-color: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+}
+
+/* Resume preview styles */
+.resume-preview-content section {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.resume-preview-content section h2 {
+  font-size: 2rem;
+}
+
+.resume-preview-content section h3 {
+  font-size: 1.3rem;
+}
+
+.resume-preview-content section:last-child {
+  border-bottom: none;
+}
+
+/**
+* CSS for styling the editor content
+* Simplified version without drag and drop styling
+*/
+/* =============================================== */
+/* Base editor styles */
+/* =============================================== */
+
+.ProseMirror {
+  padding: 1rem;
+  min-height: 450px;
+  position: relative;
+}
+
+.ProseMirror:focus {
+  outline: none;
+}
+
+/* Base typography */
+.ProseMirror h1 {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror h2 {
+  font-size: 18px;
+  font-weight: bold;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.25rem;
+}
+
+.ProseMirror h3 {
+  font-size: 16px;
+  font-weight: bold;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror p {
+  margin-bottom: 0.5rem;
+}
+
+/* Lists */
+.ProseMirror ul, .ProseMirror ol {
+  padding-left: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror li {
+  margin-bottom: 0.25rem;
+}
+
+/* =============================================== */
+/* Section styling (simplified) */
+/* =============================================== */
+
+/* Base section styling - just visual separation */
+.ProseMirror section, 
+.ProseMirror div[data-section-id] {
+  position: relative;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px dotted #eee;
+  border-radius: 4px;
+}
+
+.ProseMirror section:last-child, 
+.ProseMirror div[data-section-id]:last-child {
+  border-bottom: none;
+}
+
+/* Simple hover effect for visual feedback */
+.ProseMirror section:hover, 
+.ProseMirror div[data-section-id]:hover {
+  background-color: rgba(59, 130, 246, 0.03);
+}
+
+/* =============================================== */
+/* Special Section Styling */
+/* =============================================== */
+
+/* Special styling for resume sections */
+.ProseMirror [id="resume-header"] h1, 
+.ProseMirror [data-section-id="resume-header"] h1 {
+  font-size: 28px;
+  color: #2c3e50;
+}
+
+.ProseMirror [id="resume-summary"],
+.ProseMirror [data-section-id="resume-summary"] {
+  background-color: #f9f9f9;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.ProseMirror [id="resume-experience"] h3,
+.ProseMirror [data-section-id="resume-experience"] h3 {
+  color: #2980b9;
+}
+
+.ProseMirror [id="resume-skills"] ul,
+.ProseMirror [data-section-id="resume-skills"] ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding-left: 0;
+}
+
+.ProseMirror [id="resume-skills"] li,
+.ProseMirror [data-section-id="resume-skills"] li {
+  background-color: #e1f5fe;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+/* Interests section styling */
+.ProseMirror [id="resume-interests"] ul,
+.ProseMirror [data-section-id="resume-interests"] ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ProseMirror [id="resume-interests"] li,
+.ProseMirror [data-section-id="resume-interests"] li {
+  background-color: #f0f4f8;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+/* =============================================== */
+/* Editor Keywords and Suggestions Styling */
+/* =============================================== */
+
+.editor-keyword {
+  color: #3498db;
+  background-color: #e1f5fe;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 0.9em;
+}
+
+.editor-suggestion {
+  color: #27ae60;
+  background-color: #e8f5e9;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-style: italic;
+}

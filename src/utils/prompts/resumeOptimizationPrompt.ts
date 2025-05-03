@@ -4,11 +4,16 @@
  * This module provides standardized prompts for resume optimization across different AI providers.
  * It ensures consistent formatting and output structure regardless of which AI service is used.
  * 
- * Now updated to request HTML-formatted output with section IDs for improved template support.
+ * Features:
+ * - HTML-formatted output with section IDs for improved template support
+ * - Support for multiple languages and customizations
+ * - Specialized instructions for different AI models
+ * - Specific sections for interests and references properly identified
  */
 
 /**
  * Interface for prompt configuration options
+ * Allows for flexible customization of prompts
  */
 interface PromptOptions {
   /** The language of the resume (e.g., "English", "French") */
@@ -25,6 +30,7 @@ interface PromptOptions {
 
 /**
  * Suggestion types used in the resume optimization response
+ * These categories help organize different types of improvements
  */
 export const SUGGESTION_TYPES = [
   "structure",  // Related to the organization and layout of the resume
@@ -36,6 +42,7 @@ export const SUGGESTION_TYPES = [
 
 /**
  * Default prompt configuration
+ * Provides sensible defaults that can be overridden
  */
 const DEFAULT_OPTIONS: PromptOptions = {
   language: "English",
@@ -46,7 +53,25 @@ const DEFAULT_OPTIONS: PromptOptions = {
 };
 
 /**
+ * List of resume sections that should be properly identified by the AI
+ * Each section has a specific ID that will be used in templates
+ */
+const RESUME_SECTIONS = [
+  { id: "resume-header", description: "Name and contact information" },
+  { id: "resume-summary", description: "Professional summary/profile" },
+  { id: "resume-experience", description: "Work experience" },
+  { id: "resume-education", description: "Educational background" },
+  { id: "resume-skills", description: "Technical and soft skills" },
+  { id: "resume-languages", description: "Language proficiency" },
+  { id: "resume-certifications", description: "Professional certifications" },
+  { id: "resume-projects", description: "Relevant projects" },
+  { id: "resume-interests", description: "Personal interests/hobbies" },
+  { id: "resume-references", description: "Professional references" }
+];
+
+/**
  * Generates a standardized system prompt for resume optimization
+ * This sets the overall context and role for the AI
  * 
  * @param options - Configuration options for the prompt
  * @returns A system prompt string for AI services
@@ -59,11 +84,16 @@ export function generateSystemPrompt(options: PromptOptions = {}): string {
   
 You specialize in transforming regular resumes into highly effective documents that pass through Applicant Tracking Systems and impress recruiters.
 
-You will format your output as HTML with semantic section IDs to enable proper template application.`;
+You will format your output as HTML with semantic section IDs to enable proper template application. You will ensure all sections are properly identified, including interests and references if present in the original resume.
+
+I want all predefined sections to be included in the optimization result even if some are empty of content.
+
+It is very important to create the resume in this language: ${config.language}.`;
 }
 
 /**
  * Generates a standardized user prompt for resume optimization
+ * This contains the main instructions for the AI
  * 
  * @param resumeText - The original resume text to optimize
  * @param options - Configuration options for the prompt
@@ -73,7 +103,7 @@ export function generateResumePrompt(resumeText: string, options: PromptOptions 
   // Merge default options with provided options
   const config = { ...DEFAULT_OPTIONS, ...options };
   
-  // Build the base prompt
+  // Build the base prompt with optimization criteria
   let prompt = `TASK: Analyze and optimize the following resume, focusing on these criteria:
 
 1. Clear structure and layout to capture the recruiter's attention within seconds
@@ -85,7 +115,7 @@ export function generateResumePrompt(resumeText: string, options: PromptOptions 
 7. Using impactful language and action verbs
 8. Optimizing organization for Applicant Tracking Systems (ATS)`;
 
-  // Add any custom instructions
+  // Add any custom instructions to the base prompt
   if (config.customInstructions && config.customInstructions.length > 0) {
     config.customInstructions.forEach((instruction, index) => {
       prompt += `\n${9 + index}. ${instruction}`;
@@ -99,10 +129,12 @@ export function generateResumePrompt(resumeText: string, options: PromptOptions 
 - Include keywords from the industry and job descriptions
 - Avoid using tables, graphics, or complex formatting
 - Use a clean, simple layout with clear section breaks
-- Ensure contact information is clearly visible at the top`;
+- Ensure contact information is clearly visible at the top
+- Structure content for easy parsing by automated systems`;
   }
 
-  // Add HTML formatting instructions
+  // Build HTML formatting instructions with explicit section IDs
+  // Each section is clearly identified for proper template application
   prompt += `\n\nIMPORTANT HTML FORMATTING INSTRUCTIONS:
 - Format your response as semantic HTML with the following section IDs:
   - <section id="resume-header" class="section-title"> for name, contact info
@@ -112,16 +144,20 @@ export function generateResumePrompt(resumeText: string, options: PromptOptions 
   - <section id="resume-skills" class="section-title"> for skills
   - <section id="resume-languages" class="section-title"> for languages (if applicable)
   - <section id="resume-certifications" class="section-title"> for certifications (if applicable)
-  - <section id="resume-interest" class="section-title"> Interests (if applicable)
-- Use appropriate HTML tags (h1, h2, h3, p, ul, li) for proper structure
+  - <section id="resume-interests" class="section-title"> for interests/hobbies (if applicable)
+  - <section id="resume-references" class="section-title"> for references (if applicable)
+
+- IMPORTANT: Create proper sections for interests and references if they exist in the resume
+- Even if references only say "Available upon request," place this in a properly formatted resume-references section
+- Use appropriate HTML tags (h1, h2, h3, p, ul, li) for proper structure within each section
 - Make sure the HTML is well-formed and valid
 - Do not include any CSS or styling`;
 
-  // Add the resume content
+  // Add the resume content to be optimized
   prompt += `\n\nResume to optimize:
 ${resumeText}`;
 
-  // Add output format instructions
+  // Add output format instructions for the AI response
   prompt += `\n\nIMPORTANT: Your response must be a valid JSON object with exactly these fields:
 {
   "optimizedText": "The complete HTML-formatted improved resume content",
@@ -140,6 +176,7 @@ Guidelines:
 - Provide between 1-${config.maxSuggestions} high-impact suggestions across different categories
 - Include 1-${config.maxKeywords} relevant industry keywords that should be added to the resume
 - Format the optimizedText as HTML with section IDs as specified above
+- Ensure EVERY section has proper identification with the correct section ID
 - Ensure the optimized text maintains all relevant information from the original
 - Do not include ANY explanatory text, code blocks, or other content outside the JSON structure`;
 
@@ -157,12 +194,15 @@ Guidelines:
 export function generateClaudePrompt(resumeText: string, options: PromptOptions = {}): string {
   const basePrompt = generateResumePrompt(resumeText, options);
   
-  // Add Claude-specific instructions
+  // Add Claude-specific instructions with emphasis on proper section handling
   return `${basePrompt}
 
 IMPORTANT CLAUDE-SPECIFIC INSTRUCTIONS:
 - Your response must be ONLY valid JSON - no explanatory text outside the JSON object
 - For the "optimizedText" field, include properly escaped HTML with section IDs
+- Make sure to create proper <section> elements with appropriate IDs for ALL content
+- Pay special attention to interests and references sections - they must have proper IDs
+- If references only mention "available upon request," still create a proper references section
 - Do not include \`\`\`json and \`\`\` around your response
 - When escaping HTML in JSON, replace " with \\" inside HTML attributes
 - Verify that your JSON is valid before responding`;
@@ -170,6 +210,7 @@ IMPORTANT CLAUDE-SPECIFIC INSTRUCTIONS:
 
 /**
  * Complete prompt configuration with both system and user components
+ * Used to provide the full context to AI models
  */
 export interface CompletePrompt {
   systemPrompt: string;
@@ -178,6 +219,7 @@ export interface CompletePrompt {
 
 /**
  * Generates both system and user prompts for the specified AI provider
+ * Handles provider-specific optimizations
  * 
  * @param resumeText - The original resume text to optimize 
  * @param provider - The AI provider (openai, gemini, or claude)
@@ -209,6 +251,12 @@ export function getProviderPrompts(
 
 /**
  * Export a default function that provides the complete prompt for any provider
+ * This is the main entry point to get optimized prompts
+ * 
+ * @param resumeText - The original resume text to optimize
+ * @param provider - The AI provider to use
+ * @param options - Configuration options for the prompt
+ * @returns Complete system and user prompts for the specified provider
  */
 export default function getResumeOptimizationPrompt(
   resumeText: string,

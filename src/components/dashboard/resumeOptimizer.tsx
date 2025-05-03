@@ -1,19 +1,19 @@
 /**
- * ResumeOptimizer Component
+ * ResumeOptimizer Component (Updated)
  * 
- * Main component that orchestrates the complete resume optimization workflow:
+ * Main component that orchestrates the complete resume optimization workflow with enhanced features:
  * 1. File upload or text input
- * 2. Resume parsing and analysis
- * 3. AI-powered optimization
- * 4. WYSIWYG editing and template preview
- * 5. Download or save optimized resume
+ * 2. AI-powered optimization and suggestions
+ * 3. Resume preview and editing via accordions
+ * 4. Save edits to last_saved_text and reset functionality
+ * 5. Template selection and download
  */
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { Sparkles, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
@@ -23,6 +23,7 @@ import { useResumeOptimizer } from '@/hooks/useResumeOptimizer';
 
 // Import utils for HTML processing
 import { prepareOptimizedTextForEditor } from '@/utils/htmlProcessor';
+import { normalizeHtmlContent } from '@/utils/resumeUtils';
 
 // Import types
 import { Suggestion } from '@/types/resume';
@@ -34,8 +35,9 @@ import ScoreCard from '@/components/ResumeOptimizer/ScoreCard';
 import SuggestionsList from '@/components/ResumeOptimizer/SuggestionsList';
 import KeywordList from '@/components/ResumeOptimizer/KeywordList';
 import TemplateGallery from '@/components/ResumeOptimizer/TemplateGallery';
-import ProUpgradeDialog from '@/components/ResumeOptimizer/ProUpgradeDialog';
-import { resumeTemplates } from '../../constants/resumeTemplates';
+import ProUpgradeDialog from '@/components/Dialogs/ProUpgradeDialog';
+import ResetConfirmationDialog from '@/components/Dialogs/ResetConfirmationDialog';
+import { resumeTemplates } from '@/constants/resumeTemplates';
 
 /**
  * ResumeOptimizer Component
@@ -55,19 +57,21 @@ const ResumeOptimizer: React.FC = () => {
     isParsing,
     isOptimizing,
     isApplyingChanges,
+    isResetting,
     needsRegeneration,
     
     // Data states
     selectedFile,
     resumeData,           // Original parsed resume data
     optimizedData,        // Optimized resume data (processed by AI)
-    optimizedText,        // Raw optimized text (as string)
+    optimizedText,        // Original AI-optimized text (as string)
+    editedText,           // User-edited text from last_saved_text
     resumeId,             // ID of the saved resume in database
     suggestions,          // Improvement suggestions from AI
     keywords,             // Keyword suggestions from AI
     optimizationScore,    // ATS compatibility score
     
-    // Action handlers
+    // Actions
     handleFileUpload,     // Process uploaded file
     optimizeResumeData,   // Send data to AI for optimization
     loadLatestResume,     // Load most recent resume for current user
@@ -75,9 +79,13 @@ const ResumeOptimizer: React.FC = () => {
     applySuggestion,      // Apply a suggestion to the resume
     toggleKeyword,        // Toggle a keyword's applied state
     applyChanges,         // Apply all pending changes (regenerate)
+    resetResume,          // Reset resume to original optimized version
+    
+    // Setters
     setSelectedFile,      // Update the selected file
     setOptimizedData,     // Set optimized data directly
-    setOptimizedText      // Set optimized text directly
+    setOptimizedText,     // Set optimized text directly
+    setEditedText         // Set edited text directly
   } = useResumeOptimizer();
   
   // UI state management
@@ -89,7 +97,9 @@ const ResumeOptimizer: React.FC = () => {
   const [initialLoading, setInitialLoading] = useState(false);  // Initial loading state
   const [selectedTemplate, setSelectedTemplate] = useState("basic"); // Selected template ID
   const [showProDialog, setShowProDialog] = useState(false); // Pro upgrade dialog visibility
-  const [editedHtml, setEditedHtml] = useState<string>(''); // HTML content from TipTap editor
+  const [showResetDialog, setShowResetDialog] = useState(false); // Reset confirmation dialog
+  const [processedHtml, setProcessedHtml] = useState<string>(''); // Processed HTML for preview
+  const [isEditing, setIsEditing] = useState(false); // Track if user is in edit mode
 
   /**
    * Effect to reset regeneration state when changing templates
@@ -106,29 +116,38 @@ const ResumeOptimizer: React.FC = () => {
    * or when resumeId changes
    */
   useEffect(() => {
-    if (activeTab === "preview" && user && !optimizedText) {
+    // Only load resume if we're on preview tab, user is logged in, and we don't have content yet
+    if (activeTab === "preview" && user && !optimizedText && !editedText) {
       loadLatestOptimizedResumeWrapper();
     }
-  }, [activeTab, user, optimizedText]);
+  }, [activeTab, user, optimizedText, editedText]);
   
   /**
-   * Effect to log when optimized text becomes available
+   * Effect to process resume text when it becomes available
+   * Prioritizes editedText (last_saved_text) over optimizedText
    */
   useEffect(() => {
-    if (optimizedText && optimizedText.length > 0) {
-      console.log("Optimized text received (sample):", optimizedText.substring(0, 100) + "...");
-      console.log("Full text length:", optimizedText.length);
+    // First check if we have edited text to display, otherwise use optimized text
+    const textToProcess = editedText || optimizedText;
+    
+    if (textToProcess && textToProcess.length > 0) {
+      console.log("Resume text received (sample):", textToProcess.substring(0, 100) + "...");
+      console.log("Source:", editedText ? "last_saved_text" : "optimized_text");
       
-      // Process the text to make it suitable for the editor
+      // Process the text to make it suitable for display
       try {
-        const processedHtml = prepareOptimizedTextForEditor(optimizedText);
-        setEditedHtml(processedHtml);
-        console.log("Processed HTML for editor (sample):", processedHtml.substring(0, 100) + "...");
+        // First normalize the HTML to ensure consistent format
+        const normalizedText = normalizeHtmlContent(textToProcess);
+        
+        // Then prepare it for the editor
+        const processedContent = prepareOptimizedTextForEditor(normalizedText);
+        setProcessedHtml(processedContent);
       } catch (error) {
-        console.error("Error processing optimized text:", error);
+        console.error("Error processing resume text:", error);
+        setProcessedHtml(textToProcess);
       }
     }
-  }, [optimizedText]);
+  }, [optimizedText, editedText]);
   
   /**
    * Loads the most recent optimized resume for the current user
@@ -152,6 +171,7 @@ const ResumeOptimizer: React.FC = () => {
       }
       
       console.log("Resume loaded successfully:", data.id);
+      console.log("Has last_saved_text:", Boolean(data.last_saved_text));
     } catch (error: any) {
       console.error("Exception in loadLatestOptimizedResumeWrapper:", error);
     } finally {
@@ -161,29 +181,35 @@ const ResumeOptimizer: React.FC = () => {
 
   /**
    * Handles changes to the pasted resume content
+   * Updates the state with the new text
    * 
    * @param e - Textarea change event
    */
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     setResumeContent(newText);
     setRawText(newText);
-  };
+  }, []);
 
   /**
-   * Handles changes from the TipTap editor
+   * Handles content changes from the ResumePreview component
+   * Updates both local state and the optimizer hook's state
    * 
    * @param html - HTML content from the editor
    */
-  const handleEditorChange = (html: string) => {
-    console.log("Editor content changed");
-    setEditedHtml(html);
+  const handlePreviewContentChange = useCallback((html: string) => {
+    console.log("Resume content changed");
+    setProcessedHtml(html);
     
-    // Also update optimizedText if it exists
-    if (typeof setOptimizedText === 'function') {
-      setOptimizedText(html);
+    // Also update editedText in the hook
+    if (typeof setEditedText === 'function') {
+      setEditedText(html);
     }
-  };
+    
+    // Mark that changes need to be regenerated for AI suggestions and keywords
+    // We don't call applyChanges here because we want the user to do that explicitly
+    console.log("Content changed, will need regeneration");
+  }, [setEditedText]);
 
   /**
    * Handles template selection
@@ -191,7 +217,7 @@ const ResumeOptimizer: React.FC = () => {
    * 
    * @param templateId - ID of the selected template
    */
-  const handleTemplateSelect = (templateId: string) => {
+  const handleTemplateSelect = useCallback((templateId: string) => {
     const template = resumeTemplates.find(t => t.id === templateId);
     
     // Check if selected template requires pro subscription
@@ -201,7 +227,7 @@ const ResumeOptimizer: React.FC = () => {
       setSelectedTemplate(templateId);
       // This will trigger the useEffect that calls applyTemplateToResume
     }
-  };
+  }, []);
 
   /**
    * Toggles a keyword's applied state
@@ -209,22 +235,23 @@ const ResumeOptimizer: React.FC = () => {
    * 
    * @param index - Index of the keyword to toggle
    */
-  const handleKeywordApply = (index: number) => {
+  const handleKeywordApply = useCallback((index: number) => {
     toggleKeyword(index);
-  };
+  }, [toggleKeyword]);
   
   /**
    * Handles applying a keyword directly from the editor
+   * Finds the keyword in the array and toggles its state
    * 
    * @param keyword - Keyword to apply
    */
-  const handleEditorKeywordApply = (keyword: string) => {
+  const handleEditorKeywordApply = useCallback((keyword: string) => {
     // Find the keyword in the keywords array
     const keywordIndex = keywords.findIndex(k => k.text === keyword);
     if (keywordIndex !== -1) {
       toggleKeyword(keywordIndex);
     }
-  };
+  }, [keywords, toggleKeyword]);
   
   /**
    * Handles applying a suggestion from the suggestions list
@@ -232,23 +259,23 @@ const ResumeOptimizer: React.FC = () => {
    * 
    * @param index - Index of the suggestion to apply
    */
-  const handleApplySuggestion = (index: number) => {
+  const handleApplySuggestion = useCallback((index: number) => {
     applySuggestion(index);
-  };
+  }, [applySuggestion]);
 
   /**
    * Handles the regeneration of the resume with applied changes
    * Delegates to the hook's applyChanges function
    */
-  const handleRegenerateResume = async () => {
+  const handleRegenerateResume = useCallback(async () => {
     await applyChanges();
-  };
+  }, [applyChanges]);
 
   /**
    * Handles resume download action
    * Creates an HTML file with the edited content and template styling
    */
-  const handleDownload = () => {
+  const handleDownload = useCallback(() => {
     // Check if changes need to be regenerated first
     if (needsRegeneration) {
       toast({
@@ -258,13 +285,16 @@ const ResumeOptimizer: React.FC = () => {
       return;
     }
     
-    // Use the edited HTML if available, otherwise use the optimized text
-    const contentToDownload = editedHtml || optimizedText;
+    // Use the processed HTML if available, otherwise use edited or optimized text
+    const contentToDownload = processedHtml || editedText || optimizedText;
     
     if (!contentToDownload) {
       toast.error("No content to download");
       return;
     }
+    
+    // Find the template object
+    const template = resumeTemplates.find(t => t.id === selectedTemplate) || resumeTemplates[0];
     
     // Create a temporary HTML file with the content
     const htmlContent = `<!DOCTYPE html>
@@ -303,42 +333,110 @@ const ResumeOptimizer: React.FC = () => {
     URL.revokeObjectURL(url);
     
     toast.success("Resume downloaded");
-  };
+  }, [needsRegeneration, processedHtml, editedText, optimizedText, selectedTemplate]);
 
   /**
-   * Handles resume save action
-   * In production, this would save the resume to the user's account
+   * Handles saving the resume to the database
+   * Updates the last_saved_text field with the edited content
+   * 
+   * @param content - HTML content to save
+   * @returns Promise<boolean> indicating success/failure
    */
-  const handleSave = () => {
-    // Check if changes need to be regenerated first
-    if (needsRegeneration) {
-      toast({
-        title: "Changes not applied",
-        description: "Please apply your changes before saving."
+  const handleSave = useCallback(async (content: string): Promise<boolean> => {
+    try {
+      // Validate content
+      if (!content || typeof content !== 'string') {
+        throw new Error("Invalid content provided");
+      }
+      
+      const safeContent = String(content);
+      
+      // Basic content validation
+      if (safeContent.length < 50) {
+        toast.error("Content too short", {
+          description: "The resume content is too short to be saved."
+        });
+        return false;
+      }
+      
+      // If we don't have a resume ID, we can't save
+      if (!resumeId) {
+        toast.error("Cannot save resume", {
+          description: "No resume ID found for saving."
+        });
+        return false;
+      }
+      
+      console.log(`Saving resume ID ${resumeId} with content length: ${safeContent.length}`);
+      
+      // Save to database using the API
+      const response = await fetch('/api/resumes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          resumeId: resumeId,
+          content: safeContent,
+          userId: user?.id
+        }),
       });
-      return;
+      
+      // Check if the save was successful
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to save resume");
+      }
+      
+      // Parse the response
+      const result = await response.json();
+      
+      // Update edited text in the state
+      setEditedText(safeContent);
+      
+      // Update processed HTML state
+      setProcessedHtml(safeContent);
+      
+      // Return success
+      return true;
+    } catch (error: any) {
+      // Log the error
+      console.error("Error saving resume:", error);
+      
+      // Return failure
+      return false;
     }
-    
-    // TODO: Implement actual save functionality
-    // This would likely involve sending the edited HTML to your API
-    // and updating the resume in the database
-    
-    toast.success("Resume saved to your account");
-  };
+  }, [resumeId, user?.id, setEditedText]);
 
   /**
-   * Filter to get only applied keywords as an array of strings
-   * Used by the ResumePreview component to highlight applied keywords
+   * Handles resetting the resume to the original optimized version
+   * Delegates to the hook's resetResume function
    */
-  const appliedKeywordsArray = keywords
-    .filter(keyword => keyword.applied)
-    .map(keyword => keyword.text);
+  const handleReset = useCallback(async () => {
+    const success = await resetResume();
+    
+    if (success) {
+      // Close the dialog
+      setShowResetDialog(false);
+      
+      // Set processed HTML to the original optimized text
+      if (optimizedText) {
+        try {
+          const processedContent = prepareOptimizedTextForEditor(optimizedText);
+          setProcessedHtml(processedContent);
+        } catch (error) {
+          console.error("Error processing optimized text after reset:", error);
+          setProcessedHtml(optimizedText);
+        }
+      }
+    }
+  }, [resetResume, optimizedText]);
 
   /**
    * Handles form submission for resume optimization from text input
    * Processes the pasted text and calls the optimization API
    */
-  const handleSubmitText = async () => {
+  const handleSubmitText = useCallback(async () => {
     if (!rawText || rawText.length < 50) {
       toast.error("Please enter at least 50 characters", {
         description: "Your resume text is too short for proper analysis."
@@ -374,29 +472,37 @@ const ResumeOptimizer: React.FC = () => {
         description: error.message || "An unexpected error occurred."
       });
     }
-  };
+  }, [rawText, user?.id]);
     
   /**
    * File upload handler for UploadSection component
-   * Sets the file information for the UI
+   * Sets the file information for the UI and optimizer hook
    * 
    * @param url - URL of the uploaded file
    * @param name - Name of the uploaded file
    * @param size - Size of the uploaded file
    * @param type - MIME type of the uploaded file
    */
-  const onFileUpload = (url: string, name: string, size?: number, type?: string) => {
+  const onFileUpload = useCallback((url: string, name: string, size?: number, type?: string) => {
     console.log("File uploaded:", { url, name, size, type });
     setFileUrl(url);
     setFileName(name);
     setSelectedFile(new File([""], name, { type: type || "application/octet-stream" }));
-  };
+  }, [setSelectedFile]);
+
+  /**
+   * Filter to get only applied keywords as an array of strings
+   * Used by the ResumePreview component to highlight applied keywords
+   */
+  const appliedKeywordsArray = keywords
+    .filter(keyword => keyword.applied)
+    .map(keyword => keyword.text);
 
   /**
    * Renders empty state for Preview when no resume data is available
    * Provides a friendly UI for users who haven't uploaded a resume yet
    */
-  const renderEmptyPreviewState = () => (
+  const renderEmptyPreviewState = useCallback(() => (
     <div className="flex flex-col items-center justify-center h-[500px] border rounded-lg p-4">
       <Sparkles className="h-12 w-12 text-brand-600 mb-4" />
       <p className="text-lg font-medium">No resume data available</p>
@@ -410,11 +516,33 @@ const ResumeOptimizer: React.FC = () => {
         Go to Upload
       </Button>
     </div>
-  );
+  ), [setActiveTab]);
+
+  /**
+   * Handler for when edit mode changes
+   * Used to show/hide certain UI elements
+   */
+  const handleEditModeChange = useCallback((isEditingMode: boolean) => {
+    setIsEditing(isEditingMode);
+  }, []);
+
+  /**
+   * Determine if the resume has edits that can be reset
+   * Used to enable/disable the reset button
+   */
+  const hasEdits = Boolean(editedText);
 
   // Main component render
   return (
     <div className="py-8">
+      {/* Reset Confirmation Dialog */}
+      <ResetConfirmationDialog
+        open={showResetDialog}
+        onOpenChange={setShowResetDialog}
+        onConfirm={handleReset}
+        isResetting={isResetting}
+      />
+
       {/* Header section */}
       <div className="text-center mb-8">
         <h2 className="text-2xl font-bold">AI Resume Optimizer</h2>
@@ -436,7 +564,7 @@ const ResumeOptimizer: React.FC = () => {
             isParsing={isParsing || isOptimizing}
             selectedFile={selectedFile}
             resumeContent={rawText}
-            onFileChange={() => {}} // Handled by handleFileUpload
+            onFileChange={setSelectedFile}
             onContentChange={handleContentChange}
             onContinue={handleSubmitText}
             onFileUpload={onFileUpload}
@@ -454,13 +582,31 @@ const ResumeOptimizer: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Show empty state if no optimized text is available */}
-              {!optimizedText ? (
+              {/* Show empty state if no resume content is available */}
+              {!optimizedText && !editedText ? (
                 renderEmptyPreviewState()
               ) : (
                 <>
+                  {/* Info chip showing if we're displaying edited version */}
+                  {editedText && !isEditing && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 flex items-center mb-4">
+                      <span className="text-blue-600 text-sm">
+                        <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+                        You're viewing your edited version of the resume
+                      </span>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="ml-auto text-blue-600 text-xs"
+                        onClick={() => setShowResetDialog(true)}
+                      >
+                        <RotateCcw className="mr-1 h-3 w-3" /> Reset to AI version
+                      </Button>
+                    </div>
+                  )}
+                
                   {/* Regenerate button (visible only when changes need to be applied) */}
-                  {needsRegeneration && (
+                  {needsRegeneration && !isEditing && (
                     <div className="flex justify-end">
                       <Button 
                         onClick={handleRegenerateResume}
@@ -485,31 +631,25 @@ const ResumeOptimizer: React.FC = () => {
                   <div className="grid md:grid-cols-5 gap-6">
                     {/* Left column (3/5) - Resume preview */}
                     <div className="col-span-3">
-                      {/* New ResumePreview component with TipTap integration */}
+                      {/* Resume preview with editing via accordions */}
                       <ResumePreview
-                        optimizedText={optimizedText}
+                        optimizedText={editedText || optimizedText}
+                        originalOptimizedText={optimizedText}
                         selectedTemplate={selectedTemplate}
                         templates={resumeTemplates}
                         appliedKeywords={appliedKeywordsArray}
-                        suggestions={suggestions}
+                        suggestions={[]} // Removed suggestions from accordions
                         onDownload={handleDownload}
                         onSave={handleSave}
-                        onTextChange={handleEditorChange}
-                        onApplySuggestion={handleApplySuggestion}
-                        onApplyKeyword={handleEditorKeywordApply}
+                        onTextChange={handlePreviewContentChange}
                         isOptimizing={isOptimizing || isApplyingChanges}
                         language={optimizedData?.language || "English"}
-                      />
-
-                      {/* Resume template gallery */}
-                      <TemplateGallery
-                        templates={resumeTemplates}
-                        selectedTemplate={selectedTemplate}
-                        onTemplateSelect={handleTemplateSelect}
+                        onEditModeChange={handleEditModeChange}
+                        onReset={hasEdits ? () => setShowResetDialog(true) : undefined}
                       />
                     </div>
                     
-                    {/* Right column (2/5) - Tools and suggestions */}
+                    {/* Right column (2/5) - Always visible, even in edit mode */}
                     <div className="col-span-2 flex flex-col gap-4">
                       {/* ATS Optimization score card */}
                       <ScoreCard optimizationScore={optimizationScore} />
@@ -526,6 +666,13 @@ const ResumeOptimizer: React.FC = () => {
                         keywords={keywords}
                         onKeywordApply={handleKeywordApply}
                         needsRegeneration={needsRegeneration}
+                      />
+
+                      {/* Resume template gallery */}
+                      <TemplateGallery
+                        templates={resumeTemplates}
+                        selectedTemplate={selectedTemplate}
+                        onTemplateSelect={handleTemplateSelect}
                       />
                     </div>
                   </div>
