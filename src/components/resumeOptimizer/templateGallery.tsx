@@ -26,7 +26,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({
   onTemplateSelect 
 }) => {
   return (
-    <div className="bg-white border rounded-lg p-6 mt-6 shadow-sm">
+    <div className="bg-white border rounded-lg p-6 shadow-sm">
       <h3 className="font-semibold text-lg mb-4">Choose Template</h3>
       
       {/* Two-column grid layout */}

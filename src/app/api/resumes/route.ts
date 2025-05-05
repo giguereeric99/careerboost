@@ -1,4 +1,5 @@
 /**
+ * api/resumes/route.ts
  * Unified Resume API Route Handler
  * 
  * Complete RESTful API for all resume operations:
@@ -15,8 +16,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase-admin";
 import { getAuth } from "@clerk/nextjs/server";
-import DOMPurify from "dompurify";
 import crypto from "crypto";
+import { JSDOM } from "jsdom";
+import createDOMPurify from "dompurify";
+
+// Initialize DOMPurify with JSDOM for server-side sanitization
+let DOMPurify: any;
+try {
+  // Create a virtual DOM environment using JSDOM
+  const window = new JSDOM("").window;
+  // Initialize DOMPurify with the virtual window
+  DOMPurify = createDOMPurify(window);
+  
+  // Add additional hooks or configurations if needed
+  DOMPurify.addHook("afterSanitizeAttributes", function(node: any) {
+    // Add additional security measures for URLs in attributes
+    if ("target" in node) {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+  
+  console.log("DOMPurify initialized successfully with JSDOM");
+} catch (error) {
+  console.error("Error initializing DOMPurify with JSDOM:", error);
+  // Create a fallback sanitizer function
+  DOMPurify = {
+    sanitize: (html: string) => {
+      // Simple fallback sanitization - not as robust as DOMPurify
+      return html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
+        .replace(/\son\w+\s*=\s*["']?[^"']*["']?/gi, '') // Remove event handlers
+        .replace(/javascript:/gi, ''); // Remove javascript: protocol
+    }
+  };
+  console.warn("Using fallback sanitization method - LESS SECURE!");
+}
 
 /**
  * GET handler for resume data
@@ -214,7 +249,7 @@ export async function POST(req: NextRequest) {
       }, { status: 401 });
     }
     
-    // Sanitize HTML content using DOMPurify
+    // Sanitize HTML content using DOMPurify with JSDOM
     const sanitizedContent = sanitizeHtml(content);
     
     // Check if sanitized content is valid
@@ -635,22 +670,32 @@ async function getOrCreateSupabaseUuid(supabaseAdmin: any, clerkUserId: string):
 }
 
 /**
- * Sanitizes HTML content to prevent XSS attacks
+ * Sanitizes HTML content to prevent XSS attacks using DOMPurify with JSDOM
+ * Enhanced version for server-side use
  * 
  * @param html - Raw HTML content from the client
  * @returns Sanitized HTML content
  */
 function sanitizeHtml(html: string): string {
   try {
-    // Basic sanitization if DOMPurify is not available
-    if (typeof DOMPurify === 'undefined') {
+    // Safety check for null/undefined input
+    if (!html) {
+      console.warn("Empty HTML content provided for sanitization");
+      return "";
+    }
+    
+    // Check if DOMPurify is properly initialized
+    if (!DOMPurify || typeof DOMPurify.sanitize !== 'function') {
+      console.error("DOMPurify not initialized properly");
+      
+      // Fallback basic sanitization
       return html
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
         .replace(/\son\w+\s*=\s*["']?[^"']*["']?/gi, '') // Remove event handlers
         .replace(/javascript:/gi, ''); // Remove javascript: protocol
     }
     
-    // Use DOMPurify for comprehensive sanitization
+    // Use DOMPurify for comprehensive sanitization with JSDOM
     return DOMPurify.sanitize(html, {
       // Allow most standard HTML tags
       ALLOWED_TAGS: [
@@ -663,7 +708,21 @@ function sanitizeHtml(html: string): string {
       ALLOWED_ATTR: [
         'href', 'target', 'rel', 'id', 'class', 'style',
         'data-section', 'data-section-id', 'title', 'alt'
-      ]
+      ],
+      // Enable these DOMPurify options for better security
+      ADD_ATTR: ['target'], // Add target attribute to links
+      ADD_URI_SAFE_ATTR: ['style'], // Allow style attributes with safe values
+      ALLOW_ARIA_ATTR: true, // Allow ARIA attributes
+      USE_PROFILES: { html: true }, // Use HTML profile
+      WHOLE_DOCUMENT: false, // Don't sanitize the entire document
+      SANITIZE_DOM: true, // Sanitize DOM elements
+      KEEP_CONTENT: true, // Keep content of elements when removing elements
+      RETURN_DOM: false, // Return HTML as string, not DOM
+      RETURN_DOM_FRAGMENT: false, // Don't return DOM fragment
+      RETURN_DOM_IMPORT: false, // Don't return imported DOM
+      FORCE_BODY: false, // Don't force a body element
+      SANITIZE_NAMED_PROPS: true, // Sanitize named properties (e.g. innerHTML)
+      ALLOW_DATA_ATTR: false // Don't allow data attributes by default (too risky)
     });
   } catch (error) {
     console.error("Error sanitizing HTML:", error);

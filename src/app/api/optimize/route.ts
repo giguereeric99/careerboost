@@ -1,4 +1,5 @@
 /**
+ * api/optimize/route.ts
  * API Route for Resume Optimization
  * This route handles the complete resume optimization workflow:
  * 1. Processing uploaded files or raw text
@@ -660,13 +661,24 @@ export async function POST(req: NextRequest) {
     
     // Return successful response with optimization results
     return NextResponse.json({
+      success: true,
       resumeId: resumeId || "temp-id",
       optimizedText: result.optimizedText,
       suggestions: result.suggestions || [],
       keywordSuggestions: result.keywordSuggestions || [],
       atsScore: result.atsScore || 65,
       language: language,
-      aiProvider: aiProvider
+      aiProvider: aiProvider,
+      data: {
+        rawText: resumeText,
+        originalText: resumeText,
+        fileInfo: {
+          name: fileName,
+          type: fileType,
+          size: fileSize,
+          url: fileUrl
+        }
+      }
     });
     
   } catch (error: any) {

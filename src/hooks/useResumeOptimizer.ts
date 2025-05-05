@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { 
   uploadResume,
   parseResume, 
@@ -16,10 +16,12 @@ import { toast } from "sonner";
 
 /**
  * Custom hook for managing the resume optimization workflow
- * Provides state and functions for the complete resume optimization process:
- * uploading, parsing, optimizing, applying changes, and resetting to original
  * 
- * Introduces support for saving edits to last_saved_text and resetting to original optimized version
+ * This refactored version addresses infinite loop issues by:
+ * 1. Using refs to track operation states
+ * 2. Adding debouncing for state updates
+ * 3. Improving error handling
+ * 4. Simplifying state dependencies
  */
 export function useResumeOptimizer() {
   // --- State for tracking operation status ---
@@ -44,17 +46,21 @@ export function useResumeOptimizer() {
   const [optimizationScore, setOptimizationScore] = useState(65); // ATS compatibility score
   const [needsRegeneration, setNeedsRegeneration] = useState(false); // Whether changes need regeneration
 
+  // --- Refs to prevent infinite loops ---
+  const operationInProgressRef = useRef(false);
+  const lastLoadedResumeIdRef = useRef<string | null>(null);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   /**
    * Handles the upload and processing of a resume file
-   * Uploads the file, parses it, and prepares it for optimization
-   * 
-   * @param file - The resume file to upload
-   * @returns The parsed resume data or null if the operation failed
+   * Now includes operation tracking to prevent infinite loops
    */
   const handleFileUpload = async (file: File) => {
-    if (!file) return null;
+    if (!file || operationInProgressRef.current) return null;
     
     try {
+      operationInProgressRef.current = true;
+      
       // Start upload process
       setIsUploading(true);
       setSelectedFile(file);
@@ -92,20 +98,19 @@ export function useResumeOptimizer() {
     } finally {
       setIsUploading(false);
       setIsParsing(false);
+      operationInProgressRef.current = false;
     }
   };
   
   /**
    * Optimizes the resume using AI
-   * Sends resume data to AI services and processes the optimization results
-   * 
-   * @param data - Resume data to optimize (defaults to current resumeData)
-   * @returns The optimization results or null if the operation failed
+   * Includes debouncing and operation tracking
    */
   const optimizeResumeData = async (data: ResumeData = resumeData!) => {
-    if (!data) return null;
+    if (!data || operationInProgressRef.current) return null;
     
     try {
+      operationInProgressRef.current = true;
       setIsOptimizing(true);
       
       // Call the optimization service
@@ -128,6 +133,7 @@ export function useResumeOptimizer() {
       setEditedText(null); // Clear any previous edited text when creating new optimization
       setSuggestions(suggestionsResult);
       setOptimizationScore(atsScore);
+      setNeedsRegeneration(false);
       
       // Format keywords for UI
       if (keywordSuggestions && keywordSuggestions.length > 0) {
@@ -151,15 +157,13 @@ export function useResumeOptimizer() {
       return null;
     } finally {
       setIsOptimizing(false);
+      operationInProgressRef.current = false;
     }
   };
   
   /**
    * Loads the most recent optimized resume for the current user
-   * Includes support for edited content stored in last_saved_text
-   * 
-   * @param userId - The ID of the user
-   * @returns The loaded resume data or null if not found
+   * Includes deduplication to prevent loading the same resume multiple times
    */
   const loadLatestResume = async (userId: string) => {
     try {
@@ -172,6 +176,13 @@ export function useResumeOptimizer() {
       }
       
       if (!error && data) {
+        // Prevent loading the same resume multiple times
+        if (data.id === lastLoadedResumeIdRef.current) {
+          return data;
+        }
+        
+        lastLoadedResumeIdRef.current = data.id;
+        
         // Update state with loaded resume data
         setResumeId(data.id);
         
@@ -218,6 +229,9 @@ export function useResumeOptimizer() {
         
         return data;
       } else {
+        // Clear last loaded ID if no data found
+        lastLoadedResumeIdRef.current = null;
+        
         toast.message(
           "No resume found", {
           description: "You don't have any previously optimized resumes."
@@ -237,27 +251,34 @@ export function useResumeOptimizer() {
   
   /**
    * Applies a template to the current resume
-   * 
-   * @param templateId - ID of the template to apply
+   * Uses debouncing to prevent rapid state updates
    */
   const applyTemplateToResume = useCallback((templateId: string) => {
-    setNeedsRegeneration(true);
+    // Clear any pending updates
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
     
-    toast.message(
-      "Template applied", {
-      description: `The ${templateId} template has been applied to your resume.`
-    });
+    // Debounce the state update
+    updateTimeoutRef.current = setTimeout(() => {
+      setNeedsRegeneration(true);
+      
+      toast.message(
+        "Template applied", {
+        description: `The ${templateId} template has been applied to your resume.`
+      });
+    }, 150);
   }, []);
   
   /**
    * Applies a suggestion to improve the resume
-   * 
-   * @param suggestionIndex - Index of the suggestion to apply
+   * Includes state validation and prevents invalid updates
    */
   const applySuggestion = async (suggestionIndex: number) => {
-    if (!resumeId || !suggestions[suggestionIndex]) return;
+    if (!resumeId || !suggestions[suggestionIndex] || operationInProgressRef.current) return;
     
     try {
+      operationInProgressRef.current = true;
       const suggestion = suggestions[suggestionIndex];
       
       // Update suggestion status in database
@@ -267,13 +288,15 @@ export function useResumeOptimizer() {
         true
       );
       
-      // Update local state
-      const newSuggestions = [...suggestions];
-      newSuggestions[suggestionIndex] = {
-        ...suggestion,
-        isApplied: true
-      };
-      setSuggestions(newSuggestions);
+      // Update local state using functional update to ensure consistency
+      setSuggestions(prev => {
+        const newSuggestions = [...prev];
+        newSuggestions[suggestionIndex] = {
+          ...suggestion,
+          isApplied: true
+        };
+        return newSuggestions;
+      });
       
       // Mark that changes need to be regenerated
       setNeedsRegeneration(true);
@@ -287,18 +310,20 @@ export function useResumeOptimizer() {
         "Error applying suggestion", {
         description: error.message
       });
+    } finally {
+      operationInProgressRef.current = false;
     }
   };
   
   /**
    * Toggles a keyword's applied state
-   * 
-   * @param index - Index of the keyword to toggle
+   * Includes state validation and prevents invalid updates
    */
   const toggleKeyword = async (index: number) => {
-    if (!resumeId || !keywords[index]) return;
+    if (!resumeId || !keywords[index] || operationInProgressRef.current) return;
     
     try {
+      operationInProgressRef.current = true;
       const keyword = keywords[index];
       const newAppliedState = !keyword.applied;
       
@@ -309,13 +334,15 @@ export function useResumeOptimizer() {
         newAppliedState
       );
       
-      // Update local state
-      const newKeywords = [...keywords];
-      newKeywords[index] = {
-        ...keyword,
-        applied: newAppliedState
-      };
-      setKeywords(newKeywords);
+      // Update local state using functional update to ensure consistency
+      setKeywords(prev => {
+        const newKeywords = [...prev];
+        newKeywords[index] = {
+          ...keyword,
+          applied: newAppliedState
+        };
+        return newKeywords;
+      });
       
       // Mark that changes need to be regenerated
       setNeedsRegeneration(true);
@@ -329,17 +356,20 @@ export function useResumeOptimizer() {
         "Error updating keyword", {
         description: error.message
       });
+    } finally {
+      operationInProgressRef.current = false;
     }
   };
   
   /**
    * Regenerates the resume with all applied changes
-   * Applies all pending suggestions and keywords
+   * Includes operation tracking to prevent double execution
    */
   const applyChanges = async () => {
-    if (!resumeId || !needsRegeneration) return;
+    if (!resumeId || !needsRegeneration || operationInProgressRef.current) return;
     
     try {
+      operationInProgressRef.current = true;
       setIsApplyingChanges(true);
       
       // Get all applied keywords
@@ -380,19 +410,19 @@ export function useResumeOptimizer() {
       });
     } finally {
       setIsApplyingChanges(false);
+      operationInProgressRef.current = false;
     }
   };
 
   /**
    * Resets the resume to its original optimized version
-   * Clears the last_saved_text field in the database
-   * 
-   * @returns Promise resolving to boolean indicating success/failure
+   * Includes operation tracking and state cleanup
    */
   const resetResume = async (): Promise<boolean> => {
-    if (!resumeId) return false;
+    if (!resumeId || operationInProgressRef.current) return false;
     
     try {
+      operationInProgressRef.current = true;
       setIsResetting(true);
       
       // Call the API to reset the resume
@@ -416,6 +446,9 @@ export function useResumeOptimizer() {
       // Clear the edited text state
       setEditedText(null);
       
+      // Reset needs regeneration flag
+      setNeedsRegeneration(false);
+      
       toast.success('Resume reset to original optimized version');
       
       return true;
@@ -425,60 +458,72 @@ export function useResumeOptimizer() {
       return false;
     } finally {
       setIsResetting(false);
+      operationInProgressRef.current = false;
     }
   };
 
   /**
    * Helper function to parse optimized text into structured data
-   * 
-   * @param text - The optimized text to parse
-   * @returns Structured resume data
+   * Includes error handling for parsing failures
    */
   function parseOptimizedText(text: string): any {
-    // In a real implementation, this would parse the text into structured resume data
-    // For now, we'll just return a simple object with the text
-    return {
-      parsed: true,
-      content: text,
-      language: detectLanguage(text)
-    };
+    try {
+      // In a real implementation, this would parse the text into structured resume data
+      // For now, we'll just return a simple object with the text
+      return {
+        parsed: true,
+        content: text,
+        language: detectLanguage(text),
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error("Error parsing optimized text:", error);
+      return {
+        parsed: false,
+        content: text,
+        error: "Failed to parse resume text"
+      };
+    }
   }
   
   /**
    * Basic language detection based on text content
-   * 
-   * @param text - Text to analyze
-   * @returns Detected language
+   * Enhanced with better error handling
    */
   function detectLanguage(text: string): string {
-    // This is a very basic implementation
-    // In a real app, you would use a more sophisticated approach
-    
-    // Common French words
-    const frenchWords = ['le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'je', 'tu', 'il', 'elle', 'nous', 'vous', 'ils', 'elles', 'pour', 'dans', 'avec', 'sur'];
-    
-    // Common Spanish words
-    const spanishWords = ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'o', 'yo', 'tú', 'él', 'ella', 'nosotros', 'vosotros', 'ellos', 'ellas', 'para', 'en', 'con', 'sobre'];
-    
-    // Count word occurrences
-    const words = text.toLowerCase().split(/\s+/);
-    let frenchCount = 0;
-    let spanishCount = 0;
-    
-    words.forEach(word => {
-      if (frenchWords.includes(word)) frenchCount++;
-      if (spanishWords.includes(word)) spanishCount++;
-    });
-    
-    // Determine language based on counts
-    if (frenchCount > spanishCount && frenchCount > words.length * 0.05) {
-      return 'French';
-    } else if (spanishCount > frenchCount && spanishCount > words.length * 0.05) {
-      return 'Spanish';
+    try {
+      // This is a very basic implementation
+      // In a real app, you would use a more sophisticated approach
+      
+      // Common French words
+      const frenchWords = ['le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'je', 'tu', 'il', 'elle', 'nous', 'vous', 'ils', 'elles', 'pour', 'dans', 'avec', 'sur'];
+      
+      // Common Spanish words
+      const spanishWords = ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'o', 'yo', 'tú', 'él', 'ella', 'nosotros', 'vosotros', 'ellos', 'ellas', 'para', 'en', 'con', 'sobre'];
+      
+      // Count word occurrences
+      const words = text.toLowerCase().split(/\s+/);
+      let frenchCount = 0;
+      let spanishCount = 0;
+      
+      words.forEach(word => {
+        if (frenchWords.includes(word)) frenchCount++;
+        if (spanishWords.includes(word)) spanishCount++;
+      });
+      
+      // Determine language based on counts
+      if (frenchCount > spanishCount && frenchCount > words.length * 0.05) {
+        return 'French';
+      } else if (spanishCount > frenchCount && spanishCount > words.length * 0.05) {
+        return 'Spanish';
+      }
+      
+      // Default to English
+      return 'English';
+    } catch (error) {
+      console.error("Error detecting language:", error);
+      return 'English';
     }
-    
-    // Default to English
-    return 'English';
   }
   
   // Return all state and functions

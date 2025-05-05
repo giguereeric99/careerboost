@@ -56,7 +56,7 @@ export const SECTION_ORDER = [
   'resume-publications', 'publications',
   'resume-interests', 'interests',
   'resume-references', 'referees',
-  'resume-additional'
+  'resume-additional', 'additional'
 ];
 
 /**
