@@ -1,14 +1,18 @@
 /**
- * TipTapResumeEditor Component
+ * Enhanced TipTapResumeEditor Component
  * 
- * A simplified version of TipTap editor specifically for resume editing.
- * Provides rich text formatting capabilities while maintaining the structure
- * needed for resume sections.
+ * A powerful rich text editor specifically for resume editing.
+ * Features:
+ * - Rich text formatting capabilities
+ * - Section-specific editing
+ * - Support for applying suggestions
+ * - Keyword integration
+ * - ID preservation for resume sections
  */
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Heading from '@tiptap/extension-heading';
@@ -29,30 +33,49 @@ import {
   Redo,
   AlignLeft,
   AlignCenter,
-  AlignRight
+  AlignRight,
+  Sparkles,
+  CheckCircle,
+  AlertTriangle
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
+// Import custom section ID preservation extension
+import { SectionNode } from '@/services/tipTapExtensions';
+
+// Import the suggestion and keyword types
 import { Suggestion } from '@/types/resume';
 
 /**
  * Interface for TipTapResumeEditor component props
  */
 interface TipTapResumeEditorProps {
-  content: string;               // HTML content to edit
-  onChange: (html: string) => void; // Callback when content changes
-  appliedKeywords?: string[];    // Keywords that can be applied to the resume
+  content: string;                      // HTML content to edit
+  onChange: (html: string) => void;     // Callback when content changes
+  appliedKeywords?: string[];           // Keywords that can be applied to the resume
   onApplyKeyword?: (keyword: string) => void; // Callback when keyword is applied
-  suggestions?: Suggestion[];    // AI suggestions for improving the resume
+  suggestions?: Suggestion[];           // AI suggestions for improving the resume
   onApplySuggestion?: (suggestion: Suggestion) => void; // Callback when suggestion is applied
-  readOnly?: boolean;            // Whether the editor is in read-only mode
-  placeholder?: string;          // Placeholder text when empty
+  readOnly?: boolean;                   // Whether the editor is in read-only mode
+  placeholder?: string;                 // Placeholder text when empty
+  language?: string;                    // Language of the resume content
+  resumeId?: string;                    // ID of the resume being edited
+  onApplyChanges?: () => Promise<boolean>; // Callback for Apply Changes button
+  canApplyChanges?: boolean;            // Whether the user can apply changes
+  sectionType?: string;                 // Type of section being edited
 }
 
 /**
- * TipTapResumeEditor Component
+ * Enhanced TipTapResumeEditor Component
  * 
- * Rich text editor for resume content using TipTap.
- * Supports common text formatting, lists, headings, and more.
+ * Rich text editor for resume content with extended functionality.
  */
 const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
   content,
@@ -62,11 +85,20 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
   suggestions = [],
   onApplySuggestion,
   readOnly = false,
-  placeholder = 'Enter your content here...'
+  placeholder = 'Enter your content here...',
+  language = 'English',
+  resumeId,
+  onApplyChanges,
+  canApplyChanges = true,
+  sectionType = 'generic'
 }) => {
   // Local state for tracking content changes
   const [localContent, setLocalContent] = useState(content);
-  
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Suggestion[]>([]);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [hasAppliedChanges, setHasAppliedChanges] = useState(false);
+
   // Configure and initialize the TipTap editor
   const editor = useEditor({
     extensions: [
@@ -80,6 +112,8 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
       TextAlign.configure({
         types: ['heading', 'paragraph'],
       }),
+      // Add our custom extension to preserve section IDs
+      SectionNode,
     ],
     content: localContent,
     editable: !readOnly,
@@ -128,12 +162,87 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
   const applySuggestion = (suggestion: Suggestion) => {
     if (!editor || !onApplySuggestion) return;
     
+    // Add the suggestion to the selected suggestions
+    if (!selectedSuggestions.find(s => s.id === suggestion.id)) {
+      setSelectedSuggestions([...selectedSuggestions, suggestion]);
+    }
+    
     // This is a simplified approach - in a real app, you'd have more logic
     // for properly applying different types of suggestions
     editor.chain().focus().insertContent(suggestion.text).run();
     
     // Call the parent handler
     onApplySuggestion(suggestion);
+  };
+
+  /**
+   * Handle Apply Changes button click
+   * Shows confirmation dialog before proceeding
+   */
+  const handleApplyChangesClick = useCallback(() => {
+    // Only proceed if we have suggestions and the user can apply changes
+    if (selectedSuggestions.length === 0 || !canApplyChanges || hasAppliedChanges) return;
+    
+    // Show confirmation dialog
+    setShowConfirmDialog(true);
+  }, [selectedSuggestions, canApplyChanges, hasAppliedChanges]);
+
+  /**
+   * Confirm and apply changes
+   * Calls the onApplyChanges callback and updates UI accordingly
+   */
+  const confirmApplyChanges = useCallback(async () => {
+    if (!onApplyChanges) return;
+    
+    try {
+      setIsApplying(true);
+      
+      // Call the parent handler with selected suggestions
+      const success = await onApplyChanges();
+      
+      if (success) {
+        setHasAppliedChanges(true);
+        setSelectedSuggestions([]);
+      }
+    } catch (error) {
+      console.error("Error applying changes:", error);
+    } finally {
+      setIsApplying(false);
+      setShowConfirmDialog(false);
+    }
+  }, [onApplyChanges]);
+
+  /**
+   * Get section-specific placeholder text
+   */
+  const getSectionPlaceholder = (sectionType: string): string => {
+    switch (sectionType) {
+      case 'summary':
+        return 'Enter your professional summary here...';
+      case 'experience':
+        return 'Enter your work experience details here...';
+      case 'education':
+        return 'Enter your educational background here...';
+      case 'skills':
+        return 'Enter your skills here, using bullet points for better readability...';
+      default:
+        return placeholder;
+    }
+  };
+
+  // Prepare translated UI text based on editor language
+  // Note: We're keeping the UI in English as per requirements,
+  // but are prepared for future internationalization
+  const uiText = {
+    applyChanges: "Apply Changes",
+    applyChangesDialogTitle: "Apply Selected Suggestions",
+    applyChangesDialogDesc: "This will apply all selected suggestions to your resume. You can only do this once.",
+    applyChangesDialogConfirm: "Apply Changes",
+    applyChangesDialogCancel: "Cancel",
+    processingChanges: "Processing...",
+    changesApplied: "Changes Applied",
+    keywordsTitle: "Keywords",
+    suggestionsTitle: "Suggestions"
   };
 
   // Render editor toolbar and content
@@ -284,13 +393,14 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
         <EditorContent 
           editor={editor} 
           className="prose prose-sm max-w-none min-h-[250px] focus:outline-none"
+          placeholder={getSectionPlaceholder(sectionType)}
         />
       </div>
       
       {/* Applied keywords section (if provided) */}
       {!readOnly && appliedKeywords.length > 0 && (
         <div className="p-4 border-t bg-gray-50">
-          <p className="text-sm font-medium mb-2">Keywords</p>
+          <p className="text-sm font-medium mb-2">{uiText.keywordsTitle}</p>
           <div className="flex flex-wrap gap-1">
             {appliedKeywords.map((keyword, index) => (
               <Button
@@ -307,31 +417,133 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
         </div>
       )}
       
-      {/* Suggestions section (if provided) */}
+      {/* Suggestions section with Apply Changes button */}
       {!readOnly && suggestions.length > 0 && (
         <div className="p-4 border-t bg-gray-50">
-          <p className="text-sm font-medium mb-2">Suggestions</p>
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-sm font-medium">{uiText.suggestionsTitle}</p>
+            
+            {/* Apply Changes button - only shown if there are selected suggestions */}
+            {selectedSuggestions.length > 0 && canApplyChanges && (
+              <Button 
+                size="sm" 
+                variant="default"
+                onClick={handleApplyChangesClick}
+                disabled={hasAppliedChanges || isApplying}
+                className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-1"
+              >
+                {hasAppliedChanges ? (
+                  <>
+                    <CheckCircle className="h-4 w-4" />
+                    {uiText.changesApplied}
+                  </>
+                ) : isApplying ? (
+                  <>
+                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    {uiText.processingChanges}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    {uiText.applyChanges}
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+          
           <div className="space-y-2">
             {suggestions
               .filter(s => !s.isApplied)
-              .map((suggestion, index) => (
-                <div 
-                  key={index} 
-                  className="flex justify-between items-center p-2 bg-white rounded border hover:bg-gray-50"
-                >
-                  <p className="text-sm">{suggestion.text}</p>
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    onClick={() => applySuggestion(suggestion)}
+              .map((suggestion, index) => {
+                // Check if this suggestion has been selected
+                const isSelected = selectedSuggestions.some(s => s.id === suggestion.id);
+                
+                return (
+                  <div 
+                    key={index} 
+                    className={`flex justify-between items-center p-2 rounded border ${
+                      isSelected ? 'bg-green-50 border-green-200' : 'bg-white hover:bg-gray-50'
+                    }`}
                   >
-                    Apply
-                  </Button>
-                </div>
-              ))}
+                    <p className="text-sm">{suggestion.text}</p>
+                    <Button 
+                      size="sm" 
+                      variant={isSelected ? "default" : "outline"}
+                      onClick={() => applySuggestion(suggestion)}
+                      className={isSelected ? "bg-green-600 hover:bg-green-700" : ""}
+                    >
+                      {isSelected ? (
+                        <>
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Applied
+                        </>
+                      ) : (
+                        'Apply'
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
           </div>
+          
+          {/* Message for when no suggestions are available or all have been applied */}
+          {suggestions.filter(s => !s.isApplied).length === 0 && (
+            <div className="flex items-center justify-center p-4 text-gray-500">
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              <span className="text-sm">No more suggestions available</span>
+            </div>
+          )}
         </div>
       )}
+      
+      {/* Confirmation Dialog for Apply Changes */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{uiText.applyChangesDialogTitle}</DialogTitle>
+            <DialogDescription>
+              {uiText.applyChangesDialogDesc}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <h3 className="text-sm font-medium mb-2">Selected Suggestions:</h3>
+            <ul className="space-y-2">
+              {selectedSuggestions.map((suggestion, index) => (
+                <li key={index} className="text-sm flex items-start gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span>{suggestion.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowConfirmDialog(false)}
+              disabled={isApplying}
+            >
+              {uiText.applyChangesDialogCancel}
+            </Button>
+            <Button
+              onClick={confirmApplyChanges}
+              disabled={isApplying}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isApplying ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                  {uiText.processingChanges}
+                </>
+              ) : (
+                uiText.applyChangesDialogConfirm
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

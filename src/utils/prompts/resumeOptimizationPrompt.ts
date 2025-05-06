@@ -141,7 +141,7 @@ You will format your output as HTML with semantic section IDs to enable proper t
   // Final instructions
   systemPrompt += `\n\nI want all predefined sections to be included in the optimization result even if some are empty of content.
 
-It is very important to create the resume in this language: ${config.language}.`;
+It is very important to create the resume, the suggestions and the keywords in this language: ${config.language}.`;
 
   return systemPrompt;
 }
