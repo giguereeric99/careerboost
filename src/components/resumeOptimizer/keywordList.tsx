@@ -9,6 +9,7 @@
  * - Visual impact indicators
  * - Real-time score preview when applying keywords
  * - Detailed tooltips with impact explanations
+ * - Hover effects to simulate impact before applying keywords
  */
 
 import React, { useState, useEffect } from 'react';
@@ -32,30 +33,31 @@ import { ImpactLevel } from '@/services/resumeScoreLogic';
 import ImpactPreview from './impactPreview';
 
 // Define keyword categories with icons and descriptions
+// Note: The original had French descriptions, replaced with English
 const KEYWORD_CATEGORIES = {
   "technical": {
-    title: "Compétence Technique",
-    description: "Compétences techniques, outils ou langages de programmation",
+    title: "Technical Skill",
+    description: "Technical abilities, tools, or programming languages",
     icon: Code
   },
   "soft-skill": {
-    title: "Compétence Humaine",
-    description: "Capacités interpersonnelles et traits de caractère",
+    title: "Soft Skill",
+    description: "Interpersonal abilities and character traits",
     icon: MessageSquare
   },
   "industry-specific": {
-    title: "Terme d'Industrie",
-    description: "Terminologie spécialisée pour votre secteur",
+    title: "Industry Term",
+    description: "Specialized terminology for your industry",
     icon: Tag
   },
   "action-verb": {
-    title: "Verbe d'Action",
-    description: "Verbes dynamiques qui démontrent des accomplissements",
+    title: "Action Verb",
+    description: "Dynamic verbs that demonstrate accomplishments",
     icon: TrendingUp
   },
   "general": {
-    title: "Mot-clé Général",
-    description: "Termes généraux pertinents pour votre domaine",
+    title: "General Keyword",
+    description: "General terms relevant to your field",
     icon: Sparkles
   }
 };
@@ -95,14 +97,21 @@ const KeywordList: React.FC<KeywordListProps> = ({
   currentScore = 0,
   simulateKeywordImpact
 }) => {
-  // State for impact previews
+  // State for impact previews - tracks which keyword is being hovered
   const [showPreview, setShowPreview] = useState<number | null>(null);
-  // State for keyword impacts
-  const [keywordImpacts, setKeywordImpacts] = useState<
-    Array<{newScore: number; pointImpact: number; description: string}>
-  >([]);
+
+  // State for keyword impacts - pre-calculated for performance
+  interface ImpactData {
+    newScore: number;
+    pointImpact: number;
+    description: string;
+  }
+  
+  // State for keyword impacts - pre-calculated for performance
+  const [keywordImpacts, setKeywordImpacts] = useState<ImpactData[]>([]);
   
   // Calculate keyword impacts on mount and when dependencies change
+  // This avoids recalculating impacts on every hover event
   useEffect(() => {
     if (!simulateKeywordImpact || keywords.length === 0) return;
     
@@ -116,6 +125,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
   
   /**
    * Map numeric impact score to impact level enum
+   * Converts a raw impact score (0.0-1.0) to a categorical level
    */
   const getImpactLevel = (impact: number): ImpactLevel => {
     if (impact >= 0.8) return ImpactLevel.CRITICAL;
@@ -126,6 +136,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
   
   /**
    * Gets the appropriate color for an impact level
+   * Used for visual indicators throughout the component
    */
   const getImpactColor = (level: ImpactLevel | number): string => {
     // Convert numeric impact to level if needed
@@ -146,6 +157,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
   
   /**
    * Handle clicking a keyword button
+   * Applies the keyword and hides any active preview
    */
   const handleKeywordClick = (index: number) => {
     // Apply the keyword
@@ -156,6 +168,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
   
   /**
    * Group keywords by category for better organization
+   * Creates a dictionary with category keys and arrays of keywords
    */
   const groupedKeywords = keywords.reduce<Record<string, Keyword[]>>(
     (groups, keyword) => {
@@ -170,6 +183,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
   );
   
   // Sort groups by priority (technical first, then industry-specific, etc.)
+  // This ensures the most important categories appear first
   const priorityOrder = [
     'technical', 'industry-specific', 'soft-skill', 'action-verb', 'general'
   ];
@@ -191,9 +205,9 @@ const KeywordList: React.FC<KeywordListProps> = ({
       <div className="bg-brand-50 border border-brand-100 rounded-lg p-4">
         <div className="flex items-center gap-2 mb-3">
           <Sparkles className="h-5 w-5 text-brand-600" />
-          <h3 className="font-medium">Mots-clés Recommandés</h3>
+          <h3 className="font-medium">Recommended Keywords</h3>
         </div>
-        <p className="text-sm text-gray-500">Aucun mot-clé disponible.</p>
+        <p className="text-sm text-gray-500">No keywords available.</p>
       </div>
     );
   }
@@ -203,24 +217,25 @@ const KeywordList: React.FC<KeywordListProps> = ({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-brand-600" />
-          <h3 className="font-medium">Mots-clés Recommandés</h3>
+          <h3 className="font-medium">Recommended Keywords</h3>
         </div>
         
+        {/* Warning badge when changes need to be regenerated */}
         {needsRegeneration && (
           <Badge 
             variant="outline" 
             className="text-xs bg-amber-50 text-amber-700 border-amber-200"
           >
-            Régénération requise
+            Regeneration needed
           </Badge>
         )}
       </div>
       
-      {/* Group keywords by category */}
+      {/* Group keywords by category for better organization */}
       <div className="space-y-4">
         {sortedGroupKeys.map(category => {
           const categoryKeywords = groupedKeywords[category];
-          // Get category info
+          // Get category info from the predefined categories
           const categoryInfo = KEYWORD_CATEGORIES[category as keyof typeof KEYWORD_CATEGORIES] || 
             KEYWORD_CATEGORIES.general;
           
@@ -228,7 +243,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
           
           return (
             <div key={category} className="bg-white rounded-lg border overflow-hidden">
-              {/* Category header */}
+              {/* Category header with icon and description */}
               <div className="bg-gray-50 px-3 py-2 border-b">
                 <div className="flex items-center gap-1.5">
                   <CategoryIcon className="h-4 w-4 text-brand-600" />
@@ -237,14 +252,15 @@ const KeywordList: React.FC<KeywordListProps> = ({
                 <p className="text-xs text-gray-600">{categoryInfo.description}</p>
               </div>
               
-              {/* Category keywords */}
+              {/* Category keywords display as buttons */}
               <div className="p-3 flex flex-wrap gap-2">
                 {categoryKeywords.map((keyword, categoryIndex) => {
-                  // Find the global index of this keyword
+                  // Find the global index of this keyword for consistent reference
                   const keywordIndex = keywords.findIndex(k => 
                     k.text === keyword.text && k.category === keyword.category
                   );
                   
+                  // Get pre-calculated impact for this keyword
                   const impact = keywordImpacts[keywordIndex];
                   
                   // Get impact level from keyword or calculate it
@@ -254,7 +270,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
                   
                   return (
                     <div key={categoryIndex} className="relative">
-                      {/* Keyword button */}
+                      {/* Keyword button with tooltip */}
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -282,7 +298,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
                             </Button>
                           </TooltipTrigger>
                           
-                          {/* Keyword tooltip */}
+                          {/* Keyword tooltip with detailed information */}
                           <TooltipContent 
                             side="top" 
                             className="max-w-xs p-3"
@@ -295,6 +311,7 @@ const KeywordList: React.FC<KeywordListProps> = ({
                               </div>
                               <p className="text-xs">{categoryInfo.description}</p>
                               
+                              {/* Impact details section */}
                               {showImpactDetails && impact && (
                                 <div className="mt-1 pt-1 border-t border-gray-200">
                                   <Badge 
@@ -305,15 +322,16 @@ const KeywordList: React.FC<KeywordListProps> = ({
                                     Impact (+{impact.pointImpact.toFixed(1)})
                                   </Badge>
                                   <p className="text-xs mt-1">
-                                    L'ajout de ce mot-clé peut améliorer votre score ATS d'environ {impact.pointImpact.toFixed(1)} points.
+                                    Adding this keyword can improve your ATS score by approximately {impact.pointImpact.toFixed(1)} points.
                                   </p>
                                 </div>
                               )}
                               
+                              {/* Applied status indicator */}
                               {keyword.applied ? (
-                                <p className="text-xs text-green-600 mt-1">✓ Appliqué à votre CV</p>
+                                <p className="text-xs text-green-600 mt-1">✓ Applied to your resume</p>
                               ) : (
-                                <p className="text-xs text-gray-500 mt-1">Cliquez pour ajouter à votre CV</p>
+                                <p className="text-xs text-gray-500 mt-1">Click to add to your resume</p>
                               )}
                             </div>
                           </TooltipContent>

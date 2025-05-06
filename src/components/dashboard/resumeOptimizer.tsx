@@ -1,16 +1,18 @@
 /**
- * ResumeOptimizer Component
+ * Enhanced ResumeOptimizer Component
  * 
- * Main component that manages the resume optimization workflow.
+ * Main component that manages the resume optimization workflow with advanced score tracking.
  * Features:
  * - File upload and text input for resumes
- * - AI-powered optimization
- * - Tab navigation between upload and preview
- * - Automatic transition to preview with loading state after optimization
- * - Prevents tab switching during critical operations
- * - Shows loading state while fetching data after optimization
+ * - AI-powered optimization with real-time score feedback
+ * - Detailed keyword and suggestion impact analysis
+ * - Automatic score calculation with breakdown visualization
+ * - Optimized state management to prevent unnecessary re-renders
+ * - Template selection and application
+ * - Export and download capabilities
  * 
- * Fixed: loadResume dependency circular issue
+ * This component uses advanced memoization techniques to ensure optimal performance
+ * even with complex score calculations and UI updates.
  */
 
 'use client';
@@ -24,6 +26,8 @@ import { Button } from "@/components/ui/button";
 
 // Import custom hooks
 import { useResumeOptimizerEnhanced } from '@/hooks/useResumeOptimizerEnhanced';
+import { useResumeScoreManager } from '@/hooks/useResumeScoreManager';
+import { useResumeLoader } from '@/hooks/useResumeLoader';
 
 // Import components
 import UploadSection from '@/components/ResumeOptimizer/uploadSection';
@@ -43,6 +47,7 @@ import { resumeTemplates } from '@/constants/resumeTemplates';
 
 /**
  * ResumeOptimizer Component
+ * Main component for the resume optimization workflow
  */
 const ResumeOptimizer: React.FC = () => {
   // -------------------------------------------------------------------------
@@ -52,10 +57,7 @@ const ResumeOptimizer: React.FC = () => {
   // Get user authentication state from Clerk
   const { user } = useUser();
 
-  // Initialize the resume optimizer hook which provides:
-  // - Data state (optimizedText, suggestions, keywords, etc.)
-  // - Status state (isUploading, isParsing, isOptimizing, etc.)
-  // - Action handlers (handleSave, handleDownload, etc.)
+  // Initialize the resume optimizer hook with enhanced score tracking
   const {
     // Status states - Track the state of various operations
     isUploading,          // File upload in progress
@@ -94,7 +96,11 @@ const ResumeOptimizer: React.FC = () => {
     loadLatestResume,             // Load latest resume from database
     
     // File handling
-    handleFileUpload              // Handle file upload completion
+    handleFileUpload,             // Handle file upload completion
+    
+    // Advanced score simulation
+    simulateKeywordImpact,        // Simulate impact of applying a keyword
+    simulateSuggestionImpact      // Simulate impact of applying a suggestion
   } = useResumeOptimizerEnhanced(user?.id);
   
   // -------------------------------------------------------------------------
@@ -123,7 +129,7 @@ const ResumeOptimizer: React.FC = () => {
   const loadingAttempts = useRef(0);            // Track number of loading attempts
 
   // -------------------------------------------------------------------------
-  // Computed Values
+  // Computed Values & Memoization
   // -------------------------------------------------------------------------
   
   /**
@@ -136,6 +142,18 @@ const ResumeOptimizer: React.FC = () => {
   const displayContent = useMemo(() => {
     return processedHtml || editedText || optimizedText || '';
   }, [processedHtml, editedText, optimizedText]);
+
+  /**
+   * Calculate current resume score with breakdown
+   * Using useMemo to prevent unnecessary recalculations
+   */
+  const currentScoreData = useMemo(() => {
+    return {
+      score: optimizationScore,
+      breakdown: scoreManager?.scoreBreakdown || null,
+      potentialScore: scoreManager?.scoreBreakdown?.potential || null
+    };
+  }, [optimizationScore, scoreManager?.scoreBreakdown]);
 
   /**
    * Check if any analysis process is currently active
@@ -170,8 +188,24 @@ const ResumeOptimizer: React.FC = () => {
     isOptimizing
   ]);
 
+  /**
+   * Get array of applied keywords for display
+   * Memoized to prevent unnecessary array creation
+   */
+  const appliedKeywordsArray = useMemo(() => {
+    return keywords
+      .filter(keyword => keyword.applied)
+      .map(keyword => keyword.text);
+  }, [keywords]);
+
+  /**
+   * Check if resume has unsaved edits
+   * Used to enable/disable reset functionality
+   */
+  const hasEdits = useMemo(() => Boolean(editedText), [editedText]);
+
   // -------------------------------------------------------------------------
-  // Event Handlers
+  // Event Handlers - Optimized with useCallback
   // -------------------------------------------------------------------------
   
   /**
@@ -208,10 +242,6 @@ const ResumeOptimizer: React.FC = () => {
     setSelectedFile(new File([""], name, { type: type || "application/octet-stream" }));
   }, [setSelectedFile]);
 
-  // -------------------------------------------------------------------------
-  // Analysis Flow Management
-  // -------------------------------------------------------------------------
-  
   /**
    * Called when analysis starts (from UploadSection)
    * Disables UI elements that should not be accessible during analysis
@@ -224,7 +254,6 @@ const ResumeOptimizer: React.FC = () => {
   /**
    * Called when analysis completes (from UploadSection)
    * Sets up loading state for preview tab transition
-   * Fixed: removed dependency on loadResume wrapper function
    */
   const handleAnalysisComplete = useCallback(() => {
     setIsAnalysisDisabled(false);    // Re-enable preview tab
@@ -241,6 +270,7 @@ const ResumeOptimizer: React.FC = () => {
     
     // Start loading resume data in the background
     if (user?.id && loadLatestResume) {
+      // Use setTimeout to avoid blocking the UI
       setTimeout(() => {
         const loadResumeData = async () => {
           try {
@@ -269,6 +299,9 @@ const ResumeOptimizer: React.FC = () => {
     }
 
     try {
+      // Start analysis process
+      handleAnalysisStart();
+      
       // Prepare form data for API
       const formData = new FormData();
       formData.append("rawText", rawText);
@@ -285,62 +318,52 @@ const ResumeOptimizer: React.FC = () => {
         const errData = await res.json();
         throw new Error(errData.error || "Failed to optimize resume");
       }
-
-      // Success - tab switching is handled by onAnalysisComplete callback
+      
+      // Success - analysis complete
+      handleAnalysisComplete();
+      
     } catch (error: any) {
+      // Reset analysis state on error
+      setIsAnalysisDisabled(false);
+      setIsUploadInProgress(false);
+      
       toast.error("Optimization failed", {
         description: error.message || "An unexpected error occurred."
       });
     }
-  }, [rawText, user?.id]);
-
-  // -------------------------------------------------------------------------
-  // Data Loading Management
-  // -------------------------------------------------------------------------
-  
-  /**
-   * Check if user has any resumes in the database
-   * Called on component mount and when user changes
-   * IMPORTANT: This function should NOT be included in useEffect dependencies
-   * to prevent infinite loops
-   */
-  const checkIfUserHasResume = useCallback(async () => {
-    // Prevent checking if already loading or no user
-    if (!user?.id || isLoadingInProgress.current) return;
-    
-    try {
-      console.log("Checking if user has resume...");
-      const result = await loadLatestResume(user.id);
-      
-      // Update state based on result
-      if (result?.optimizedText) {
-        console.log("User has a resume");
-        setHasResume(true);
-      } else {
-        console.log("User has no resume");
-        setHasResume(false);
-      }
-    } catch (error) {
-      console.error("Error checking for resume:", error);
-      setHasResume(false);
-    }
-  }, [user?.id, loadLatestResume]);
+  }, [rawText, user?.id, handleAnalysisStart, handleAnalysisComplete]);
 
   /**
    * Handle explicit loading trigger (button click)
    * Resets attempts and forces a fresh load
    */
   const handleLoadResume = useCallback(async () => {
-    loadingAttempts.current = 0;  // Reset attempts
-    if (user?.id) {
-      await loadLatestResume(user.id);
+    // Skip if already loading
+    if (isLoadingInProgress.current) return;
+    
+    try {
+      isLoadingInProgress.current = true;
+      loadAttemptedRef.current = true;
+      loadingAttempts.current = 0;  // Reset attempts
+      
+      if (user?.id) {
+        const result = await loadLatestResume(user.id);
+        
+        // Update state based on result
+        if (result) {
+          setHasResume(true);
+        } else {
+          setHasResume(false);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading resume:", error);
+      setHasResume(false);
+    } finally {
+      isLoadingInProgress.current = false;
     }
   }, [user?.id, loadLatestResume]);
 
-  // -------------------------------------------------------------------------
-  // Navigation Management
-  // -------------------------------------------------------------------------
-  
   /**
    * Handle tab change with smart data loading
    * Loads data only when switching to preview if needed
@@ -359,75 +382,22 @@ const ResumeOptimizer: React.FC = () => {
       // Reset loading attempts for fresh try
       loadingAttempts.current = 0;
       
+      // Set loading state
+      isLoadingInProgress.current = true;
+      
       // Load immediately
       if (user?.id) {
         loadLatestResume(user.id).then((result) => {
-          console.log("Data loaded from tab change:", result ? "success" : "no data");
+          // Update hasResume based on result
+          setHasResume(!!result);
+          isLoadingInProgress.current = false;
+        }).catch(error => {
+          console.error("Error loading resume:", error);
+          isLoadingInProgress.current = false;
         });
       }
     }
   }, [user, isPreviewTabDisabled, loadLatestResume, displayContent, optimizedText]);
-
-  // -------------------------------------------------------------------------
-  // Effects
-  // -------------------------------------------------------------------------
-  
-  /**
-   * Check for existing resume on component mount
-   * Only runs once per user ID change
-   * 
-   * IMPORTANT: DO NOT include checkIfUserHasResume in dependencies
-   * This would create an infinite loop because checkIfUserHasResume
-   * depends on loadLatestResume which changes on every render
-   */
-  useEffect(() => {
-    let isMounted = true;
-    
-    const checkResume = async () => {
-      if (user?.id && isMounted) {
-        await checkIfUserHasResume();
-      }
-    };
-    
-    checkResume();
-    
-    // Cleanup function
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.id]); // Only depend on user.id, not checkIfUserHasResume
-
-  /**
-   * Cleanup effect for timeouts
-   * Ensures timeouts are cleared on unmount
-   */
-  useEffect(() => {
-    return () => {
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // -------------------------------------------------------------------------
-  // UI Helpers
-  // -------------------------------------------------------------------------
-  
-  /**
-   * Get array of applied keywords for display
-   * Filters keywords that have been applied
-   */
-  const appliedKeywordsArray = useMemo(() => {
-    return keywords
-      .filter(keyword => keyword.applied)
-      .map(keyword => keyword.text);
-  }, [keywords]);
-
-  /**
-   * Check if resume has unsaved edits
-   * Used to enable/disable reset functionality
-   */
-  const hasEdits = useMemo(() => Boolean(editedText), [editedText]);
 
   /**
    * Handle resume download
@@ -492,6 +462,71 @@ const ResumeOptimizer: React.FC = () => {
     toast.success("Resume downloaded");
   }, [needsRegeneration, displayContent, selectedTemplate]);
 
+  // -------------------------------------------------------------------------
+  // Effects
+  // -------------------------------------------------------------------------
+  
+  /**
+   * Check for existing resume on component mount
+   * Only runs once per user ID change
+   */
+  useEffect(() => {
+    let isMounted = true;
+    
+    const checkResume = async () => {
+      // Skip if already loading or no user
+      if (!user?.id || isLoadingInProgress.current) return;
+      
+      try {
+        isLoadingInProgress.current = true;
+        
+        console.log("Checking if user has resume...");
+        const result = await loadLatestResume(user.id);
+        
+        // Update state based on result if component is still mounted
+        if (isMounted) {
+          if (result) {
+            console.log("User has a resume");
+            setHasResume(true);
+          } else {
+            console.log("User has no resume");
+            setHasResume(false);
+          }
+        }
+      } catch (error) {
+        console.error("Error checking for resume:", error);
+        if (isMounted) {
+          setHasResume(false);
+        }
+      } finally {
+        isLoadingInProgress.current = false;
+      }
+    };
+    
+    checkResume();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, loadLatestResume]);
+
+  /**
+   * Cleanup effect for timeouts
+   * Ensures timeouts are cleared on unmount
+   */
+  useEffect(() => {
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // UI Helpers & Render Functions
+  // -------------------------------------------------------------------------
+  
   /**
    * Render empty state with loading button
    * Shows when no resume data is available
@@ -641,12 +676,12 @@ const ResumeOptimizer: React.FC = () => {
                     <div className="col-span-2 flex flex-col gap-4">
                       {/* Score card */}
                       <ScoreCard 
-                        optimizationScore={optimizationScore}
+                        optimizationScore={currentScoreData.score}
                         resumeContent={displayContent}
                         suggestionsApplied={Array.isArray(appliedSuggestions) ? appliedSuggestions.length : 0}
                         keywordsApplied={Array.isArray(appliedKeywords) ? appliedKeywords.length : 0}
-                        scoreBreakdown={scoreManager?.scoreBreakdown || null}
-                        potentialScore={scoreManager?.scoreBreakdown?.potential || null}
+                        scoreBreakdown={currentScoreData.breakdown}
+                        potentialScore={currentScoreData.potentialScore}
                         initialScore={optimizationScore}
                       />
 
@@ -659,6 +694,9 @@ const ResumeOptimizer: React.FC = () => {
                         isOptimizing={isOptimizing}
                         onApplySuggestion={handleApplySuggestion}
                         resumeContent={displayContent}
+                        showImpactDetails={true}
+                        currentScore={currentScoreData.score}
+                        simulateSuggestionImpact={simulateSuggestionImpact}
                       />
                       
                       {/* Keywords */}
@@ -669,6 +707,9 @@ const ResumeOptimizer: React.FC = () => {
                         }))}
                         onKeywordApply={handleKeywordApply}
                         needsRegeneration={needsRegeneration}
+                        showImpactDetails={true}
+                        currentScore={currentScoreData.score}
+                        simulateKeywordImpact={simulateKeywordImpact}
                       />
 
                       {/* Templates */}

@@ -3,12 +3,17 @@
  * 
  * This component displays the resume's ATS optimization score with an interactive
  * circular progress indicator, real-time feedback, and detailed performance metrics.
- * It maintains the same UI appearance as the original but adds enhanced score calculation.
+ * Features:
+ * - Animated circular progress indicator with color coding
+ * - Contextual feedback based on score ranges
+ * - Progress animation when score changes
+ * - Detailed breakdown of score components
+ * - Potential score improvement indicator
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Sparkles, Info } from "lucide-react";
+import { Sparkles, Info, TrendingUp } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -16,17 +21,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// Import the scoring logic
+// Import the scoring logic if available
 import { ScoreBreakdown } from '@/services/resumeScoreLogic';
 
+// Props interface with detailed documentation
 interface ScoreCardProps {
-  optimizationScore: number;
-  resumeContent?: string;
-  suggestionsApplied?: number;
-  keywordsApplied?: number;
-  scoreBreakdown?: ScoreBreakdown | null;
-  potentialScore?: number;
-  initialScore?: number;
+  optimizationScore: number;       // Current ATS score (0-100)
+  resumeContent?: string;          // Resume content for analysis
+  suggestionsApplied?: number;     // Number of suggestions applied
+  keywordsApplied?: number;        // Number of keywords applied
+  scoreBreakdown?: ScoreBreakdown | null; // Detailed score breakdown
+  potentialScore?: number | null;  // Maximum possible score with all recommendations
+  initialScore?: number | null;    // Starting score before any optimizations
+  showDetails?: boolean;           // Whether to show detailed metrics (default: true)
 }
 
 /**
@@ -39,24 +46,35 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   suggestionsApplied = 0,
   keywordsApplied = 0,
   scoreBreakdown = null,
-  potentialScore,
-  initialScore
+  potentialScore = null,
+  initialScore = null,
+  showDetails = true
 }) => {
-  // Track score changes for animations
+  // State for animated score display
   const [displayScore, setDisplayScore] = useState(optimizationScore);
   const [previousScore, setPreviousScore] = useState(optimizationScore);
   const [isIncreasing, setIsIncreasing] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
+  
+  // Animation configuration
+  const ANIMATION_DURATION = 1000; // 1 second
+  const ANIMATION_FPS = 30; // frames per second
 
-  // Color mapping based on score ranges
-  const getScoreColor = (score: number): string => {
+  /**
+   * Get appropriate color based on score range
+   * Higher scores get more positive colors
+   */
+  const getScoreColor = useCallback((score: number): string => {
     if (score >= 85) return "#10b981"; // Green for excellent scores
     if (score >= 70) return "#3b82f6"; // Blue for good scores
     if (score >= 50) return "#f59e0b"; // Amber for average scores
     return "#ef4444"; // Red for poor scores
-  };
+  }, []);
 
-  // Generate contextual feedback based on score
+  /**
+   * Animate score changes for visual feedback
+   * Uses smooth transition with calculated steps
+   */
   useEffect(() => {
     // Only animate when score actually changes
     if (optimizationScore !== previousScore) {
@@ -64,12 +82,11 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
       setIsIncreasing(optimizationScore > previousScore);
       setPreviousScore(optimizationScore);
       
-      // Animate score change
-      const animationDuration = 1000; // 1 second
-      const fps = 30; // frames per second
-      const steps = animationDuration / 1000 * fps;
+      // Calculate animation parameters
+      const steps = ANIMATION_DURATION / 1000 * ANIMATION_FPS;
       const increment = (optimizationScore - displayScore) / steps;
       
+      // Perform animation using interval
       let currentStep = 0;
       const intervalId = setInterval(() => {
         if (currentStep < steps) {
@@ -87,13 +104,16 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
           setDisplayScore(optimizationScore);
           clearInterval(intervalId);
         }
-      }, 1000 / fps);
+      }, 1000 / ANIMATION_FPS);
       
+      // Clean up interval on component unmount or when optimizationScore changes
       return () => clearInterval(intervalId);
     }
-  }, [optimizationScore, previousScore, displayScore]);
+  }, [optimizationScore, previousScore, displayScore, ANIMATION_FPS]);
 
-  // Set feedback message based on score
+  /**
+   * Set appropriate feedback message based on score range
+   */
   useEffect(() => {
     if (optimizationScore >= 90) {
       setFeedbackMessage("Excellent! Your resume is highly optimized for ATS systems.");
@@ -108,21 +128,27 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
     }
   }, [optimizationScore]);
 
-  // Calculate the stroke-dasharray value for the progress circle
-  const getCircleProgress = (score: number): string => {
+  /**
+   * Calculate the stroke-dasharray value for SVG progress circle
+   * Maps score (0-100) to circle circumference
+   */
+  const getCircleProgress = useCallback((score: number): string => {
     // Circumference of a circle with radius 45 is 2 * π * 45 ≈ 282.7
     const circumference = 282.7;
     const progressValue = score * circumference / 100;
     return `${progressValue} ${circumference - progressValue}`;
-  };
+  }, []);
 
-  // Calculate improvement metrics
+  // Calculate metrics for display
+  const scoreColor = getScoreColor(displayScore);
   const improvement = initialScore ? optimizationScore - initialScore : 0;
-  const remainingPotential = potentialScore ? potentialScore - optimizationScore : 0;
+  const remainingPotential = potentialScore && potentialScore > optimizationScore 
+    ? potentialScore - optimizationScore 
+    : 0;
 
   return (
     <Card className="bg-gray-50 border">
-      <CardHeader>
+      <CardHeader className="pb-2">
         <CardTitle className="text-lg flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-brand-600" />
           Resume Score
@@ -146,6 +172,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {/* Score Display Circle */}
         <div className="flex items-center justify-center">
           <div className="relative w-32 h-32">
             {/* Score indicator */}
@@ -169,13 +196,13 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
                 stroke="#e6e6e6"
                 strokeWidth="10"
               />
-              {/* Progress circle */}
+              {/* Progress circle with animation */}
               <circle
                 cx="50"
                 cy="50"
                 r="45"
                 fill="none"
-                stroke={getScoreColor(displayScore)}
+                stroke={scoreColor}
                 strokeWidth="10"
                 strokeDasharray={getCircleProgress(displayScore)}
                 strokeLinecap="round"
@@ -192,7 +219,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
         </p>
         
         {/* Applied changes and improvement metrics */}
-        {(suggestionsApplied > 0 || keywordsApplied > 0) && (
+        {showDetails && (suggestionsApplied > 0 || keywordsApplied > 0) && (
           <div className="mt-3 text-xs text-gray-600 border-t pt-2">
             <div className="flex justify-between">
               <span>Suggestions applied:</span>
@@ -213,9 +240,38 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
             {remainingPotential > 0 && (
               <div className="flex justify-between text-blue-500">
                 <span>Potential improvement:</span>
-                <span className="font-medium">+{remainingPotential.toFixed(1)} points</span>
+                <span className="font-medium flex items-center">
+                  +{remainingPotential.toFixed(1)} points
+                  <TrendingUp className="h-3 w-3 ml-1" />
+                </span>
               </div>
             )}
+          </div>
+        )}
+        
+        {/* Score breakdown (if available and details should be shown) */}
+        {showDetails && scoreBreakdown && (
+          <div className="mt-3 pt-2 border-t border-gray-200">
+            <h4 className="text-xs font-medium mb-1">Score Breakdown:</h4>
+            <div className="grid grid-cols-1 gap-1">
+              {Object.entries(scoreBreakdown.sectionScores || {}).map(([sectionId, score]) => {
+                // Only show sections with non-zero scores
+                if (score <= 0) return null;
+                
+                // Format section name from ID
+                const sectionName = sectionId
+                  .replace('resume-', '')
+                  .replace(/-/g, ' ')
+                  .replace(/\b\w/g, l => l.toUpperCase());
+                
+                return (
+                  <div key={sectionId} className="flex justify-between text-xs">
+                    <span>{sectionName}:</span>
+                    <span className="font-medium">{score.toFixed(0)}/100</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </CardContent>
