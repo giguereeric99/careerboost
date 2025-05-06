@@ -15,9 +15,9 @@ import {
   SidebarInset
 } from "@/components/ui/sidebar";
 import { FileText, Briefcase, Video, Plus, Trash2 } from "lucide-react";
-import ResumeOptimizer from "@/components/Dashboard/ResumeOptimizer";
-import JobSearch from "@/components/Dashboard/JobSearch";
-import InterviewSimulator from "@/components/Dashboard/InterviewSimulator";
+import ResumeOptimizer from "@/components/Dashboard/resumeOptimizer";
+import JobSearch from "@/components/Dashboard/jobSearch";
+import InterviewSimulator from "@/components/Dashboard/interviewSimulator";
 import { Button } from "@/components/ui/button";
 
 const Page = () => {

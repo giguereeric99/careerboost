@@ -113,63 +113,124 @@ export function useResumeScoreManager({
   const scoreServiceRef = useRef<ResumeScoreService | null>(null);
   const isInitializedRef = useRef<boolean>(false);
   
+  // Refs to track previous values and avoid unnecessary updates
+  const prevInitialScoreRef = useRef<number>(initialScore);
+  const prevResumeContentRef = useRef<string>(resumeContent);
+  const prevSuggestionsRef = useRef<Suggestion[]>(initialSuggestions);
+  const prevKeywordsRef = useRef<Keyword[]>(initialKeywords);
+  
+  // Ref to track update in progress to prevent recursive updates
+  const isUpdatingRef = useRef<boolean>(false);
+  
   /**
-   * Initialize the score service with current values
+   * Check if dependencies have changed significantly enough to require reinitialization
+   * This prevents unnecessary re-renders and potential infinite loops
    */
-  const initializeScoreService = useCallback(() => {
-    // Create score service with configuration
-    scoreServiceRef.current = new ResumeScoreService(
-      initialScore,
-      resumeContent,
-      initialSuggestions,
-      initialKeywords,
-      { 
-        onScoreChange: (score) => {
-          // Debounce score changes
-          if (scoreChangeTimeoutRef.current) {
-            clearTimeout(scoreChangeTimeoutRef.current);
-          }
-          
-          scoreChangeTimeoutRef.current = setTimeout(() => {
-            setCurrentScore(score);
-            
-            // Call external callback if provided
-            if (onScoreChange) {
-              onScoreChange(score);
-            }
-          }, 50);
-        }
-      }
-    );
-    
-    // Get initial score breakdown
-    if (scoreServiceRef.current) {
-      const breakdown = scoreServiceRef.current.getScoreBreakdown();
-      setScoreBreakdown(breakdown);
-      
-      // Set current score from calculation
-      setCurrentScore(scoreServiceRef.current.getCurrentScore());
-      
-      // Initialize suggestions and keywords with processed versions
-      setSuggestions(initialSuggestions);
-      setKeywords(initialKeywords);
-      
-      // Generate initial metrics
-      generateMetrics();
+  const haveDependenciesChanged = useCallback(() => {
+    // Check if initial score has changed
+    if (prevInitialScoreRef.current !== initialScore) {
+      return true;
     }
     
-    isInitializedRef.current = true;
+    // Check if content length has changed significantly
+    // This is a quick way to detect content changes without deep comparison
+    if (Math.abs(prevResumeContentRef.current.length - resumeContent.length) > 10) {
+      return true;
+    }
+    
+    // Check if suggestions or keywords count has changed
+    if (prevSuggestionsRef.current.length !== initialSuggestions.length ||
+        prevKeywordsRef.current.length !== initialKeywords.length) {
+      return true;
+    }
+    
+    // If no significant changes detected, return false
+    return false;
+  }, [initialScore, initialSuggestions, initialKeywords, resumeContent]);
+  
+  /**
+   * Initialize the score service with current values
+   * This function is wrapped in useCallback to prevent unnecessary recreation
+   */
+  const initializeScoreService = useCallback(() => {
+    // Prevent concurrent initialization
+    if (isUpdatingRef.current) return;
+    isUpdatingRef.current = true;
+    
+    try {
+      // Update reference values to track changes
+      prevInitialScoreRef.current = initialScore;
+      prevResumeContentRef.current = resumeContent;
+      prevSuggestionsRef.current = initialSuggestions;
+      prevKeywordsRef.current = initialKeywords;
+      
+      // Create score service with configuration and debounced callback
+      scoreServiceRef.current = new ResumeScoreService(
+        initialScore,
+        resumeContent,
+        initialSuggestions,
+        initialKeywords,
+        { 
+          onScoreChange: (score) => {
+            // Debounce score changes to prevent rapid updates
+            if (scoreChangeTimeoutRef.current) {
+              clearTimeout(scoreChangeTimeoutRef.current);
+            }
+            
+            scoreChangeTimeoutRef.current = setTimeout(() => {
+              setCurrentScore(score);
+              
+              // Call external callback if provided
+              if (onScoreChange) {
+                onScoreChange(score);
+              }
+            }, 50);
+          }
+        }
+      );
+      
+      // Get initial score breakdown
+      if (scoreServiceRef.current) {
+        const breakdown = scoreServiceRef.current.getScoreBreakdown();
+        setScoreBreakdown(breakdown);
+        
+        // Set current score from calculation
+        setCurrentScore(scoreServiceRef.current.getCurrentScore());
+        
+        // Initialize suggestions and keywords with processed versions
+        // Create new arrays to avoid reference equality issues
+        setSuggestions([...initialSuggestions]);
+        setKeywords([...initialKeywords]);
+      }
+      
+      isInitializedRef.current = true;
+      
+      // Generate initial metrics after a short delay
+      // This prevents metrics generation during initialization which can cause loops
+      setTimeout(() => {
+        generateMetrics();
+      }, 100);
+    } finally {
+      // Always reset the update flag
+      isUpdatingRef.current = false;
+    }
   }, [initialScore, resumeContent, initialSuggestions, initialKeywords, onScoreChange]);
   
   /**
-   * Initialize on mount and when key dependencies change
+   * Safe wrapper for updating content that prevents loops
    */
-  useEffect(() => {
-    // Only re-initialize when necessary dependencies change
-    if (!isInitializedRef.current || 
-        initialScore !== scoreServiceRef.current?.getBaseScore()) {
-      initializeScoreService();
-    } else if (scoreServiceRef.current) {
+  const safeUpdateService = useCallback(() => {
+    // Prevent concurrent updates
+    if (isUpdatingRef.current || !scoreServiceRef.current) return;
+    isUpdatingRef.current = true;
+    
+    try {
+      // Update reference values
+      prevInitialScoreRef.current = initialScore;
+      prevResumeContentRef.current = resumeContent;
+      prevSuggestionsRef.current = initialSuggestions;
+      prevKeywordsRef.current = initialKeywords;
+      
       // Update service state without full reinitialization
       scoreServiceRef.current.updateState(
         initialScore,
@@ -182,11 +243,49 @@ export function useResumeScoreManager({
       const breakdown = scoreServiceRef.current.getScoreBreakdown();
       setScoreBreakdown(breakdown);
       setCurrentScore(scoreServiceRef.current.getCurrentScore());
-      setSuggestions(initialSuggestions);
-      setKeywords(initialKeywords);
       
-      // Regenerate metrics
-      generateMetrics();
+      // Only update UI state if necessary
+      setSuggestions(prev => {
+        if (prev.length !== initialSuggestions.length) {
+          return [...initialSuggestions];
+        }
+        return prev;
+      });
+      
+      setKeywords(prev => {
+        if (prev.length !== initialKeywords.length) {
+          return [...initialKeywords];
+        }
+        return prev;
+      });
+      
+      // Regenerate metrics after delay
+      setTimeout(() => {
+        generateMetrics();
+      }, 100);
+    } finally {
+      // Always reset the update flag
+      isUpdatingRef.current = false;
+    }
+  }, [initialScore, resumeContent, initialSuggestions, initialKeywords]);
+  
+  /**
+   * Initialize on mount and react to significant dependency changes
+   * This effect is responsible for initializing and updating the score service
+   */
+  useEffect(() => {
+    // Skip effect if an update is already in progress
+    if (isUpdatingRef.current) return;
+    
+    // Initialize on first run
+    if (!isInitializedRef.current) {
+      initializeScoreService();
+      return;
+    }
+    
+    // Check if important dependencies have changed
+    if (haveDependenciesChanged()) {
+      safeUpdateService();
     }
     
     // Clean up on unmount
@@ -195,10 +294,15 @@ export function useResumeScoreManager({
         clearTimeout(scoreChangeTimeoutRef.current);
       }
     };
-  }, [initialScore, resumeContent, initialSuggestions, initialKeywords, initializeScoreService]);
+  }, [
+    initializeScoreService, 
+    safeUpdateService, 
+    haveDependenciesChanged
+  ]);
   
   /**
    * Generate metrics with error handling
+   * This is used to calculate and update optimization metrics for reporting
    */
   const generateMetrics = useCallback(() => {
     if (!generateOptimizationMetrics || !scoreServiceRef.current) return null;
@@ -210,7 +314,7 @@ export function useResumeScoreManager({
       const appliedSugs = service.getAppliedSuggestions();
       const appliedKeys = service.getAppliedKeywords();
 
-      const metrics = generateOptimizationMetrics(
+      const newMetrics = generateOptimizationMetrics(
         initialScoreVal,
         currentScoreVal,
         appliedSugs,
@@ -218,8 +322,8 @@ export function useResumeScoreManager({
         startTimeRef.current
       );
 
-      setMetrics(metrics);
-      return metrics;
+      setMetrics(newMetrics);
+      return newMetrics;
     } catch (error) {
       console.error("Error generating metrics:", error);
       return null;
@@ -228,6 +332,7 @@ export function useResumeScoreManager({
   
   /**
    * Apply or unapply a suggestion
+   * Updates both the service state and UI state
    */
   const applySuggestion = useCallback((index: number) => {
     if (!scoreServiceRef.current) return;
@@ -241,18 +346,22 @@ export function useResumeScoreManager({
       setScoreBreakdown(breakdown);
       setCurrentScore(newScore);
       
-      // Update suggestions array for UI
+      // Update suggestions array for UI with immutable update pattern
       setSuggestions(prev => {
         const updated = [...prev];
-        updated[index] = {
-          ...updated[index],
-          isApplied: !updated[index].isApplied
-        };
+        if (index >= 0 && index < updated.length) {
+          updated[index] = {
+            ...updated[index],
+            isApplied: !updated[index].isApplied
+          };
+        }
         return updated;
       });
       
-      // Regenerate metrics
-      generateMetrics();
+      // Regenerate metrics after change
+      setTimeout(() => {
+        generateMetrics();
+      }, 50);
     } catch (error) {
       console.error("Error applying suggestion:", error);
     }
@@ -260,6 +369,7 @@ export function useResumeScoreManager({
   
   /**
    * Apply or unapply a keyword
+   * Updates both the service state and UI state
    */
   const applyKeyword = useCallback((index: number) => {
     if (!scoreServiceRef.current) return;
@@ -273,18 +383,22 @@ export function useResumeScoreManager({
       setScoreBreakdown(breakdown);
       setCurrentScore(newScore);
       
-      // Update keywords array for UI
+      // Update keywords array for UI with immutable update pattern
       setKeywords(prev => {
         const updated = [...prev];
-        updated[index] = {
-          ...updated[index],
-          applied: !updated[index].applied
-        };
+        if (index >= 0 && index < updated.length) {
+          updated[index] = {
+            ...updated[index],
+            applied: !updated[index].applied
+          };
+        }
         return updated;
       });
       
-      // Regenerate metrics
-      generateMetrics();
+      // Regenerate metrics after change
+      setTimeout(() => {
+        generateMetrics();
+      }, 50);
     } catch (error) {
       console.error("Error applying keyword:", error);
     }
@@ -292,6 +406,7 @@ export function useResumeScoreManager({
   
   /**
    * Update resume content
+   * Updates both the service state and score calculation
    */
   const updateContent = useCallback((newContent: string) => {
     if (!scoreServiceRef.current) return;
@@ -305,8 +420,13 @@ export function useResumeScoreManager({
       setScoreBreakdown(breakdown);
       setCurrentScore(newScore);
       
-      // Regenerate metrics
-      generateMetrics();
+      // Update reference to track content changes
+      prevResumeContentRef.current = newContent;
+      
+      // Regenerate metrics after delay
+      setTimeout(() => {
+        generateMetrics();
+      }, 100);
     } catch (error) {
       console.error("Error updating content:", error);
     }
@@ -314,6 +434,7 @@ export function useResumeScoreManager({
   
   /**
    * Reset all changes
+   * Reverts all suggestions and keywords to their initial state
    */
   const resetAllChanges = useCallback(() => {
     if (!scoreServiceRef.current) return;
@@ -327,12 +448,14 @@ export function useResumeScoreManager({
       setScoreBreakdown(breakdown);
       setCurrentScore(newScore);
       
-      // Update UI state
+      // Update UI state with immutable update pattern
       setSuggestions(prev => prev.map(s => ({ ...s, isApplied: false })));
       setKeywords(prev => prev.map(k => ({ ...k, applied: false })));
       
-      // Regenerate metrics
-      generateMetrics();
+      // Regenerate metrics after delay
+      setTimeout(() => {
+        generateMetrics();
+      }, 50);
     } catch (error) {
       console.error("Error resetting changes:", error);
     }
@@ -340,6 +463,7 @@ export function useResumeScoreManager({
   
   /**
    * Apply all suggestions and keywords
+   * Updates all suggestions and keywords to applied state
    */
   const applyAllChanges = useCallback(() => {
     if (!scoreServiceRef.current) return;
@@ -359,12 +483,14 @@ export function useResumeScoreManager({
       setScoreBreakdown(breakdown);
       setCurrentScore(newScore);
       
-      // Update UI state
+      // Update UI state with immutable update pattern
       setSuggestions(prev => prev.map(s => ({ ...s, isApplied: true })));
       setKeywords(prev => prev.map(k => ({ ...k, applied: true })));
       
-      // Regenerate metrics
-      generateMetrics();
+      // Regenerate metrics after delay
+      setTimeout(() => {
+        generateMetrics();
+      }, 50);
     } catch (error) {
       console.error("Error applying all changes:", error);
     } finally {
@@ -374,6 +500,7 @@ export function useResumeScoreManager({
   
   /**
    * Simulate applying a suggestion without actually applying it
+   * Used for impact preview features
    */
   const simulateSuggestionImpact = useCallback((index: number) => {
     if (!scoreServiceRef.current) {
@@ -385,6 +512,7 @@ export function useResumeScoreManager({
   
   /**
    * Simulate applying a keyword without actually applying it
+   * Used for impact preview features
    */
   const simulateKeywordImpact = useCallback((index: number) => {
     if (!scoreServiceRef.current) {
@@ -396,6 +524,7 @@ export function useResumeScoreManager({
   
   /**
    * Export optimization report
+   * Generates and downloads a report in the specified format
    */
   const exportReport = useCallback((format: 'json' | 'csv' | 'markdown' = 'markdown') => {
     try {
@@ -435,6 +564,7 @@ export function useResumeScoreManager({
   
   /**
    * Get detailed impact information for a suggestion
+   * Used for displaying impact details in the UI
    */
   const getSuggestionImpact = useCallback((suggestion: Suggestion, index: number) => {
     if (!scoreServiceRef.current) {
@@ -460,6 +590,7 @@ export function useResumeScoreManager({
   
   /**
    * Get detailed impact information for a keyword
+   * Used for displaying impact details in the UI
    */
   const getKeywordImpact = useCallback((keyword: Keyword, index: number) => {
     if (!scoreServiceRef.current) {
@@ -485,6 +616,7 @@ export function useResumeScoreManager({
   
   /**
    * Save current state
+   * Persists the current optimization state for later retrieval
    */
   const saveState = useCallback(() => {
     if (!scoreBreakdown || !saveOptimizationState) return false;
@@ -504,6 +636,7 @@ export function useResumeScoreManager({
   
   /**
    * Save state when component unmounts
+   * This ensures the state is persisted when the user navigates away
    */
   useEffect(() => {
     return () => {
