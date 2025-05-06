@@ -1,9 +1,12 @@
 /**
- * Resume Utils - Helper functions for resume processing
+ * Resume Utils - Enhanced Section Management
  * 
- * This file contains utility functions for processing and manipulating
- * resume content, particularly related to HTML handling and section management.
+ * This module provides utilities for processing and manipulating resume content,
+ * with a focus on standardized section management and HTML processing.
  */
+
+import { STANDARD_SECTIONS } from '@/constants/sections';
+import DOMPurify from 'dompurify';
 
 /**
  * Standard section names in English - will always be displayed in English
@@ -60,12 +63,33 @@ export const SECTION_ORDER = [
 ];
 
 /**
+ * Standard placeholders and default content for empty sections
+ * Used when creating new sections in the editor
+ */
+export const SECTION_PLACEHOLDERS: Record<string, string> = {
+  'resume-header': 'Your Name\nJob Title\nEmail | Phone | Location',
+  'resume-summary': 'Professional summary highlighting your experience, skills, and career goals.',
+  'resume-experience': '• Position at Company Name (20XX - Present)\n• Achieved X by implementing Y, resulting in Z.\n• Led a team of X people to accomplish Y goal.',
+  'resume-education': '• Degree in Field of Study, Institution Name (20XX - 20XX)\n• GPA: X.X/4.0 (if applicable)\n• Relevant coursework: Course 1, Course 2',
+  'resume-skills': '• Technical: Skill 1, Skill 2, Skill 3\n• Soft Skills: Communication, Teamwork, Problem-solving',
+  'resume-languages': '• Language 1 (Fluent)\n• Language 2 (Intermediate)\n• Language 3 (Basic)',
+  'resume-certifications': '• Certification Name, Issuing Organization (Year)\n• Certification Name, Issuing Organization (Year)',
+  'resume-projects': '• Project Name: Brief description and outcomes\n• Project Name: Brief description and outcomes',
+  'resume-awards': '• Award Name, Issuing Organization (Year)\n• Recognition, Issuer (Year)',
+  'resume-volunteering': '• Volunteer Role, Organization (Period)\n• Key contributions or responsibilities',
+  'resume-publications': '• Publication Title, Journal/Publisher, Date\n• Authors, Publication Title, Journal/Publisher, Date',
+  'resume-interests': '• Interest 1\n• Interest 2\n• Interest 3',
+  'resume-references': '• Reference Name, Position, Company\n• Email, Phone\n\nOR\n\nReferences available upon request',
+  'resume-additional': 'Additional relevant information such as workshops, conferences, or other qualifications.'
+};
+
+/**
  * Section interface for resume content sections
  */
 export interface Section {
-  id: string;
-  title: string;
-  content: string;
+  id: string;      // Section identifier
+  title: string;   // Display title
+  content: string; // HTML content
 }
 
 /**
@@ -83,6 +107,102 @@ export function getSectionName(id: string): string {
     .replace('resume-', '')
     .replace(/-/g, ' ')
     .replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/**
+ * Maps alternative section IDs to standard ones
+ * Helps normalize section IDs from different sources
+ * 
+ * @param id - Section ID to normalize
+ * @returns Standardized section ID
+ */
+export function normalizeSecttionId(id: string): string {
+  // Map of alternative section IDs to standard ones
+  const sectionIdMapping: Record<string, string> = {
+    'personal-information': 'resume-header',
+    'professional-summaries': 'resume-summary',
+    'experiences': 'resume-experience',
+    'formations': 'resume-education',
+    'skills-interests': 'resume-skills',
+    'certifications': 'resume-certifications',
+    'projects': 'resume-projects',
+    'awards-achievements': 'resume-awards',
+    'volunteering': 'resume-volunteering',
+    'publications': 'resume-publications',
+    'interests': 'resume-interests',
+    'referees': 'resume-references',
+    'additional': 'resume-additional'
+  };
+  
+  // Return the normalized ID or the original if not found
+  return sectionIdMapping[id] || id;
+}
+
+/**
+ * Checks if a section is empty based on its content
+ * A section is considered empty if it has:
+ * - No content
+ * - Only whitespace
+ * - Only heading with no meaningful content
+ * - Only placeholder content
+ * 
+ * @param content - Section content to check
+ * @param sectionTitle - Title of the section (to detect placeholder content)
+ * @returns Boolean indicating if the section is empty
+ */
+export function isSectionEmpty(content: string, sectionTitle: string): boolean {
+  if (!content) return true;
+  
+  // Remove whitespace
+  const trimmedContent = content.trim();
+  if (!trimmedContent) return true;
+  
+  // Check for heading-only content
+  const headingOnlyPatterns = [
+    `<h1>${sectionTitle}</h1>`,
+    `<h2>${sectionTitle}</h2>`,
+    `<h3>${sectionTitle}</h3>`,
+  ];
+  
+  // Check for heading with empty paragraph
+  const headingWithEmptyParagraphPatterns = [
+    `<h1>${sectionTitle}</h1><p></p>`,
+    `<h2>${sectionTitle}</h2><p></p>`,
+    `<h3>${sectionTitle}</h3><p></p>`,
+  ];
+  
+  // Check if content is just a heading or heading with empty paragraph
+  for (const pattern of [...headingOnlyPatterns, ...headingWithEmptyParagraphPatterns]) {
+    if (trimmedContent === pattern || trimmedContent.replace(/\s+/g, '') === pattern.replace(/\s+/g, '')) {
+      return true;
+    }
+  }
+  
+  // Parse content to detect placeholder text or empty elements
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(trimmedContent, 'text/html');
+  const textContent = doc.body.textContent || '';
+  
+  // If there's almost no text content, section is likely empty
+  if (textContent.trim().length < 5) {
+    return true;
+  }
+  
+  // Count the number of actual content elements
+  const contentElements = doc.querySelectorAll('p, li, table, ul, ol');
+  if (contentElements.length === 0) {
+    return true;
+  }
+  
+  // Check if all paragraphs/list items are empty
+  let hasContentElement = false;
+  contentElements.forEach(element => {
+    if ((element.textContent || '').trim().length > 0) {
+      hasContentElement = true;
+    }
+  });
+  
+  return !hasContentElement;
 }
 
 /**
@@ -111,7 +231,16 @@ export function normalizeHtmlContent(html: string, sanitizeFn?: (html: string) =
     '<section id="$1" class="section-title"'
   );
   
-  // Step 3: Sanitize if a sanitize function is provided
+  // Step 3: Standardize section IDs to ensure they match our predefined structure
+  STANDARD_SECTIONS.forEach(({ id }) => {
+    // Find section tags with alternative IDs and standardize them
+    normalized = normalized.replace(
+      new RegExp(`<section\\s+id="${normalizeSecttionId(id)}"`, 'g'),
+      `<section id="${id}"`
+    );
+  });
+  
+  // Step 4: Sanitize if a sanitize function is provided
   if (sanitizeFn) {
     normalized = sanitizeFn(normalized);
   }
@@ -146,9 +275,11 @@ export function parseHtmlIntoSections(
     
     sectionElements.forEach(section => {
       // Get section ID or generate one
-      const id = section.id || `section-${Math.random().toString(36).substring(2, 9)}`;
+      const rawId = section.id || `section-${Math.random().toString(36).substring(2, 9)}`;
+      // Normalize the ID to ensure it matches our standard format
+      const id = normalizeSecttionId(rawId);
       
-      // Try to get title from heading element or section id
+      // Get the title from heading element or section id
       const headingEl = section.querySelector('h1, h2, h3, h4, h5, h6');
       const title = getSectionNameFn(id);
       
@@ -174,7 +305,9 @@ export function parseHtmlIntoSections(
         )?.[0];
         
         // Use standard ID or create one from the heading
-        const id = standardId || `section-${title.toLowerCase().replace(/\s+/g, '-')}`;
+        const rawId = standardId || `section-${title.toLowerCase().replace(/\s+/g, '-')}`;
+        // Normalize the ID
+        const id = normalizeSecttionId(rawId);
         
         // Get the standardized title
         const standardTitle = getSectionNameFn(id);
@@ -250,7 +383,7 @@ export function parseHtmlIntoSections(
             }
             
             currentSection = {
-              id: newSectionId,
+              id: normalizeSecttionId(newSectionId),
               title: getSectionNameFn(newSectionId),
               content: paragraph.outerHTML
             };
@@ -289,8 +422,8 @@ export function parseHtmlIntoSections(
   // Sort sections according to predefined order
   return [...parsedSections].sort((a, b) => {
     // Find index in SECTION_ORDER (or large number if not found)
-    const indexA = sectionOrder.findIndex(id => a.id.includes(id));
-    const indexB = sectionOrder.findIndex(id => b.id.includes(id));
+    const indexA = sectionOrder.findIndex(id => a.id.includes(id) || id.includes(a.id));
+    const indexB = sectionOrder.findIndex(id => b.id.includes(id) || id.includes(b.id));
     
     // If both have defined positions, sort by that
     if (indexA !== -1 && indexB !== -1) {
@@ -304,6 +437,37 @@ export function parseHtmlIntoSections(
     // Otherwise, sort alphabetically by title
     return a.title.localeCompare(b.title);
   });
+}
+
+/**
+ * Ensure all standard sections are represented
+ * Fills in missing sections with empty content
+ * 
+ * @param sections - Array of existing sections
+ * @returns Complete array with all standard sections
+ */
+export function ensureAllStandardSections(sections: Section[]): Section[] {
+  // Create a map of existing sections by ID
+  const existingSections = new Map(sections.map(section => [section.id, section]));
+  
+  // Create the complete list with all standard sections
+  const completeSections = STANDARD_SECTIONS.map(({ id }) => {
+    const existingSection = existingSections.get(id);
+    
+    if (existingSection) {
+      // Use existing section if found
+      return existingSection;
+    } else {
+      // Create a new empty section
+      return {
+        id,
+        title: getSectionName(id),
+        content: `<h2>${getSectionName(id)}</h2><p></p>`
+      };
+    }
+  });
+  
+  return completeSections;
 }
 
 /**
@@ -342,31 +506,83 @@ export function unescapeHtml(text: string): string {
 }
 
 /**
- * Parse the optimized text into a structured format
- * This is a utility function used by the resume optimizer hook
+ * Create a default section with proper HTML structure
  * 
- * @param text - The optimized text to parse
- * @returns A structured object with the parsed content
+ * @param sectionId - Standard section ID
+ * @returns HTML content for the section
  */
-export function parseOptimizedText(text: string): any {
-  // Create a basic object with the content
-  const result = {
-    parsed: true,
-    content: text,
-    language: detectLanguage(text)
-  };
+export function createDefaultSectionContent(sectionId: string): string {
+  const title = getSectionName(sectionId);
+  const placeholder = SECTION_PLACEHOLDERS[sectionId] || '';
   
-  return result;
+  return `
+    <h2>${title}</h2>
+    <p>${placeholder}</p>
+  `;
 }
 
 /**
- * Basic language detection based on text content
+ * Combines sections into a complete HTML document
+ * Only includes non-empty sections
+ * 
+ * @param sections - Array of all sections
+ * @returns HTML content with only non-empty sections
+ */
+export function combineNonEmptySections(sections: Section[]): string {
+  return sections
+    .filter(section => !isSectionEmpty(section.content, section.title))
+    .map(section => 
+      `<section id="${section.id}" class="section-title">${section.content}</section>`
+    )
+    .join('\n');
+}
+
+/**
+ * Formats a date string to a standard format
+ * 
+ * @param dateStr - Date string to format
+ * @returns Formatted date
+ */
+export function formatDate(dateStr: string): string {
+  if (!dateStr) return '';
+  
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long'
+    });
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return dateStr;
+  }
+}
+
+/**
+ * Extract text content from HTML
+ * Useful for analyzing content without HTML tags
+ * 
+ * @param html - HTML content to process
+ * @returns Plain text without HTML tags
+ */
+export function extractTextContent(html: string): string {
+  if (!html) return '';
+  
+  // Use DOMParser to safely extract text
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  return doc.body.textContent || '';
+}
+
+/**
+ * Detect language of text content
+ * Basic implementation that can be expanded with more sophisticated detection
  * 
  * @param text - Text to analyze
- * @returns Detected language
+ * @returns Detected language code (en, fr, es, etc)
  */
 export function detectLanguage(text: string): string {
-  if (!text) return 'English';
+  if (!text) return 'en';
   
   // Common French words
   const frenchWords = ['le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'je', 'tu', 'il', 'elle', 
@@ -392,84 +608,111 @@ export function detectLanguage(text: string): string {
   const threshold = Math.max(3, words.length * 0.03);
   
   if (frenchCount > spanishCount && frenchCount >= threshold) {
-    return 'French';
+    return 'fr';
   } else if (spanishCount > frenchCount && spanishCount >= threshold) {
-    return 'Spanish';
+    return 'es';
   }
   
   // Default to English
-  return 'English';
+  return 'en';
 }
 
 /**
- * Combines sections HTML into a complete document
+ * Extract keywords from resume content
+ * Identifies potential keywords for ATS optimization
  * 
- * @param sections - Array of sections
- * @returns Combined HTML
+ * @param content - Resume HTML content
+ * @returns Array of potential keywords
  */
-export function combineSectionsToHtml(sections: Section[]): string {
-  if (!sections || sections.length === 0) return '';
+export function extractKeywordsFromContent(content: string): string[] {
+  if (!content) return [];
   
-  return sections.map(section => 
-    `<section id="${section.id}" class="section-title">${section.content}</section>`
-  ).join('\n');
-}
-
-/**
- * Formats a date string to a standard format
- * 
- * @param dateStr - Date string to format
- * @returns Formatted date
- */
-export function formatDate(dateStr: string): string {
-  if (!dateStr) return '';
+  // Extract plain text
+  const text = extractTextContent(content);
   
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long'
-    });
-  } catch (error) {
-    console.error("Error formatting date:", error);
-    return dateStr;
-  }
+  // Extract capitalized words (likely skills, technologies, etc.)
+  const capitalizedRegex = /\b[A-Z][a-zA-Z0-9]*\b/g;
+  const capitalizedMatches = text.match(capitalizedRegex) || [];
+  
+  // Common technical skills to look for
+  const commonSkills = [
+    'JavaScript', 'TypeScript', 'Python', 'Java', 'React', 'Angular', 'Vue',
+    'Node.js', 'Express', 'MongoDB', 'SQL', 'AWS', 'Azure', 'Docker', 'Kubernetes',
+    'DevOps', 'CI/CD', 'Git', 'REST', 'API', 'HTML', 'CSS', 'Sass', 'SCSS',
+    'Leadership', 'Management', 'Communication', 'Problem-solving', 'Teamwork',
+    'Project Management', 'Agile', 'Scrum', 'Kanban', 'Microsoft Office',
+    'Analytical', 'Research', 'Marketing', 'Sales', 'Customer Service',
+    'SEO', 'SEM', 'Analytics', 'Data Analysis', 'Machine Learning', 'AI'
+  ];
+  
+  // Find common skills in the text
+  const foundSkills = commonSkills.filter(skill => 
+    new RegExp(`\\b${skill}\\b`, 'i').test(text)
+  );
+  
+  // Combine, deduplicate, and filter out common stop words
+  const stopWords = ['I', 'A', 'The', 'An', 'And', 'Or', 'But', 'In', 'On', 'At', 'To', 'For'];
+  
+  const keywords = [...new Set([
+    ...capitalizedMatches,
+    ...foundSkills
+  ])].filter(word => 
+    word.length > 1 && 
+    !stopWords.includes(word)
+  );
+  
+  return keywords;
 }
 
 /**
- * Checks if a section exists in the array of sections
+ * Find missing information in a resume
+ * Identifies important sections that might be missing
  * 
- * @param sections - Array of sections to check
- * @param sectionId - ID of the section to find
- * @returns Boolean indicating if section exists
+ * @param sections - Array of resume sections
+ * @returns Object with missing sections and recommendations
  */
-export function sectionExists(sections: Section[], sectionId: string): boolean {
-  return sections.some(section => section.id === sectionId);
-}
-
-/**
- * Get a section content by its ID
- * 
- * @param sections - Array of sections
- * @param sectionId - ID of the section to get
- * @returns Content of the section or empty string if not found
- */
-export function getSectionContent(sections: Section[], sectionId: string): string {
-  const section = sections.find(s => s.id === sectionId);
-  return section ? section.content : '';
-}
-
-/**
- * Create a new empty section with the specified ID and title
- * 
- * @param id - ID for the new section
- * @param title - Optional title (will use getSectionName if not provided)
- * @returns New section object
- */
-export function createEmptySection(id: string, title?: string): Section {
+export function findMissingInformation(sections: Section[]): {
+  missingSections: string[];
+  recommendations: string[];
+} {
+  // Create a map of section IDs for quick lookup
+  const sectionMap = new Map(sections.map(section => [section.id, section]));
+  
+  // Critical sections that should be present in a good resume
+  const criticalSections = [
+    'resume-header',
+    'resume-summary',
+    'resume-experience',
+    'resume-education',
+    'resume-skills'
+  ];
+  
+  // Find missing critical sections
+  const missingSections = criticalSections.filter(id => 
+    !sectionMap.has(id) || isSectionEmpty(sectionMap.get(id)?.content || '', getSectionName(id))
+  );
+  
+  // Generate recommendations based on missing sections
+  const recommendations = missingSections.map(id => {
+    const sectionName = getSectionName(id);
+    switch (id) {
+      case 'resume-header':
+        return `Add your personal information including name, title, and contact details.`;
+      case 'resume-summary':
+        return `Include a professional summary to highlight your experience and goals.`;
+      case 'resume-experience':
+        return `Add your work experience with specific achievements and responsibilities.`;
+      case 'resume-education':
+        return `Include your educational background with degrees, institutions, and dates.`;
+      case 'resume-skills':
+        return `List your key skills relevant to your target position.`;
+      default:
+        return `Add the ${sectionName} section to improve your resume.`;
+    }
+  });
+  
   return {
-    id,
-    title: title || getSectionName(id),
-    content: `<h2>${title || getSectionName(id)}</h2><p></p>`
+    missingSections,
+    recommendations
   };
 }

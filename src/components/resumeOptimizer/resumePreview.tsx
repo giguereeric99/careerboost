@@ -1,5 +1,5 @@
 /**
- * ResumePreview Component
+ * Enhanced ResumePreview Component
  * 
  * This component displays a preview of the optimized resume and allows editing.
  * Features:
@@ -8,13 +8,14 @@
  * - Support for multiple templates
  * - Download functionality
  * - Reset to original version
+ * - Standardized section structure with all necessary resume sections
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { 
   Download, Save, Eye, Edit, ChevronLeft,
-  Check, FileText, RotateCcw 
+  Check, FileText, RotateCcw
 } from "lucide-react";
 import {
   Accordion,
@@ -26,6 +27,7 @@ import { ResumeTemplateType } from '@/types/resumeTemplateTypes';
 import { Suggestion } from '@/types/resume';
 import { createCompleteHtml } from '@/utils/templateUtils';
 import { getTemplateById } from '@/constants/resumeTemplates';
+import { STANDARD_SECTIONS } from '@/constants/sections';
 import DOMPurify from 'dompurify';
 import { toast } from "sonner";
 
@@ -36,7 +38,6 @@ import TipTapResumeEditor from '@/components/ResumeOptimizer/TipTapResumeEditor'
 import { 
   PreviewHeader,  
   PreviewContent,
-  EditorContent,
   LoadingState,
   NoContentWarning,
   AppliedKeywordsList
@@ -74,9 +75,11 @@ interface ResumePreviewProps {
  * Section interface for resume content sections
  */
 interface Section {
-  id: string;
-  title: string;
-  content: string;
+  id: string;        // Standard section identifier
+  title: string;     // Displayed title
+  content: string;   // HTML content
+  visible: boolean;  // Whether section should be displayed in edit mode
+  isEmpty: boolean;  // Whether section has meaningful content
 }
 
 /**
@@ -145,11 +148,67 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   }, [sanitizeHtml]);
 
   /**
+   * Create a default empty section with title and placeholder content
+   * 
+   * @param sectionId - The ID of the section to create
+   * @returns A complete section object with empty content
+   */
+  const createEmptySection = useCallback((sectionId: string): Section => {
+    const title = getSectionName(sectionId);
+    // Create placeholder content for the section with appropriate heading
+    const content = `<h2>${title}</h2><p></p>`;
+    
+    return {
+      id: sectionId,
+      title: title,
+      content: content,
+      visible: true, // Show all sections in edit mode
+      isEmpty: true  // Empty by default
+    };
+  }, []);
+  
+  /**
+   * Initialize all standard sections for editing
+   * This ensures all possible sections are available in edit mode
+   * 
+   * @param existingSections - Array of sections parsed from the resume content
+   * @returns Complete array of all standard sections, with content from existing sections
+   */
+  const initializeAllSections = useCallback((existingSections: Section[]) => {
+    // Create a map of existing sections by ID for easy lookup
+    const existingSectionsMap = new Map(
+      existingSections.map(section => [section.id, section])
+    );
+    
+    // Create the complete section list
+    return STANDARD_SECTIONS.map(standardSection => {
+      const existingSection = existingSectionsMap.get(standardSection.id);
+      
+      // If section exists in content, use it; otherwise create empty section
+      if (existingSection) {
+        return {
+          ...existingSection,
+          visible: true,  // Show sections that exist in the document
+          isEmpty: !existingSection.content || 
+                  existingSection.content.trim() === '' ||
+                  existingSection.content.trim() === `<h2>${existingSection.title}</h2>` ||
+                  existingSection.content.trim() === `<h2>${existingSection.title}</h2><p></p>`
+        };
+      } else {
+        // Create a new empty section
+        return createEmptySection(standardSection.id);
+      }
+    });
+  }, [createEmptySection]);
+
+  /**
    * Parse the resume HTML into sections when optimizedText changes
    */
   useEffect(() => {
     if (!optimizedText) {
-      setSections([]);
+      // Initialize with empty standard sections when no content
+      const emptySections = STANDARD_SECTIONS.map(({ id }) => createEmptySection(id));
+      setSections(emptySections);
       return;
     }
     
@@ -168,18 +227,25 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       console.log(`Parsed ${parsedSections.length} sections:`, 
         parsedSections.map(s => s.title));
       
-      setSections(parsedSections);
+      // Initialize all standard sections, filling in content from parsed sections
+      const allSections = initializeAllSections(parsedSections);
+      
+      // Set all sections and reset modification state
+      setSections(allSections);
       setContentModified(false);
+      
     } catch (error) {
       console.error("Error parsing optimized text into sections:", error);
       // Fallback to simple section
       setSections([{
         id: 'resume-summary',
         title: SECTION_NAMES['resume-summary'],
-        content: optimizedText
+        content: optimizedText,
+        visible: true,
+        isEmpty: false
       }]);
     }
-  }, [optimizedText, processContent]);
+  }, [optimizedText, processContent, createEmptySection, initializeAllSections]);
 
   /**
    * Notify parent component when edit mode changes
@@ -195,21 +261,38 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
    */
   const handleSectionUpdate = useCallback((sectionId: string, newContent: string) => {
     setSections(prevSections => {
-      const updatedSections = prevSections.map(section => 
-        section.id === sectionId ? { ...section, content: newContent } : section
-      );
+      const updatedSections = prevSections.map(section => {
+        if (section.id === sectionId) {
+          // Determine if section is empty after update
+          const isEmpty = !newContent || 
+                         newContent.trim() === '' || 
+                         newContent.trim() === `<h2>${section.title}</h2>` ||
+                         newContent.trim() === `<h2>${section.title}</h2><p></p>`;
+          
+          return { 
+            ...section, 
+            content: newContent,
+            isEmpty: isEmpty
+          };
+        }
+        return section;
+      });
       setContentModified(true);
       return updatedSections;
     });
   }, []);
 
   /**
-   * Combine all sections into complete HTML
+   * Combine non-empty sections into complete HTML
+   * Only includes sections that have meaningful content
    */
   const combineAllSections = useCallback(() => {
-    return sections.map(section => 
-      `<section id="${section.id}" class="section-title">${section.content}</section>`
-    ).join('\n');
+    return sections
+      .filter(section => !section.isEmpty) // Only include non-empty sections
+      .map(section => 
+        `<section id="${section.id}" class="section-title">${section.content}</section>`
+      )
+      .join('\n');
   }, [sections]);
 
   /**
@@ -221,7 +304,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     try {
       setIsSaving(true);
       
-      // Get combined HTML and normalize it
+      // Get combined HTML from non-empty sections and normalize it
       let combinedHtml = combineAllSections();
       combinedHtml = processContent(combinedHtml);
       
@@ -319,16 +402,67 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       
       {/* Content Area */}
       {editMode ? (
-        <EditorContent 
-          sections={sections}
-          handleSectionUpdate={handleSectionUpdate}
-          appliedKeywords={appliedKeywords}
-          suggestions={suggestions}
-          handleSave={handleSave}
-          isSaving={isSaving}
-          contentModified={contentModified}
-          toggleEditMode={toggleEditMode}
-        />
+        <div className="space-y-4">
+          {/* Sections Editor */}
+          <Accordion 
+            type="single" 
+            className="space-y-4" 
+            defaultValue={sections.length > 0 ? sections[0].id : undefined}
+          >
+            {sections.map(section => (
+              <AccordionItem 
+                key={section.id} 
+                value={section.id} 
+                className="border border-gray-200 rounded-lg overflow-hidden"
+              >
+                <AccordionTrigger className="px-4 py-3 font-medium text-gray-800 hover:bg-gray-50 flex justify-between items-center">
+                  {section.title}
+                  {section.isEmpty && (
+                    <span className="text-xs text-gray-400 mr-2">(Empty)</span>
+                  )}
+                </AccordionTrigger>
+                <AccordionContent className="p-4 pt-6">
+                  <TipTapResumeEditor
+                    content={section.content}
+                    onChange={(html) => handleSectionUpdate(section.id, html)}
+                    appliedKeywords={appliedKeywords}
+                    suggestions={[]}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+          
+          {/* Action Buttons */}
+          <div className="pt-4 flex justify-end gap-2">
+            {/* Cancel button */}
+            <Button 
+              variant="outline"
+              size="sm"
+              onClick={toggleEditMode}
+            >
+              Cancel
+            </Button>
+            
+            {/* Save button */}
+            <Button 
+              onClick={handleSave}
+              disabled={isSaving || !contentModified}
+              className="bg-brand-600 hover:bg-brand-700"
+            >
+              {isSaving ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                  Saving Changes...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4 mr-2" /> Save & Apply Changes
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       ) : (
         <PreviewContent 
           optimizedText={optimizedText}
