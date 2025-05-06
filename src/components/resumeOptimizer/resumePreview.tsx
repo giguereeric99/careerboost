@@ -8,14 +8,14 @@
  * - Support for multiple templates
  * - Download functionality
  * - Reset to original version
- * - Standardized section structure with all necessary resume sections
+ * - Real-time updates when applying suggestions and keywords
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { 
   Download, Save, Eye, Edit, ChevronLeft,
-  Check, FileText, RotateCcw
+  Check, FileText, RotateCcw, AlertCircle
 } from "lucide-react";
 import {
   Accordion,
@@ -49,7 +49,8 @@ import {
   parseHtmlIntoSections,
   getSectionName,
   SECTION_NAMES,
-  SECTION_ORDER
+  SECTION_ORDER,
+  isSectionEmpty
 } from '@/utils/resumeUtils';
 
 /**
@@ -66,9 +67,12 @@ interface ResumePreviewProps {
   onSave: (content: string) => Promise<boolean> | boolean; // Handler for save button
   onTextChange: (text: string) => void; // Handler for text changes
   isOptimizing: boolean;                // Whether optimization is in progress
+  isApplyingChanges?: boolean;          // Whether changes are being applied
   language?: string;                    // Language of the resume
   onEditModeChange?: (isEditing: boolean) => void; // Optional callback for edit mode changes
   onReset?: () => void;                 // Optional callback for reset button
+  onRegenerateContent?: () => void;     // Optional callback for regenerating content with applied changes
+  needsRegeneration?: boolean;          // Whether the content needs regeneration after applying changes
 }
 
 /**
@@ -96,18 +100,24 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   onSave,
   onTextChange,
   isOptimizing,
+  isApplyingChanges = false,
   language = "English",
   onEditModeChange,
-  onReset
+  onReset,
+  onRegenerateContent,
+  needsRegeneration = false
 }) => {
   // UI state
   const [editMode, setEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [sections, setSections] = useState<Section[]>([]);
   const [contentModified, setContentModified] = useState(false);
+  const [hasLoadedInitialContent, setHasLoadedInitialContent] = useState(false);
   
   // Get selected template
-  const template = templates.find(t => t.id === selectedTemplate) || templates[0];
+  const template = useMemo(() => (
+    templates.find(t => t.id === selectedTemplate) || templates[0]
+  ), [selectedTemplate, templates]);
 
   /**
    * Sanitize HTML content to prevent XSS attacks
@@ -180,7 +190,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       existingSections.map(section => [section.id, section])
     );
     
-    // Create the complete section list
+    // Create the complete section list with standard sections in the correct order
     return STANDARD_SECTIONS.map(standardSection => {
       const existingSection = existingSectionsMap.get(standardSection.id);
       
@@ -189,10 +199,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         return {
           ...existingSection,
           visible: true,  // Show sections that exist in the document
-          isEmpty: !existingSection.content || 
-                  existingSection.content.trim() === '' ||
-                  existingSection.content.trim() === `<h2>${existingSection.title}</h2>` ||
-                  existingSection.content.trim() === `<h2>${existingSection.title}</h2><p></p>`
+          isEmpty: isSectionEmpty(existingSection.content, existingSection.title)
         };
       } else {
         // Create a new empty section
@@ -205,14 +212,21 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
    * Parse the resume HTML into sections when optimizedText changes
    */
   useEffect(() => {
-    if (!optimizedText) {
-      // Initialize with empty standard sections when no content
-      const emptySections = STANDARD_SECTIONS.map(({ id }) => createEmptySection(id));
-      setSections(emptySections);
-      return;
-    }
+    // Skip if we're currently in edit mode to prevent editor state from being reset
+    if (editMode) return;
+    
+    // Skip if there's no content and we've already loaded initial content
+    if (!optimizedText && hasLoadedInitialContent) return;
     
     try {
+      if (!optimizedText) {
+        // Initialize with empty standard sections when no content
+        const emptySections = STANDARD_SECTIONS.map(({ id }) => createEmptySection(id));
+        setSections(emptySections);
+        setHasLoadedInitialContent(true);
+        return;
+      }
+      
       // Normalize and sanitize the content
       const normalizedContent = processContent(optimizedText);
       
@@ -224,15 +238,13 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         SECTION_ORDER
       );
       
-      console.log(`Parsed ${parsedSections.length} sections:`, 
-        parsedSections.map(s => s.title));
-      
       // Initialize all standard sections, filling in content from parsed sections
       const allSections = initializeAllSections(parsedSections);
       
       // Set all sections and reset modification state
       setSections(allSections);
       setContentModified(false);
+      setHasLoadedInitialContent(true);
       
     } catch (error) {
       console.error("Error parsing optimized text into sections:", error);
@@ -240,12 +252,13 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       setSections([{
         id: 'resume-summary',
         title: SECTION_NAMES['resume-summary'],
-        content: optimizedText,
+        content: optimizedText || '',
         visible: true,
-        isEmpty: false
+        isEmpty: !optimizedText
       }]);
+      setHasLoadedInitialContent(true);
     }
-  }, [optimizedText, processContent, createEmptySection, initializeAllSections]);
+  }, [optimizedText, editMode, hasLoadedInitialContent, processContent, createEmptySection, initializeAllSections]);
 
   /**
    * Notify parent component when edit mode changes
@@ -264,10 +277,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       const updatedSections = prevSections.map(section => {
         if (section.id === sectionId) {
           // Determine if section is empty after update
-          const isEmpty = !newContent || 
-                         newContent.trim() === '' || 
-                         newContent.trim() === `<h2>${section.title}</h2>` ||
-                         newContent.trim() === `<h2>${section.title}</h2><p></p>`;
+          const isEmpty = isSectionEmpty(newContent, section.title);
           
           return { 
             ...section, 
@@ -309,13 +319,11 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       combinedHtml = processContent(combinedHtml);
       
       if (combinedHtml.length < 50) {
-        toast.error("Content is too short", {
+        toast.error("Content too short", {
           description: "Resume content must be at least 50 characters."
         });
         return;
       }
-      
-      console.log("Saving content, length:", combinedHtml.length);
       
       // Call parent save handler
       const saveResult = await Promise.resolve(onSave(combinedHtml));
@@ -366,6 +374,15 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   }, []);
 
   /**
+   * Handle "Apply Changes" button click to regenerate content
+   */
+  const handleRegenerateContent = useCallback(() => {
+    if (onRegenerateContent) {
+      onRegenerateContent();
+    }
+  }, [onRegenerateContent]);
+
+  /**
    * Show loading state during optimization
    */
   if (isOptimizing) {
@@ -400,6 +417,36 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         </div>
       )}
       
+      {/* Regeneration Banner - Only show when changes need regeneration and not in edit mode */}
+      {needsRegeneration && !editMode && onRegenerateContent && (
+        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4 flex items-center justify-between">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 text-amber-500 mr-2" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">Pending Changes</p>
+              <p className="text-xs text-amber-700">Apply your changes to generate an optimized resume with selected suggestions and keywords.</p>
+            </div>
+          </div>
+          <Button 
+            onClick={handleRegenerateContent}
+            disabled={isApplyingChanges}
+            size="sm"
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+          >
+            {isApplyingChanges ? (
+              <>
+                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                Processing...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="h-3 w-3 mr-2" /> Apply Changes
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+      
       {/* Content Area */}
       {editMode ? (
         <div className="space-y-4">
@@ -408,6 +455,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
             type="single" 
             className="space-y-4" 
             defaultValue={sections.length > 0 ? sections[0].id : undefined}
+            collapsible
           >
             {sections.map(section => (
               <AccordionItem 
@@ -453,7 +501,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
               {isSaving ? (
                 <>
                   <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                  Saving Changes...
+                  Saving...
                 </>
               ) : (
                 <>
