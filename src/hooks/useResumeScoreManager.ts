@@ -1,31 +1,26 @@
 /**
- * useResumeScoreManager.ts
+ * useResumeScoreManager Hook
  * 
- * Custom hook for managing resume optimization score and suggestions
- * with real-time updates and detailed impact analysis.
+ * Custom React hook for managing resume optimization scores with real-time feedback.
+ * This hook provides a clean React interface to the ResumeScoreService.
  * 
- * Refactored to prevent infinite loops by:
- * 1. Using refs for state transitions
- * 2. Adding debouncing for score recalculation
- * 3. Simplifying effect dependencies
- * 4. Removing circular dependencies
+ * Features:
+ * - Real-time score updates when suggestions or keywords are applied
+ * - Debouncing to prevent excessive updates
+ * - Clean separation of UI state and business logic
+ * - Cache mechanism to prevent unnecessary recalculations
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  analyzeSuggestionImpact,
-  analyzeKeywordImpact,
-  calculateDetailedAtsScore,
-  calculateSuggestionPointImpact,
-  calculateKeywordPointImpact,
-  Suggestion,
-  Keyword,
+import { ResumeScoreService } from '@/services/resumeScoreService';
+import { 
+  Suggestion, 
+  Keyword, 
   ScoreBreakdown,
-  getImpactLevel,
-  ImpactLevel
+  ImpactLevel,
+  getImpactLevel
 } from '@/services/resumeScoreLogic';
-
-import {
+import { 
   generateOptimizationMetrics,
   saveOptimizationState,
   loadOptimizationState,
@@ -34,39 +29,57 @@ import {
   OptimizationMetrics
 } from '@/services/resumeMetricsExporter';
 
+/**
+ * Props for the score manager hook
+ */
 interface ResumeScoreManagerProps {
-  initialScore: number;
-  resumeContent: string;
-  initialSuggestions: Suggestion[];
-  initialKeywords: Keyword[];
-  resumeId?: string;
-  onScoreChange?: (score: number) => void;
+  initialScore: number;             // Base ATS score from initial AI assessment
+  resumeContent: string;            // Current HTML content of the resume
+  initialSuggestions: Suggestion[]; // Available suggestions from AI
+  initialKeywords: Keyword[];       // Available keywords from AI
+  resumeId?: string;                // Optional resume ID for persistence
+  onScoreChange?: (score: number) => void; // Optional callback when score changes
 }
 
+/**
+ * Return type of the hook
+ */
 interface ResumeScoreManagerResult {
   // Current state
-  currentScore: number;
-  scoreBreakdown: ScoreBreakdown | null;
-  suggestions: Suggestion[];
-  keywords: Keyword[];
-  isApplyingChanges: boolean;
-  metrics: OptimizationMetrics | null;
+  currentScore: number;             // Current calculated ATS score
+  scoreBreakdown: ScoreBreakdown | null; // Detailed score breakdown
+  suggestions: Suggestion[];        // Current suggestions with state
+  keywords: Keyword[];              // Current keywords with state
+  isApplyingChanges: boolean;       // Whether changes are being applied
+  metrics: OptimizationMetrics | null; // Optimization metrics for reporting
   
   // Actions
-  applySuggestion: (index: number) => void;
-  applyKeyword: (index: number) => void;
-  updateContent: (newContent: string) => void;
-  resetAllChanges: () => void;
-  applyAllChanges: () => void;
+  applySuggestion: (index: number) => void; // Apply/unapply a suggestion
+  applyKeyword: (index: number) => void;    // Apply/unapply a keyword
+  updateContent: (newContent: string) => void; // Update resume content
+  resetAllChanges: () => void;      // Reset all to initial state
+  applyAllChanges: () => void;      // Apply all suggestions and keywords
+  
+  // Impact simulation
+  simulateSuggestionImpact: (index: number) => { 
+    newScore: number; 
+    pointImpact: number; 
+    description: string;
+  };
+  simulateKeywordImpact: (index: number) => {
+    newScore: number;
+    pointImpact: number;
+    description: string;
+  };
   
   // Export and reporting
   exportReport: (format: 'json' | 'csv' | 'markdown') => void;
-  getSuggestionImpact: (suggestion: Suggestion) => { 
+  getSuggestionImpact: (suggestion: Suggestion, index: number) => { 
     points: number; 
     level: ImpactLevel;
     description: string;
   };
-  getKeywordImpact: (keyword: Keyword) => { 
+  getKeywordImpact: (keyword: Keyword, index: number) => { 
     points: number;
     level: ImpactLevel;
     description: string;
@@ -91,345 +104,390 @@ export function useResumeScoreManager({
   const [scoreBreakdown, setScoreBreakdown] = useState<ScoreBreakdown | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
-  const [content, setContent] = useState<string>(resumeContent);
   const [isApplyingChanges, setIsApplyingChanges] = useState<boolean>(false);
   const [metrics, setMetrics] = useState<OptimizationMetrics | null>(null);
   
-  // References to prevent loops
+  // References to prevent loops and manage debouncing
   const startTimeRef = useRef<Date>(new Date());
-  const isCalculatingRef = useRef(false);
   const scoreChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastCalculatedContentRef = useRef<string>('');
-  const lastInitialScoreRef = useRef<number>(initialScore);
+  const scoreServiceRef = useRef<ResumeScoreService | null>(null);
+  const isInitializedRef = useRef<boolean>(false);
   
   /**
-   * Debounced callback for onScoreChange to prevent loops
+   * Initialize the score service with current values
    */
-  const debouncedOnScoreChange = useCallback((score: number) => {
-    if (scoreChangeTimeoutRef.current) {
-      clearTimeout(scoreChangeTimeoutRef.current);
+  const initializeScoreService = useCallback(() => {
+    // Create score service with configuration
+    scoreServiceRef.current = new ResumeScoreService(
+      initialScore,
+      resumeContent,
+      initialSuggestions,
+      initialKeywords,
+      { 
+        onScoreChange: (score) => {
+          // Debounce score changes
+          if (scoreChangeTimeoutRef.current) {
+            clearTimeout(scoreChangeTimeoutRef.current);
+          }
+          
+          scoreChangeTimeoutRef.current = setTimeout(() => {
+            setCurrentScore(score);
+            
+            // Call external callback if provided
+            if (onScoreChange) {
+              onScoreChange(score);
+            }
+          }, 50);
+        }
+      }
+    );
+    
+    // Get initial score breakdown
+    if (scoreServiceRef.current) {
+      const breakdown = scoreServiceRef.current.getScoreBreakdown();
+      setScoreBreakdown(breakdown);
+      
+      // Set current score from calculation
+      setCurrentScore(scoreServiceRef.current.getCurrentScore());
+      
+      // Initialize suggestions and keywords with processed versions
+      setSuggestions(initialSuggestions);
+      setKeywords(initialKeywords);
+      
+      // Generate initial metrics
+      generateMetrics();
     }
     
-    scoreChangeTimeoutRef.current = setTimeout(() => {
-      if (onScoreChange) {
-        onScoreChange(score);
-      }
-    }, 100);
-  }, [onScoreChange]);
-
+    isInitializedRef.current = true;
+  }, [initialScore, resumeContent, initialSuggestions, initialKeywords, onScoreChange]);
+  
   /**
-   * Initialize with processed suggestions and keywords
-   * Only run once on mount
+   * Initialize on mount and when key dependencies change
    */
   useEffect(() => {
-    // Process suggestions to add impact scores
-    const processedSuggestions = initialSuggestions.map(suggestion => {
-      const score = suggestion.score || analyzeSuggestionImpact(suggestion);
-      const pointImpact = calculateSuggestionPointImpact({...suggestion, score});
-      
-      return {
-        ...suggestion,
-        score,
-        pointImpact,
-        isApplied: suggestion.isApplied || false
-      };
-    });
-    
-    // Sort suggestions by impact (highest first)
-    processedSuggestions.sort((a, b) => (b.score || 0) - (a.score || 0));
-    
-    setSuggestions(processedSuggestions);
-    
-    // Process keywords to add impact analysis
-    const processedKeywords = initialKeywords.map(keyword => {
-      // Get impact value if not already present
-      let impact, category;
-      if (keyword.impact === undefined || keyword.category === undefined) {
-        const analysis = analyzeKeywordImpact(keyword.text, resumeContent);
-        impact = analysis.impact;
-        category = analysis.category;
-      } else {
-        impact = keyword.impact;
-        category = keyword.category || 'general';
-      }
-      
-      const pointImpact = calculateKeywordPointImpact(
-        { text: keyword.text, applied: keyword.applied || false, impact, category },
-        resumeContent
+    // Only re-initialize when necessary dependencies change
+    if (!isInitializedRef.current || 
+        initialScore !== scoreServiceRef.current?.getBaseScore()) {
+      initializeScoreService();
+    } else if (scoreServiceRef.current) {
+      // Update service state without full reinitialization
+      scoreServiceRef.current.updateState(
+        initialScore,
+        resumeContent,
+        initialSuggestions,
+        initialKeywords
       );
       
-      return {
-        ...keyword,
-        impact,
-        category,
-        pointImpact,
-        applied: keyword.applied || false
-      };
-    });
-    
-    // Sort keywords by impact (highest first)
-    processedKeywords.sort((a, b) => (b.impact || 0) - (a.impact || 0));
-    
-    setKeywords(processedKeywords);
-    
-    // Try to load saved state
-    const savedState = loadOptimizationState(resumeId);
-    if (savedState && savedState.currentScore) {
-      setCurrentScore(savedState.currentScore);
-    }
-    
-    // Set initial content
-    setContent(resumeContent);
-  }, []); // Empty dependency array - only run once on mount
-  
-  /**
-   * Calculate score whenever relevant state changes
-   * Uses debouncing and refs to prevent infinite loops
-   */
-  useEffect(() => {
-    // Prevent concurrent calculations
-    if (isCalculatingRef.current) return;
-    
-    // Skip if no content or suggestions/keywords not loaded yet
-    if (!content || !suggestions.length || !keywords.length) return;
-    
-    // Create a key to check if calculation is needed
-    const calculationKey = `${content}-${initialScore}-${JSON.stringify(suggestions.map(s => s.isApplied))}-${JSON.stringify(keywords.map(k => k.applied))}`;
-    
-    // Skip if we've already calculated this combination
-    if (calculationKey === lastCalculatedContentRef.current && initialScore === lastInitialScoreRef.current) {
-      return;
-    }
-    
-    const calculateScore = () => {
-      isCalculatingRef.current = true;
+      // Update local state from service
+      const breakdown = scoreServiceRef.current.getScoreBreakdown();
+      setScoreBreakdown(breakdown);
+      setCurrentScore(scoreServiceRef.current.getCurrentScore());
+      setSuggestions(initialSuggestions);
+      setKeywords(initialKeywords);
       
-      try {
-        // Calculate detailed score
-        const breakdown = calculateDetailedAtsScore(
-          initialScore,
-          suggestions,
-          keywords,
-          content
-        );
-        
-        // Update state
-        setScoreBreakdown(breakdown);
-        setCurrentScore(breakdown.total);
-        
-        // Call callback if provided (debounced)
-        debouncedOnScoreChange(breakdown.total);
-        
-        // Update metrics
-        const appliedSuggestions = suggestions.filter(s => s.isApplied);
-        const appliedKeywords = keywords.filter(k => k.applied);
-        
-        const newMetrics = generateOptimizationMetrics(
-          initialScore,
-          breakdown.total,
-          appliedSuggestions,
-          appliedKeywords,
-          startTimeRef.current
-        );
-        
-        setMetrics(newMetrics);
-        
-        // Update refs to prevent unnecessary calculations
-        lastCalculatedContentRef.current = calculationKey;
-        lastInitialScoreRef.current = initialScore;
-      } catch (error) {
-        console.error("Error calculating score:", error);
-      } finally {
-        isCalculatingRef.current = false;
+      // Regenerate metrics
+      generateMetrics();
+    }
+    
+    // Clean up on unmount
+    return () => {
+      if (scoreChangeTimeoutRef.current) {
+        clearTimeout(scoreChangeTimeoutRef.current);
       }
     };
-    
-    // Debounce the calculation
-    const timeoutId = setTimeout(calculateScore, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, [content, suggestions, keywords, initialScore, debouncedOnScoreChange]);
+  }, [initialScore, resumeContent, initialSuggestions, initialKeywords, initializeScoreService]);
+  
+  /**
+   * Generate metrics with error handling
+   */
+  const generateMetrics = useCallback(() => {
+    if (!generateOptimizationMetrics || !scoreServiceRef.current) return null;
+
+    try {
+      const service = scoreServiceRef.current;
+      const initialScoreVal = service.getBaseScore();
+      const currentScoreVal = service.getCurrentScore();
+      const appliedSugs = service.getAppliedSuggestions();
+      const appliedKeys = service.getAppliedKeywords();
+
+      const metrics = generateOptimizationMetrics(
+        initialScoreVal,
+        currentScoreVal,
+        appliedSugs,
+        appliedKeys,
+        startTimeRef.current
+      );
+
+      setMetrics(metrics);
+      return metrics;
+    } catch (error) {
+      console.error("Error generating metrics:", error);
+      return null;
+    }
+  }, []);
   
   /**
    * Apply or unapply a suggestion
    */
   const applySuggestion = useCallback((index: number) => {
-    setSuggestions(prev => {
-      // Ensure index is valid
-      if (index < 0 || index >= prev.length) return prev;
+    if (!scoreServiceRef.current) return;
+    
+    try {
+      // Apply suggestion in the service
+      const newScore = scoreServiceRef.current.applySuggestion(index);
       
-      // Create a copy with the suggestion toggled
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        isApplied: !updated[index].isApplied
-      };
+      // Update state from the service
+      const breakdown = scoreServiceRef.current.getScoreBreakdown();
+      setScoreBreakdown(breakdown);
+      setCurrentScore(newScore);
       
-      return updated;
-    });
-  }, []);
+      // Update suggestions array for UI
+      setSuggestions(prev => {
+        const updated = [...prev];
+        updated[index] = {
+          ...updated[index],
+          isApplied: !updated[index].isApplied
+        };
+        return updated;
+      });
+      
+      // Regenerate metrics
+      generateMetrics();
+    } catch (error) {
+      console.error("Error applying suggestion:", error);
+    }
+  }, [generateMetrics]);
   
   /**
    * Apply or unapply a keyword
    */
   const applyKeyword = useCallback((index: number) => {
-    setKeywords(prev => {
-      // Ensure index is valid
-      if (index < 0 || index >= prev.length) return prev;
+    if (!scoreServiceRef.current) return;
+    
+    try {
+      // Apply keyword in the service
+      const newScore = scoreServiceRef.current.applyKeyword(index);
       
-      // Create a copy with the keyword toggled
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        applied: !updated[index].applied
-      };
+      // Update state from the service
+      const breakdown = scoreServiceRef.current.getScoreBreakdown();
+      setScoreBreakdown(breakdown);
+      setCurrentScore(newScore);
       
-      return updated;
-    });
-  }, []);
+      // Update keywords array for UI
+      setKeywords(prev => {
+        const updated = [...prev];
+        updated[index] = {
+          ...updated[index],
+          applied: !updated[index].applied
+        };
+        return updated;
+      });
+      
+      // Regenerate metrics
+      generateMetrics();
+    } catch (error) {
+      console.error("Error applying keyword:", error);
+    }
+  }, [generateMetrics]);
   
   /**
    * Update resume content
    */
   const updateContent = useCallback((newContent: string) => {
-    setContent(newContent);
-  }, []);
+    if (!scoreServiceRef.current) return;
+    
+    try {
+      // Update content in the service
+      const newScore = scoreServiceRef.current.updateContent(newContent);
+      
+      // Update state from the service
+      const breakdown = scoreServiceRef.current.getScoreBreakdown();
+      setScoreBreakdown(breakdown);
+      setCurrentScore(newScore);
+      
+      // Regenerate metrics
+      generateMetrics();
+    } catch (error) {
+      console.error("Error updating content:", error);
+    }
+  }, [generateMetrics]);
   
   /**
    * Reset all changes
    */
   const resetAllChanges = useCallback(() => {
-    // Reset suggestions
-    setSuggestions(prev => prev.map(s => ({ ...s, isApplied: false })));
+    if (!scoreServiceRef.current) return;
     
-    // Reset keywords
-    setKeywords(prev => prev.map(k => ({ ...k, applied: false })));
-    
-    // Reset content to original
-    setContent(resumeContent);
-  }, [resumeContent]);
+    try {
+      // Reset in the service
+      const newScore = scoreServiceRef.current.resetAllChanges();
+      
+      // Update state from the service
+      const breakdown = scoreServiceRef.current.getScoreBreakdown();
+      setScoreBreakdown(breakdown);
+      setCurrentScore(newScore);
+      
+      // Update UI state
+      setSuggestions(prev => prev.map(s => ({ ...s, isApplied: false })));
+      setKeywords(prev => prev.map(k => ({ ...k, applied: false })));
+      
+      // Regenerate metrics
+      generateMetrics();
+    } catch (error) {
+      console.error("Error resetting changes:", error);
+    }
+  }, [generateMetrics]);
   
   /**
-   * Apply all suggested changes
+   * Apply all suggestions and keywords
    */
   const applyAllChanges = useCallback(() => {
+    if (!scoreServiceRef.current) return;
+    
     setIsApplyingChanges(true);
     
-    // Apply all suggestions
-    setSuggestions(prev => prev.map(s => ({ ...s, isApplied: true })));
+    try {
+      // Apply all in the service
+      scoreServiceRef.current.applyAllSuggestions();
+      scoreServiceRef.current.applyAllKeywords();
+      
+      // Get the new score and breakdown
+      const newScore = scoreServiceRef.current.getCurrentScore();
+      const breakdown = scoreServiceRef.current.getScoreBreakdown();
+      
+      // Update state
+      setScoreBreakdown(breakdown);
+      setCurrentScore(newScore);
+      
+      // Update UI state
+      setSuggestions(prev => prev.map(s => ({ ...s, isApplied: true })));
+      setKeywords(prev => prev.map(k => ({ ...k, applied: true })));
+      
+      // Regenerate metrics
+      generateMetrics();
+    } catch (error) {
+      console.error("Error applying all changes:", error);
+    } finally {
+      setIsApplyingChanges(false);
+    }
+  }, [generateMetrics]);
+  
+  /**
+   * Simulate applying a suggestion without actually applying it
+   */
+  const simulateSuggestionImpact = useCallback((index: number) => {
+    if (!scoreServiceRef.current) {
+      return { newScore: currentScore, pointImpact: 0, description: "Not initialized" };
+    }
     
-    // Apply all keywords
-    setKeywords(prev => prev.map(k => ({ ...k, applied: true })));
+    return scoreServiceRef.current.simulateSuggestionImpact(index);
+  }, [currentScore]);
+  
+  /**
+   * Simulate applying a keyword without actually applying it
+   */
+  const simulateKeywordImpact = useCallback((index: number) => {
+    if (!scoreServiceRef.current) {
+      return { newScore: currentScore, pointImpact: 0, description: "Not initialized" };
+    }
     
-    // In a real implementation, you would generate new content here
-    // based on all applied suggestions and keywords
-    
-    setIsApplyingChanges(false);
-  }, []);
+    return scoreServiceRef.current.simulateKeywordImpact(index);
+  }, [currentScore]);
   
   /**
    * Export optimization report
    */
-  const exportReport = useCallback((format: 'json' | 'csv' | 'markdown' = 'json') => {
-    if (!metrics) return;
-    
-    let content: string;
-    let mimeType: string;
-    let extension: string;
-    
-    switch (format) {
-      case 'json':
-        content = exportFormats.toJSON(metrics);
-        mimeType = 'application/json';
-        extension = 'json';
-        break;
-      case 'csv':
-        content = exportFormats.toCSV(metrics);
-        mimeType = 'text/csv';
-        extension = 'csv';
-        break;
-      case 'markdown':
-      default:
-        content = exportFormats.toMarkdown(metrics);
-        mimeType = 'text/markdown';
-        extension = 'md';
-        break;
+  const exportReport = useCallback((format: 'json' | 'csv' | 'markdown' = 'markdown') => {
+    try {
+      if (!metrics || !downloadOptimizationReport || !exportFormats) return;
+
+      let content: string;
+      let mimeType: string;
+      let extension: string;
+
+      switch (format) {
+        case 'json':
+          content = exportFormats.toJSON(metrics);
+          mimeType = 'application/json';
+          extension = 'json';
+          break;
+        case 'csv':
+          content = exportFormats.toCSV(metrics);
+          mimeType = 'text/csv';
+          extension = 'csv';
+          break;
+        case 'markdown':
+        default:
+          content = exportFormats.toMarkdown(metrics);
+          mimeType = 'text/markdown';
+          extension = 'md';
+          break;
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `resume-optimization-${timestamp}.${extension}`;
+
+      downloadOptimizationReport(content, filename, mimeType);
+    } catch (error) {
+      console.error("Error exporting report:", error);
     }
-    
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `resume-optimization-${timestamp}.${extension}`;
-    
-    downloadOptimizationReport(content, filename, mimeType);
   }, [metrics]);
   
   /**
-   * Get impact details for a suggestion
+   * Get detailed impact information for a suggestion
    */
-  const getSuggestionImpact = useCallback((suggestion: Suggestion) => {
-    const score = suggestion.score || analyzeSuggestionImpact(suggestion);
-    const points = calculateSuggestionPointImpact({...suggestion, score});
-    const level = getImpactLevel(score / 10);
-    
-    let description = '';
-    
-    switch (level) {
-      case ImpactLevel.CRITICAL:
-        description = `Critical improvement (+${points} points)`;
-        break;
-      case ImpactLevel.HIGH:
-        description = `Major improvement (+${points} points)`;
-        break;
-      case ImpactLevel.MEDIUM:
-        description = `Good improvement (+${points} points)`;
-        break;
-      case ImpactLevel.LOW:
-        description = `Minor improvement (+${points} points)`;
-        break;
+  const getSuggestionImpact = useCallback((suggestion: Suggestion, index: number) => {
+    if (!scoreServiceRef.current) {
+      const score = suggestion.score || 5;
+      const points = suggestion.pointImpact || 1.0;
+      const level = getImpactLevel(score / 10);
+      
+      return { 
+        points, 
+        level,
+        description: `Impact: +${points} points`
+      };
     }
     
-    return { points, level, description };
+    const impact = scoreServiceRef.current.getSuggestionImpactDetails(index);
+    
+    return {
+      points: impact.pointImpact,
+      level: impact.level,
+      description: impact.description
+    };
   }, []);
   
   /**
-   * Get impact details for a keyword
+   * Get detailed impact information for a keyword
    */
-  const getKeywordImpact = useCallback((keyword: Keyword) => {
-    // Get impact value if not already present
-    let impact;
-    if (keyword.impact === undefined) {
-      impact = analyzeKeywordImpact(keyword.text, content).impact;
-    } else {
-      impact = keyword.impact;
+  const getKeywordImpact = useCallback((keyword: Keyword, index: number) => {
+    if (!scoreServiceRef.current) {
+      const impact = keyword.impact || 0.5;
+      const points = keyword.pointImpact || impact * 2;
+      const level = getImpactLevel(impact);
+      
+      return { 
+        points, 
+        level,
+        description: `Impact: +${points} points`
+      };
     }
     
-    const points = calculateKeywordPointImpact(keyword, content);
-    const level = getImpactLevel(impact);
+    const impact = scoreServiceRef.current.getKeywordImpactDetails(index);
     
-    let description = '';
-    
-    switch (level) {
-      case ImpactLevel.CRITICAL:
-        description = `Essential keyword (+${points} points)`;
-        break;
-      case ImpactLevel.HIGH:
-        description = `High-impact keyword (+${points} points)`;
-        break;
-      case ImpactLevel.MEDIUM:
-        description = `Helpful keyword (+${points} points)`;
-        break;
-      case ImpactLevel.LOW:
-        description = `Minor keyword (+${points} points)`;
-        break;
-    }
-    
-    return { points, level, description };
-  }, [content]);
+    return {
+      points: impact.pointImpact,
+      level: impact.level,
+      description: impact.description
+    };
+  }, []);
   
   /**
    * Save current state
    */
   const saveState = useCallback(() => {
-    if (!scoreBreakdown) return false;
+    if (!scoreBreakdown || !saveOptimizationState) return false;
     
     const state = {
       resumeId,
@@ -444,34 +502,36 @@ export function useResumeScoreManager({
     return saveOptimizationState(state);
   }, [resumeId, initialScore, currentScore, suggestions, keywords, scoreBreakdown]);
   
-  // Save state when component unmounts
+  /**
+   * Save state when component unmounts
+   */
   useEffect(() => {
     return () => {
       saveState();
     };
   }, [saveState]);
   
-  // Cleanup function to clear timeouts
-  useEffect(() => {
-    return () => {
-      if (scoreChangeTimeoutRef.current) {
-        clearTimeout(scoreChangeTimeoutRef.current);
-      }
-    };
-  }, []);
-  
   return {
+    // State
     currentScore,
     scoreBreakdown,
     suggestions,
     keywords,
     isApplyingChanges,
     metrics,
+    
+    // Actions
     applySuggestion,
     applyKeyword,
     updateContent,
     resetAllChanges,
     applyAllChanges,
+    
+    // Impact simulation
+    simulateSuggestionImpact,
+    simulateKeywordImpact,
+    
+    // Export and reporting
     exportReport,
     getSuggestionImpact,
     getKeywordImpact,

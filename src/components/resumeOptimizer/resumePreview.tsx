@@ -32,7 +32,7 @@ import DOMPurify from 'dompurify';
 import { toast } from "sonner";
 
 // Import TipTap editor
-import TipTapResumeEditor from '@/components/ResumeOptimizer/TipTapResumeEditor';
+import TipTapResumeEditor from '@/components/ResumeOptimizer/tipTapResumeEditor';
 
 // Import helper components
 import { 
@@ -41,7 +41,7 @@ import {
   LoadingState,
   NoContentWarning,
   AppliedKeywordsList
-} from './ResumePreviewComponents';
+} from './resumePreviewComponents';
 
 // Import utilities
 import { 

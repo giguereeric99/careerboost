@@ -26,19 +26,19 @@ import { Button } from "@/components/ui/button";
 import { useResumeOptimizerEnhanced } from '@/hooks/useResumeOptimizerEnhanced';
 
 // Import components
-import UploadSection from '@/components/ResumeOptimizer/UploadSection';
-import ResumePreview from '@/components/ResumeOptimizer/ResumePreview';
-import ScoreCard from '@/components/ResumeOptimizer/ScoreCard';
-import SuggestionsList from '@/components/ResumeOptimizer/SuggestionsList';
-import KeywordList from '@/components/ResumeOptimizer/KeywordList';
-import TemplateGallery from '@/components/ResumeOptimizer/TemplateGallery';
-import ProUpgradeDialog from '@/components/Dialogs/ProUpgradeDialog';
-import ResetConfirmationDialog from '@/components/Dialogs/ResetConfirmationDialog';
-import LoadingState from '@/components/ResumeOptimizer/LoadingState';
-import EmptyPreviewState from '@/components/ResumeOptimizer/EmptyPreviewState';
-import EditVersionBanner from '@/components/ResumeOptimizer/EditVersionBanner';
-import RegenerateButton from '@/components/ResumeOptimizer/RegenerateButton';
-import OptimizationMetrics from '@/components/ResumeOptimizer/OptimizationMetrics';
+import UploadSection from '@/components/ResumeOptimizer/uploadSection';
+import ResumePreview from '@/components/ResumeOptimizer/resumePreview';
+import ScoreCard from '@/components/ResumeOptimizer/scoreCard';
+import SuggestionsList from '@/components/ResumeOptimizer/suggestionsList';
+import KeywordList from '@/components/ResumeOptimizer/keywordList';
+import TemplateGallery from '@/components/ResumeOptimizer/templateGallery';
+import ProUpgradeDialog from '@/components/Dialogs/proUpgradeDialog';
+import ResetConfirmationDialog from '@/components/Dialogs/resetConfirmationDialog';
+import LoadingState from '@/components/ResumeOptimizer/loadingState';
+import EmptyPreviewState from '@/components/ResumeOptimizer/emptyPreviewState';
+import EditVersionBanner from '@/components/ResumeOptimizer/editVersionBanner';
+import RegenerateButton from '@/components/ResumeOptimizer/regenerateButton';
+import OptimizationMetrics from '@/components/ResumeOptimizer/optimizationMetrics';
 import { resumeTemplates } from '@/constants/resumeTemplates';
 
 /**

@@ -1,14 +1,14 @@
 /**
- * Resume Score Enhancement System
+ * Resume Score Logic Module
  * 
- * This module provides advanced logic for real-time ATS score calculation,
- * suggestion impact assessment, and keyword effectiveness evaluation.
+ * This module provides core calculation functions for the resume ATS score system.
+ * It contains pure functions that don't depend on React state or UI components.
  * 
- * The system allows for dynamic score updates as users apply suggestions
- * and keywords, providing immediate feedback on resume optimization.
+ * Key features:
+ * - Impact analysis for suggestions and keywords
+ * - Score calculation algorithms
+ * - Impact level definitions and categorization
  */
-
-import { SUGGESTION_TYPES, RESUME_SECTION_NAMES, SECTION_WEIGHTS } from '@/utils/prompts/resumeOptimizationPrompt';
 
 // Define types for optimization elements
 export interface Suggestion {
@@ -18,6 +18,8 @@ export interface Suggestion {
   impact: string;        // Description of the impact
   isApplied?: boolean;   // Whether the suggestion has been applied
   score?: number;        // Impact score (1-10)
+  section?: string;      // Target section for the suggestion
+  pointImpact?: number;  // Calculated point impact on ATS score
 }
 
 export interface Keyword {
@@ -25,6 +27,7 @@ export interface Keyword {
   applied: boolean;      // Whether the keyword has been applied
   impact?: number;       // Impact score (0.0-1.0)
   category?: string;     // Category (technical, soft skill, industry-specific)
+  pointImpact?: number;  // Calculated point impact on ATS score
 }
 
 export interface ScoreBreakdown {
@@ -96,6 +99,25 @@ const KEYWORD_CATEGORY_WEIGHTS = {
 };
 
 /**
+ * Sections with their importance weight for ATS scoring
+ * Different sections have different impacts on the overall ATS score
+ */
+export const SECTION_WEIGHTS = {
+  'resume-experience': 0.30,    // Experience is typically most important
+  'resume-skills': 0.25,        // Skills are highly relevant
+  'resume-education': 0.15,     // Education is important but less than experience
+  'resume-summary': 0.10,       // Professional summary sets the tone
+  'resume-projects': 0.07,      // Projects demonstrate practical skills
+  'resume-certifications': 0.05, // Certifications validate skills
+  'resume-languages': 0.03,     // Languages can be important in global positions
+  'resume-awards': 0.02,        // Awards demonstrate excellence
+  'resume-publications': 0.01,  // Publications show expertise in some fields
+  'resume-volunteering': 0.01,  // Volunteering shows character
+  'resume-additional': 0.005,   // Additional information can be relevant
+  'resume-interests': 0.005     // Interests are less important for ATS
+};
+
+/**
  * Analyzes a suggestion's impact description to determine a numerical score
  * 
  * @param suggestion - The suggestion object
@@ -146,7 +168,8 @@ export function analyzeKeywordImpact(
   resumeContent: string
 ): { category: string; impact: number } {
   // Check if keyword already exists in resume (case insensitive)
-  const keywordExists = new RegExp(`\\b${keyword}\\b`, 'i').test(resumeContent);
+  const keywordRegex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+  const keywordExists = keywordRegex.test(resumeContent);
   
   // Determine keyword category
   let category = 'general';
@@ -188,53 +211,6 @@ export function getImpactLevel(impactScore: number): ImpactLevel {
   if (impactScore >= 0.6) return ImpactLevel.HIGH;
   if (impactScore >= 0.4) return ImpactLevel.MEDIUM;
   return ImpactLevel.LOW;
-}
-
-/**
- * Evaluates sections in resume content to determine section-based scores
- * 
- * @param resumeContent - HTML content of the resume
- * @returns Object with scores for each section
- */
-export function evaluateResumeSections(resumeContent: string): { [key: string]: number } {
-  const sectionScores: { [key: string]: number } = {};
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(resumeContent, 'text/html');
-  
-  // Evaluate each section
-  Object.entries(RESUME_SECTION_NAMES).forEach(([sectionId, sectionName]) => {
-    const section = doc.getElementById(sectionId);
-    if (!section) {
-      // Section doesn't exist
-      sectionScores[sectionId] = 0;
-      return;
-    }
-    
-    const content = section.textContent || '';
-    const weight = SECTION_WEIGHTS[sectionId] || 0.05;
-    
-    // Base score just for having the section
-    let sectionScore = 50;
-    
-    // Content length factors into quality (up to a point)
-    const contentLength = content.length;
-    if (contentLength > 500) sectionScore += 15;
-    else if (contentLength > 200) sectionScore += 10;
-    else if (contentLength > 100) sectionScore += 5;
-    
-    // Check for bullet points which are good for ATS
-    const bulletPoints = (section.querySelectorAll('li').length > 0);
-    if (bulletPoints) sectionScore += 10;
-    
-    // Check for quantifiable achievements (numbers, percentages)
-    const hasMetrics = /\d+%|\$\d+|\d+ percent|\d+ times/i.test(content);
-    if (hasMetrics) sectionScore += 15;
-    
-    // Cap at 100
-    sectionScores[sectionId] = Math.min(100, sectionScore);
-  });
-  
-  return sectionScores;
 }
 
 /**
@@ -284,6 +260,66 @@ export function calculateKeywordPointImpact(
 }
 
 /**
+ * Evaluates sections in resume content to determine section-based scores
+ * 
+ * @param resumeContent - HTML content of the resume
+ * @returns Object with scores for each section
+ */
+export function evaluateResumeSections(resumeContent: string): { [key: string]: number } {
+  const sectionScores: { [key: string]: number } = {};
+  
+  // If we're in a browser environment, use DOMParser
+  if (typeof DOMParser !== 'undefined') {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(resumeContent, 'text/html');
+    
+    // Evaluate each section based on common section IDs
+    Object.keys(SECTION_WEIGHTS).forEach((sectionId) => {
+      const section = doc.getElementById(sectionId);
+      if (!section) {
+        // Section doesn't exist
+        sectionScores[sectionId] = 0;
+        return;
+      }
+      
+      const content = section.textContent || '';
+      
+      // Base score just for having the section
+      let sectionScore = 50;
+      
+      // Content length factors into quality (up to a point)
+      const contentLength = content.length;
+      if (contentLength > 500) sectionScore += 15;
+      else if (contentLength > 200) sectionScore += 10;
+      else if (contentLength > 100) sectionScore += 5;
+      
+      // Check for bullet points which are good for ATS
+      const bulletPoints = (section.querySelectorAll('li').length > 0);
+      if (bulletPoints) sectionScore += 10;
+      
+      // Check for quantifiable achievements (numbers, percentages)
+      const hasMetrics = /\d+%|\$\d+|\d+ percent|\d+ times/i.test(content);
+      if (hasMetrics) sectionScore += 15;
+      
+      // Cap at 100
+      sectionScores[sectionId] = Math.min(100, sectionScore);
+    });
+  } else {
+    // Server-side or non-browser environment
+    // Simply set default values based on presence of section titles
+    Object.entries(SECTION_WEIGHTS).forEach(([sectionId, weight]) => {
+      // Check if the section ID appears in the content as a marker
+      const sectionExists = resumeContent.includes(`id="${sectionId}"`) || 
+                           resumeContent.includes(`data-section="${sectionId}"`);
+      
+      sectionScores[sectionId] = sectionExists ? 70 : 0; // Default score if section exists
+    });
+  }
+  
+  return sectionScores;
+}
+
+/**
  * Calculates the potential increase in ATS score based on remaining suggestions and keywords
  * 
  * @param suggestions - Array of suggestions
@@ -327,10 +363,19 @@ export function calculatePotentialPoints(
  * @returns Processed suggestions with impact scores
  */
 export function processSuggestions(suggestions: Suggestion[]): Suggestion[] {
-  return suggestions.map(suggestion => ({
-    ...suggestion,
-    score: suggestion.score || analyzeSuggestionImpact(suggestion)
-  }));
+  return suggestions.map(suggestion => {
+    const score = suggestion.score || analyzeSuggestionImpact(suggestion);
+    const pointImpact = suggestion.pointImpact || calculateSuggestionPointImpact({
+      ...suggestion,
+      score
+    });
+    
+    return {
+      ...suggestion,
+      score,
+      pointImpact
+    };
+  });
 }
 
 /**
@@ -345,25 +390,36 @@ export function processKeywords(
   resumeContent: string
 ): Keyword[] {
   return keywords.map(keyword => {
-    if (keyword.impact !== undefined && keyword.category !== undefined) {
+    if (keyword.impact !== undefined && keyword.category !== undefined && keyword.pointImpact !== undefined) {
       return keyword;
     }
     
-    const { impact, category } = analyzeKeywordImpact(keyword.text, resumeContent);
-    return {
+    const { impact, category } = keyword.impact !== undefined && keyword.category !== undefined
+      ? { impact: keyword.impact, category: keyword.category }
+      : analyzeKeywordImpact(keyword.text, resumeContent);
+    
+    const pointImpact = keyword.pointImpact || calculateKeywordPointImpact({
       ...keyword,
       impact,
       category
+    }, resumeContent);
+    
+    return {
+      ...keyword,
+      impact,
+      category,
+      pointImpact
     };
   });
 }
 
 /**
  * Calculates a detailed ATS score breakdown based on all factors
+ * This is the core scoring function that brings together all aspects
  * 
  * @param baseScore - Initial ATS score from AI
- * @param suggestions - Array of suggestions
- * @param keywords - Array of keywords
+ * @param suggestions - Array of suggestions (applied and unapplied)
+ * @param keywords - Array of keywords (applied and unapplied)
  * @param resumeContent - Current resume content
  * @returns Detailed score breakdown object
  */
@@ -381,7 +437,8 @@ export function calculateDetailedAtsScore(
   let suggestionPoints = 0;
   processedSuggestions.forEach(suggestion => {
     if (suggestion.isApplied) {
-      suggestionPoints += calculateSuggestionPointImpact(suggestion);
+      const pointImpact = suggestion.pointImpact || calculateSuggestionPointImpact(suggestion);
+      suggestionPoints += pointImpact;
     }
   });
   
@@ -389,36 +446,34 @@ export function calculateDetailedAtsScore(
   let keywordPoints = 0;
   processedKeywords.forEach(keyword => {
     if (keyword.applied) {
-      keywordPoints += calculateKeywordPointImpact(keyword, resumeContent);
+      const pointImpact = keyword.pointImpact || calculateKeywordPointImpact(keyword, resumeContent);
+      keywordPoints += pointImpact;
     }
   });
   
   // Calculate potential additional points
+  const unappliedSuggestions = processedSuggestions.filter(s => !s.isApplied);
+  const unappliedKeywords = processedKeywords.filter(k => !k.applied);
   const potentialPoints = calculatePotentialPoints(
-    processedSuggestions.filter(s => !s.isApplied),
-    processedKeywords.filter(k => !k.applied),
+    unappliedSuggestions,
+    unappliedKeywords,
     resumeContent
   );
   
   // Evaluate sections
   const sectionScores = evaluateResumeSections(resumeContent);
   
-  // Calculate weighted section score (contributes to base score quality)
-  let weightedSectionScore = 0;
-  Object.entries(sectionScores).forEach(([sectionId, score]) => {
-    const weight = SECTION_WEIGHTS[sectionId] || 0.05;
-    weightedSectionScore += score * weight;
-  });
-  
   // Apply diminishing returns for higher scores
   // The closer to 100, the harder it is to improve further
   const diminishingFactor = Math.max(0.1, 1 - (baseScore / 120));
   
+  // Round suggestion and keyword points for cleaner display
+  const roundedSuggestionPoints = Math.round(suggestionPoints * diminishingFactor);
+  const roundedKeywordPoints = Math.round(keywordPoints * diminishingFactor);
+  
   // Calculate total score with ceiling at 100
   const totalScore = Math.min(100, Math.round(
-    baseScore + 
-    (suggestionPoints * diminishingFactor) + 
-    (keywordPoints * diminishingFactor)
+    baseScore + roundedSuggestionPoints + roundedKeywordPoints
   ));
   
   // Calculate potential maximum score
@@ -426,185 +481,11 @@ export function calculateDetailedAtsScore(
   
   return {
     base: baseScore,
-    suggestions: Math.round(suggestionPoints * diminishingFactor),
-    keywords: Math.round(keywordPoints * diminishingFactor),
+    suggestions: roundedSuggestionPoints,
+    keywords: roundedKeywordPoints,
     total: totalScore,
     potential: potentialScore,
     sectionScores
-  };
-}
-
-/**
- * Hook for managing real-time ATS score updates as users apply suggestions and keywords
- * 
- * @param initialScore - Initial ATS score from AI
- * @param initialSuggestions - Suggestions from AI
- * @param initialKeywords - Keywords from AI
- * @param resumeContent - Current resume content
- * @returns Score management functions and state
- */
-export function useResumeScoreManager(
-  initialScore: number,
-  initialSuggestions: Suggestion[],
-  initialKeywords: Keyword[],
-  resumeContent: string
-) {
-  const [currentScore, setCurrentScore] = useState<number>(initialScore);
-  const [scoreBreakdown, setScoreBreakdown] = useState<ScoreBreakdown | null>(null);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>(processSuggestions(initialSuggestions));
-  const [keywords, setKeywords] = useState<Keyword[]>(processKeywords(initialKeywords, resumeContent));
-  
-  // Initialize score breakdown
-  useEffect(() => {
-    const breakdown = calculateDetailedAtsScore(
-      initialScore,
-      suggestions,
-      keywords,
-      resumeContent
-    );
-    setScoreBreakdown(breakdown);
-    setCurrentScore(breakdown.total);
-  }, [initialScore, resumeContent]);
-  
-  /**
-   * Updates score when a suggestion is applied
-   * 
-   * @param index - Index of the suggestion
-   */
-  const applySuggestion = (index: number) => {
-    const updatedSuggestions = [...suggestions];
-    
-    // Toggle suggestion application state
-    updatedSuggestions[index] = {
-      ...updatedSuggestions[index],
-      isApplied: !updatedSuggestions[index].isApplied
-    };
-    
-    setSuggestions(updatedSuggestions);
-    
-    // Recalculate score
-    const breakdown = calculateDetailedAtsScore(
-      initialScore,
-      updatedSuggestions,
-      keywords,
-      resumeContent
-    );
-    setScoreBreakdown(breakdown);
-    setCurrentScore(breakdown.total);
-  };
-  
-  /**
-   * Updates score when a keyword is applied
-   * 
-   * @param index - Index of the keyword
-   */
-  const applyKeyword = (index: number) => {
-    const updatedKeywords = [...keywords];
-    
-    // Toggle keyword application state
-    updatedKeywords[index] = {
-      ...updatedKeywords[index],
-      applied: !updatedKeywords[index].applied
-    };
-    
-    setKeywords(updatedKeywords);
-    
-    // Recalculate score
-    const breakdown = calculateDetailedAtsScore(
-      initialScore,
-      suggestions,
-      updatedKeywords,
-      resumeContent
-    );
-    setScoreBreakdown(breakdown);
-    setCurrentScore(breakdown.total);
-  };
-  
-  /**
-   * Updates score when resume content changes
-   * 
-   * @param newContent - Updated resume content
-   */
-  const updateContent = (newContent: string) => {
-    // Recalculate score with new content
-    const breakdown = calculateDetailedAtsScore(
-      initialScore,
-      suggestions,
-      keywords,
-      newContent
-    );
-    setScoreBreakdown(breakdown);
-    setCurrentScore(breakdown.total);
-  };
-  
-  /**
-   * Reset all applied suggestions and keywords
-   */
-  const resetAll = () => {
-    // Reset suggestions
-    const resetSuggestions = suggestions.map(suggestion => ({
-      ...suggestion,
-      isApplied: false
-    }));
-    setSuggestions(resetSuggestions);
-    
-    // Reset keywords
-    const resetKeywords = keywords.map(keyword => ({
-      ...keyword,
-      applied: false
-    }));
-    setKeywords(resetKeywords);
-    
-    // Reset score to base
-    const breakdown = calculateDetailedAtsScore(
-      initialScore,
-      resetSuggestions,
-      resetKeywords,
-      resumeContent
-    );
-    setScoreBreakdown(breakdown);
-    setCurrentScore(breakdown.total);
-  };
-  
-  /**
-   * Apply all suggestions and keywords at once
-   */
-  const applyAll = () => {
-    // Apply all suggestions
-    const appliedSuggestions = suggestions.map(suggestion => ({
-      ...suggestion,
-      isApplied: true
-    }));
-    setSuggestions(appliedSuggestions);
-    
-    // Apply all keywords
-    const appliedKeywords = keywords.map(keyword => ({
-      ...keyword,
-      applied: true
-    }));
-    setKeywords(appliedKeywords);
-    
-    // Update score
-    const breakdown = calculateDetailedAtsScore(
-      initialScore,
-      appliedSuggestions,
-      appliedKeywords,
-      resumeContent
-    );
-    setScoreBreakdown(breakdown);
-    setCurrentScore(breakdown.total);
-  };
-  
-  return {
-    currentScore,
-    scoreBreakdown,
-    suggestions,
-    keywords,
-    applySuggestion,
-    applyKeyword,
-    updateContent,
-    resetAll,
-    applyAll
   };
 }
 
@@ -616,7 +497,10 @@ export function useResumeScoreManager(
  */
 export function getSuggestionImpactDescription(suggestion: Suggestion): string {
   const impactScore = suggestion.score || analyzeSuggestionImpact(suggestion);
-  const points = calculateSuggestionPointImpact(suggestion);
+  const points = suggestion.pointImpact || calculateSuggestionPointImpact({
+    ...suggestion,
+    score: impactScore
+  });
   
   if (impactScore >= 8) {
     return `Critical improvement (+${points} points)`;
@@ -648,7 +532,7 @@ export function getKeywordImpactDescription(
     impact = keyword.impact;
   }
   
-  const points = calculateKeywordPointImpact(keyword, resumeContent);
+  const points = keyword.pointImpact || calculateKeywordPointImpact(keyword, resumeContent);
   const level = getImpactLevel(impact);
   
   switch (level) {

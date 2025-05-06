@@ -2,13 +2,19 @@
  * Enhanced SuggestionsList Component
  * 
  * This component displays AI-generated suggestions for improving the resume
- * with advanced impact analysis and real-time feedback on score improvement.
- * It maintains the same UI appearance while adding enhanced functionality.
+ * with advanced impact analysis, real-time score previews, and detailed feedback.
+ * 
+ * Features:
+ * - Real-time score impact preview
+ * - Categorized suggestions by type
+ * - Interactive suggestion application
+ * - Visual feedback on impact levels
+ * - Animation and transitions for better UX
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
-import { Sparkles, Check, AlertTriangle, TrendingUp, BarChart2 } from "lucide-react";
+import { Sparkles, Check, AlertTriangle, TrendingUp, BarChart2, ChevronDown, ChevronUp } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -16,50 +22,54 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-
-// Import scoring logic (if available)
-import { analyzeSuggestionImpact, calculateSuggestionPointImpact, ImpactLevel } from '@/services/resumeScoreLogic';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ImpactLevel } from '@/services/resumeScoreLogic';
+import ImpactPreview from './impactPreview';
 
 // Define suggestion types with descriptions for better user context
 const SUGGESTION_TYPES = {
   "structure": {
-    title: "Structure & Layout",
-    description: "Suggestions to improve organization and formatting",
+    title: "Structure & Mise en page",
+    description: "Suggestions pour améliorer l'organisation et le formatage",
     icon: BarChart2
   },
   "content": {
-    title: "Content Enhancement",
-    description: "Suggestions to improve the quality of your content",
+    title: "Amélioration du contenu",
+    description: "Suggestions pour améliorer la qualité de votre contenu",
     icon: Sparkles
   },
   "keyword": {
-    title: "Add industry keywords",
-    description: "Including these terms will increase visibility with ATS systems",
+    title: "Mots-clés d'industrie",
+    description: "L'inclusion de ces termes augmentera la visibilité avec les systèmes ATS",
     icon: TrendingUp
   },
   "achievement": {
-    title: "Quantify achievements",
-    description: "Add metrics to demonstrate the impact of your work",
+    title: "Quantifier les réalisations",
+    description: "Ajouter des métriques pour démontrer l'impact de votre travail",
     icon: TrendingUp
   },
   "format": {
-    title: "Improve formatting",
-    description: "Structure changes to enhance readability and visual appeal",
+    title: "Améliorer le formatage",
+    description: "Changements de structure pour améliorer la lisibilité et l'apparence visuelle",
     icon: BarChart2
   },
   "language": {
-    title: "Enhance language",
-    description: "Power words and action verbs to strengthen descriptions",
+    title: "Améliorer le langage",
+    description: "Mots d'action et verbes puissants pour renforcer les descriptions",
     icon: Sparkles
   },
   "skills": {
-    title: "Skills Highlighting",
-    description: "Better showcase your technical and soft skills",
+    title: "Mise en valeur des compétences",
+    description: "Mieux présenter vos compétences techniques et humaines",
     icon: Check
   },
   "ats": {
-    title: "ATS Optimization", 
-    description: "Improvements specifically for ATS compatibility",
+    title: "Optimisation ATS", 
+    description: "Améliorations spécifiques pour la compatibilité ATS",
     icon: AlertTriangle
   }
 };
@@ -68,70 +78,52 @@ const SUGGESTION_TYPES = {
 const FALLBACK_SUGGESTION_TYPES = [
   {
     type: "keyword",
-    title: "Add industry keywords",
-    description: "Including these terms will increase visibility with ATS systems."
+    title: "Ajouter des mots-clés d'industrie",
+    description: "L'inclusion de ces termes augmentera la visibilité avec les systèmes ATS."
   },
   {
     type: "achievement",
-    title: "Quantify achievements",
-    description: "Add metrics to demonstrate the impact of your work."
+    title: "Quantifier les réalisations",
+    description: "Ajoutez des métriques pour démontrer l'impact de votre travail."
   },
   {
     type: "format",
-    title: "Improve formatting",
-    description: "Structure changes to enhance readability and visual appeal."
+    title: "Améliorer le formatage",
+    description: "Changements de structure pour améliorer la lisibilité et l'apparence visuelle."
   },
   {
     type: "language",
-    title: "Enhance language",
-    description: "Power words and action verbs to strengthen descriptions."
+    title: "Améliorer le langage",
+    description: "Mots d'action et verbes puissants pour renforcer les descriptions."
   }
 ];
 
 export interface OptimizationSuggestion {
-  id?: string;
-  type: string;
-  text: string;
-  impact: string;
-  isApplied?: boolean;
-  score?: number;
-  pointImpact?: number;
-  section?: string;
+  id?: string;               // Unique identifier for the suggestion
+  type: string;              // Category of suggestion (e.g., "summary", "experience", "skills")
+  text: string;              // The actual suggestion content
+  impact: string;            // Description of how this improves the resume
+  isApplied?: boolean;       // Whether this suggestion has been applied to the resume
+  score?: number;            // Impact score (1-10)
+  pointImpact?: number;      // Point impact on overall score
+  section?: string;          // Target section for this suggestion
+}
+
+interface SuggestionImpact {
+  newScore: number;
+  pointImpact: number;
+  description: string;
 }
 
 interface SuggestionsListProps {
-  suggestions: OptimizationSuggestion[];
-  isOptimizing: boolean;
-  onApplySuggestion: (index: number) => void;
-  resumeContent?: string;
-  showImpactScore?: boolean;
+  suggestions: OptimizationSuggestion[];              // Available suggestions
+  isOptimizing: boolean;                              // Whether optimization is in progress
+  onApplySuggestion: (index: number) => void;         // Handler for applying suggestions
+  resumeContent?: string;                             // Current resume content
+  showImpactScore?: boolean;                          // Whether to show impact details
+  currentScore?: number;                              // Current ATS score
+  simulateSuggestionImpact?: (index: number) => SuggestionImpact;  // Function to simulate impact
 }
-
-/**
- * Determines the impact level color based on impact score
- * 
- * @param score - Numerical impact score (1-10)
- * @returns CSS color class
- */
-const getImpactColor = (score: number): string => {
-  if (score >= 8) return "text-red-600 bg-red-50 border-red-200";
-  if (score >= 6) return "text-orange-600 bg-orange-50 border-orange-200";
-  if (score >= 4) return "text-blue-600 bg-blue-50 border-blue-200";
-  return "text-gray-600 bg-gray-50 border-gray-200";
-};
-
-/**
- * Gets a descriptive label for the impact level
- * 
- * @param score - Numerical impact score (1-10)
- * @returns Impact level label
- */
-const getImpactLabel = (score: number): string => {
-  if (score >= 8) return "Critical";
-  if (score >= 6) return "High";
-  if (score >= 4) return "Medium";
-  return "Low";
-};
 
 /**
  * SuggestionsList component displays AI-generated suggestions
@@ -142,147 +134,214 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
   isOptimizing,
   onApplySuggestion,
   resumeContent = "",
-  showImpactScore = true
+  showImpactScore = true,
+  currentScore = 0,
+  simulateSuggestionImpact
 }) => {
-  // Process suggestions to add impact scores if not already present
-  const [processedSuggestions, setProcessedSuggestions] = useState<OptimizationSuggestion[]>([]);
-  const [expandedSuggestion, setExpandedSuggestion] = useState<number | null>(null);
-
-  // Process suggestions to add impact scores
+  // State for tracking expanded suggestions
+  const [expandedSuggestions, setExpandedSuggestions] = useState<number[]>([]);
+  // State for tracking suggestion impacts
+  const [suggestionImpacts, setSuggestionImpacts] = useState<SuggestionImpact[]>([]);
+  
+  // Calculate suggestion impacts on mount and when dependencies change
   useEffect(() => {
-    if (!suggestions || suggestions.length === 0) return;
+    if (!simulateSuggestionImpact || suggestions.length === 0) return;
     
-    try {
-      // Enhanced suggestions with impact analysis
-      const enhanced = suggestions.map(suggestion => {
-        // Calculate impact score if not already present
-        let score = suggestion.score;
-        let pointImpact = suggestion.pointImpact;
-        
-        // Only calculate if we have the analyzeSuggestionImpact function
-        if (typeof analyzeSuggestionImpact === 'function' && !score) {
-          score = analyzeSuggestionImpact(suggestion);
-        }
-        
-        // Only calculate if we have the calculateSuggestionPointImpact function
-        if (typeof calculateSuggestionPointImpact === 'function' && !pointImpact && score) {
-          pointImpact = calculateSuggestionPointImpact({...suggestion, score});
-        }
-        
-        return {
-          ...suggestion,
-          score: score || 5, // Default to medium impact if calculation not available
-          pointImpact: pointImpact || 1.0 // Default to 1 point if calculation not available
-        };
-      });
-      
-      // Sort by impact score (highest first) if scores are available
-      if (enhanced[0].score) {
-        enhanced.sort((a, b) => (b.score || 0) - (a.score || 0));
+    // Pre-calculate impacts for all suggestions
+    const impacts = suggestions.map((_, index) => 
+      simulateSuggestionImpact(index)
+    );
+    
+    setSuggestionImpacts(impacts);
+  }, [suggestions, simulateSuggestionImpact]);
+  
+  /**
+   * Toggle expanded state for a suggestion
+   */
+  const toggleExpand = useCallback((index: number) => {
+    setExpandedSuggestions(prev => {
+      if (prev.includes(index)) {
+        return prev.filter(i => i !== index);
+      } else {
+        return [...prev, index];
       }
-      
-      setProcessedSuggestions(enhanced);
-    } catch (error) {
-      console.error("Error processing suggestions:", error);
-      setProcessedSuggestions(suggestions);
-    }
-  }, [suggestions, resumeContent]);
+    });
+  }, []);
+  
+  /**
+   * Map numeric impact score to impact level enum
+   */
+  const getImpactLevel = useCallback((score: number): ImpactLevel => {
+    if (score >= 8) return ImpactLevel.CRITICAL;
+    if (score >= 6) return ImpactLevel.HIGH;
+    if (score >= 4) return ImpactLevel.MEDIUM;
+    return ImpactLevel.LOW;
+  }, []);
+  
+  /**
+   * Group suggestions by type for better organization
+   */
+  const groupedSuggestions = suggestions.reduce<Record<string, OptimizationSuggestion[]>>(
+    (groups, suggestion) => {
+      const type = suggestion.type || 'general';
+      if (!groups[type]) {
+        groups[type] = [];
+      }
+      groups[type].push(suggestion);
+      return groups;
+    }, 
+    {}
+  );
+  
+  // Sort groups by priority (structure and content first)
+  const priorityOrder = [
+    'structure', 'content', 'ats', 'skills', 
+    'keyword', 'language', 'achievement', 'format'
+  ];
+  
+  const sortedGroupKeys = Object.keys(groupedSuggestions).sort((a, b) => {
+    const indexA = priorityOrder.indexOf(a);
+    const indexB = priorityOrder.indexOf(b);
+    
+    if (indexA === -1 && indexB === -1) return a.localeCompare(b);
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    
+    return indexA - indexB;
+  });
 
   return (
     <div className="bg-brand-50 border border-brand-100 rounded-lg p-4">
       <div className="flex items-center gap-2 mb-3">
         <Sparkles className="h-5 w-5 text-brand-600" />
-        <h3 className="font-medium">AI Suggestions</h3>
+        <h3 className="font-medium">Suggestions IA</h3>
       </div>
       
       {isOptimizing ? (
-        <p className="text-sm text-gray-500">Generating suggestions...</p>
-      ) : processedSuggestions && processedSuggestions.length > 0 ? (
-        <ul className="space-y-3 text-sm">
-          {processedSuggestions.map((suggestion, index) => {
-            // Get appropriate impact styling
-            const impactScore = suggestion.score || 5;
-            const impactColor = getImpactColor(impactScore);
-            const impactLabel = getImpactLabel(impactScore);
-            const pointImpact = suggestion.pointImpact?.toFixed(1) || "1.0";
-            
-            // Get suggestion type details
-            const typeInfo = SUGGESTION_TYPES[suggestion.type as keyof typeof SUGGESTION_TYPES] || {
-              title: suggestion.type.charAt(0).toUpperCase() + suggestion.type.slice(1),
-              description: "Improve your resume",
+        <p className="text-sm text-gray-500">Génération des suggestions...</p>
+      ) : suggestions && suggestions.length > 0 ? (
+        <div className="space-y-4">
+          {/* Group suggestions by type */}
+          {sortedGroupKeys.map(groupKey => {
+            const groupSuggestions = groupedSuggestions[groupKey];
+            // Get type info for the group
+            const typeInfo = SUGGESTION_TYPES[groupKey as keyof typeof SUGGESTION_TYPES] || {
+              title: groupKey.charAt(0).toUpperCase() + groupKey.slice(1),
+              description: "Suggestions pour améliorer votre CV",
               icon: Sparkles
             };
             
             const TypeIcon = typeInfo.icon;
             
             return (
-              <li 
-                key={index} 
-                className={`p-3 border-l-2 ${suggestion.isApplied ? 'border-green-500 bg-green-50' : 'border-brand-400 bg-white'} rounded transition-all duration-200`}
-              >
-                {/* Suggestion Header with Type and Impact */}
-                <div className="flex justify-between items-start mb-1">
-                  <div className="flex items-center gap-1">
+              <div key={groupKey} className="bg-white rounded-lg border overflow-hidden">
+                {/* Group header */}
+                <div className="bg-gray-50 px-4 py-2 border-b">
+                  <div className="flex items-center gap-1.5">
                     <TypeIcon className="h-4 w-4 text-brand-600" />
-                    <span className="font-medium text-xs text-gray-500">{typeInfo.title}</span>
+                    <h4 className="font-medium text-sm">{typeInfo.title}</h4>
                   </div>
-                  
-                  {showImpactScore && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Badge 
-                            className={`text-xs py-0 px-2 ${impactColor}`}
-                            variant="outline"
-                          >
-                            {impactLabel} Impact (+{pointImpact})
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Applying this suggestion will improve your ATS score by approximately {pointImpact} points</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
+                  <p className="text-xs text-gray-600 mt-0.5">{typeInfo.description}</p>
                 </div>
                 
-                {/* Suggestion Content */}
-                <p className="font-medium">{suggestion.text}</p>
-                
-                {/* Impact Description */}
-                <p className="text-gray-600 mt-1">
-                  {suggestion.impact}
-                </p>
-                
-                {/* Action Button */}
-                <div className="mt-2 flex justify-between items-center">
-                  <Button 
-                    variant={suggestion.isApplied ? "default" : "outline"} 
-                    size="sm" 
-                    className={suggestion.isApplied ? "bg-green-600 hover:bg-green-700" : ""} 
-                    onClick={() => onApplySuggestion(index)}
-                  >
-                    {suggestion.isApplied ? (
-                      <>
-                        <Check className="h-3 w-3 mr-1" />
-                        Applied
-                      </>
-                    ) : (
-                      'Apply Suggestion'
-                    )}
-                  </Button>
-                  
-                  {/* Show section target if available */}
-                  {suggestion.section && (
-                    <span className="text-xs text-gray-500">
-                      Section: {suggestion.section}
-                    </span>
-                  )}
+                {/* Group suggestions */}
+                <div className="divide-y">
+                  {groupSuggestions.map((suggestion, groupIndex) => {
+                    const suggestionIndex = suggestions.findIndex(s => 
+                      s.id === suggestion.id || 
+                      (s.text === suggestion.text && s.type === suggestion.type)
+                    );
+                    
+                    const isExpanded = expandedSuggestions.includes(suggestionIndex);
+                    const impact = suggestionImpacts[suggestionIndex];
+                    
+                    // Get impact level from score or calculate it
+                    const impactScore = suggestion.score || (impact?.pointImpact ? impact.pointImpact * 5 : 5);
+                    const impactLevel = getImpactLevel(impactScore);
+                    
+                    return (
+                      <div key={groupIndex} className="px-4 py-3">
+                        {/* Suggestion with Collapsible */}
+                        <Collapsible
+                          open={isExpanded}
+                          onOpenChange={(open) => {
+                            if (open) {
+                              setExpandedSuggestions(prev => [...prev, suggestionIndex]);
+                            } else {
+                              setExpandedSuggestions(prev => prev.filter(i => i !== suggestionIndex));
+                            }
+                          }}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">
+                                {suggestion.isApplied && (
+                                  <span className="text-green-600 mr-1">✓</span>
+                                )}
+                                {suggestion.text}
+                              </p>
+                            </div>
+                            
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                {isExpanded ? (
+                                  <ChevronUp className="h-4 w-4 text-gray-500" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                                )}
+                              </Button>
+                            </CollapsibleTrigger>
+                          </div>
+                          
+                          <CollapsibleContent>
+                            <div className="mt-2 pt-2 border-t">
+                              {/* Impact details */}
+                              <p className="text-sm text-gray-600 mb-3">
+                                {suggestion.impact}
+                              </p>
+                              
+                              {/* Impact preview */}
+                              {showImpactScore && impact && currentScore > 0 && (
+                                <ImpactPreview
+                                  currentScore={currentScore}
+                                  newScore={impact.newScore}
+                                  pointImpact={impact.pointImpact}
+                                  impactLevel={impactLevel}
+                                  description={impact.description}
+                                  isApplied={!!suggestion.isApplied}
+                                  onApply={() => onApplySuggestion(suggestionIndex)}
+                                />
+                              )}
+                              
+                              {/* Apply button (fallback if impact preview not available) */}
+                              {(!showImpactScore || !impact || currentScore === 0) && (
+                                <Button 
+                                  variant={suggestion.isApplied ? "default" : "outline"} 
+                                  size="sm" 
+                                  className={suggestion.isApplied ? "bg-green-600 hover:bg-green-700" : ""} 
+                                  onClick={() => onApplySuggestion(suggestionIndex)}
+                                >
+                                  {suggestion.isApplied ? (
+                                    <>
+                                      <Check className="h-3 w-3 mr-1" />
+                                      Appliqué
+                                    </>
+                                  ) : (
+                                    'Appliquer la suggestion'
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </div>
+                    );
+                  })}
                 </div>
-              </li>
+              </div>
             );
           })}
-        </ul>
+        </div>
       ) : (
         // Fallback suggestions when no real suggestions are available
         <ul className="space-y-3 text-sm">
