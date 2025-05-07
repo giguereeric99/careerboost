@@ -214,8 +214,8 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
       throw new Error(result.error || "Failed to load resume");
     }
     
-    // Check if data exists - IMPORTANT: distinguish between "no resume found" (not an error)
-    // and actual errors that should trigger retries
+    // IMPORTANT: Check if data exists, but treat "null data" as a valid state (new user)
+    // This clear distinction prevents loading loops
     if (result.data) {
       console.log("Resume loaded successfully", result.data.id);
       
@@ -333,64 +333,6 @@ export async function updateSuggestionStatus(
     // Log error for debugging and return error object
     console.error("Error updating suggestion status:", error);
     return { success: false, error };
-  }
-}
-
-/**
- * Regenerates the resume text with applied changes
- * Creates an updated version based on selected suggestions and keywords
- * 
- * @param resumeId - The resume ID
- * @param appliedKeywords - List of keywords that have been applied
- * @param appliedSuggestions - List of suggestions that have been applied
- * @returns Success status, updated text, and any error
- */
-export async function regenerateResume(
-  resumeId: string,
-  appliedKeywords: string[],
-  appliedSuggestions: string[]
-): Promise<{ 
-  success: boolean; 
-  optimizedText: string | null;
-  atsScore: number | null;
-  error: Error | null 
-}> {
-  try {
-    // Call the API to regenerate resume with applied changes
-    const response = await fetch('/api/resumes/regenerate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        resumeId, 
-        appliedKeywords,
-        appliedSuggestions
-      })
-    });
-    
-    // Handle API errors
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to regenerate resume");
-    }
-    
-    // Parse successful response
-    const data = await response.json();
-    
-    return { 
-      success: true, 
-      optimizedText: data.optimizedText,
-      atsScore: data.atsScore,
-      error: null 
-    };
-  } catch (error: any) {
-    // Log error for debugging and return error object
-    console.error("Error regenerating resume:", error);
-    return { 
-      success: false, 
-      optimizedText: null,
-      atsScore: null,
-      error 
-    };
   }
 }
 

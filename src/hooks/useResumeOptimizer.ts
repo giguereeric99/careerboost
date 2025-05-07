@@ -1,5 +1,3 @@
-'use client'
-
 /**
  * Enhanced Resume Optimizer Hook
  * 
@@ -8,7 +6,6 @@
  * - AI optimization
  * - Suggestion application
  * - Keyword integration
- * - Reoptimization with selected improvements
  * - State management with error handling
  * 
  * The hook uses refs to prevent infinite loops and implements
@@ -23,8 +20,8 @@ import {
   getLatestOptimizedResume,
   updateKeywordStatus,
   updateSuggestionStatus,
-  regenerateResume,
-  calculateAtsScore
+  calculateAtsScore,
+  isValidNoResumeState
 } from '@/services/resumeService';
 import { ResumeData, Suggestion } from '@/types/resume';
 import { toast } from "sonner";
@@ -39,9 +36,7 @@ interface ResumeOptimizerState {
   isParsing: boolean;
   isOptimizing: boolean;
   isLoading: boolean;
-  isApplyingChanges: boolean;
   isResetting: boolean;
-  isApplyingReoptimization: boolean;
   needsRegeneration: boolean;
   
   // Data states
@@ -63,7 +58,6 @@ interface ResumeOptimizerState {
   applyTemplateToResume: (templateId: string) => void;
   applySuggestion: (index: number) => Promise<void>;
   toggleKeyword: (index: number) => Promise<void>;
-  applyChanges: () => Promise<boolean>;
   resetResume: () => Promise<boolean>;
   
   // Setters
@@ -76,10 +70,6 @@ interface ResumeOptimizerState {
 /**
  * Custom hook for managing the resume optimization workflow
  * 
- * This refactored version adds support for applying selected suggestions
- * and keywords through reoptimization while maintaining all existing
- * functionality.
- * 
  * @param userId - Optional user ID for loading saved resumes
  * @returns A comprehensive set of state and functions for resume optimization
  */
@@ -89,9 +79,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
   const [isParsing, setIsParsing] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isApplyingChanges, setIsApplyingChanges] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [isApplyingReoptimization, setIsApplyingReoptimization] = useState(false);
   const [needsRegeneration, setNeedsRegeneration] = useState(false);
   
   // --- Data State ---
@@ -107,10 +95,16 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
   const [improvementsSummary, setImprovementsSummary] = useState('');
   
   // --- Refs to prevent infinite loops ---
-  const operationInProgressRef = useRef(false);
-  const lastLoadedResumeIdRef = useRef<string | null>(null);
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
+  const operationInProgressRef = useRef(false);    // Prevents concurrent operations
+  const currentLoadRequestUserIdRef = useRef<string | null>(null); // Track current load request
+  const lastLoadedResumeIdRef = useRef<string | null>(null);  // Track last loaded resume ID
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);  // For debouncing updates
+  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);  // For timed resume loading
+  const welcomeMessageShownRef = useRef(false);    // Track if welcome message shown
+  const resumeFoundRef = useRef(false);           // Track if a resume was found for the user
+  const loadAttemptsRef = useRef(0);             // Count load attempts to prevent infinite loops
+  const MAX_LOAD_ATTEMPTS = 2;                    // Maximum number of load attempts
+  
   /**
    * Handles the upload and processing of a resume file
    * Manages the complete upload workflow including error handling
@@ -119,19 +113,21 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
    * @returns The parsed resume data or null on failure
    */
   const handleFileUpload = async (file: File) => {
+    // Skip if no file or operation already in progress
     if (!file || operationInProgressRef.current) return null;
     
     try {
       // Set operation flag to prevent concurrent uploads
       operationInProgressRef.current = true;
       
-      // Start upload process
+      // Start upload process - update UI state
       setIsUploading(true);
       setSelectedFile(file);
       
       // Upload file to storage
       const { path, error } = await uploadResume(file);
       
+      // Check for upload errors
       if (error) {
         throw error;
       }
@@ -143,6 +139,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       // Parse the resume to extract structured data
       const { data, error: parseError } = await parseResume(path);
       
+      // Check for parsing errors
       if (parseError) {
         throw parseError;
       }
@@ -159,7 +156,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       // Handle errors with user-friendly messages
       toast.error(
         "Error processing resume", {
-        description: error.message
+        description: error.message || "An unexpected error occurred while processing your resume."
       });
       return null;
     } finally {
@@ -178,6 +175,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
    * @returns Optimization results or null on failure
    */
   const optimizeResumeData = async (data: ResumeData = resumeData!) => {
+    // Validate input: Skip if no data or operation already in progress
     if (!data || operationInProgressRef.current) return null;
     
     try {
@@ -195,6 +193,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
         error 
       } = await optimizeResume(data);
       
+      // Check for optimization errors
       if (error) {
         throw error;
       }
@@ -202,16 +201,16 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       // Update state with optimization results
       setOptimizedData(optimizedData);
       setOptimizedText(text || '');
-      setEditedText(null); // Clear any previous edited text when creating new optimization
+      setEditedText(null);  // Clear any previous edited text when creating new optimization
       setSuggestions(suggestionsResult);
       setOptimizationScore(atsScore);
-      setNeedsRegeneration(false);
+      setNeedsRegeneration(false);  // Reset regeneration flag since we have fresh content
       
-      // Format keywords for UI
+      // Format keywords for UI if available
       if (keywordSuggestions && keywordSuggestions.length > 0) {
         setKeywords(keywordSuggestions.map(keyword => ({
           text: keyword,
-          applied: false
+          applied: false  // Initially none are applied
         })));
       }
       
@@ -223,10 +222,10 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       
       return { optimizedData, suggestions: suggestionsResult, optimizedText: text, atsScore };
     } catch (error: any) {
-      // Handle optimization errors
+      // Handle optimization errors with user feedback
       toast.message(
         "Error optimizing resume", {
-        description: error.message,
+        description: error.message || "An unexpected error occurred during optimization."
       });
       return null;
     } finally {
@@ -237,34 +236,73 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
   };
   
   /**
-   * Loads the most recent optimized resume for the current user
-   * Handles resume loading with deduplication to prevent redundant loads
+   * Loads the most recent optimized resume for a user
+   * Implements safeguards against multiple concurrent loads and infinite loops
    * 
-   * @param userId - The user ID to load resumes for
-   * @returns The loaded resume data or null if not found
+   * @param userId - The user ID to load resume for
+   * @returns The resume data or null if not found
    */
-  const loadLatestResume = async (userId: string) => {
+  const loadLatestResume = useCallback(async (userId: string) => {
+    // Skip if invalid userId or operation already in progress
+    if (!userId) {
+      console.log("No userId provided, skipping resume load");
+      return null;
+    }
+    
+    // Check load attempts to prevent infinite loops
+    if (loadAttemptsRef.current >= MAX_LOAD_ATTEMPTS) {
+      console.log(`Maximum load attempts (${MAX_LOAD_ATTEMPTS}) reached for user ${userId}, skipping to prevent loops`);
+      return null;
+    }
+    
+    // If we're already loading for this userId, don't start another request
+    if (currentLoadRequestUserIdRef.current === userId && isLoading) {
+      console.log(`Already loading resume for ${userId}, skipping duplicate request`);
+      return null;
+    }
+    
+    // Skip if we've already found a resume for this user in this session
+    if (resumeFoundRef.current && lastLoadedResumeIdRef.current && resumeId) {
+      console.log(`Already found resume ${resumeId} for user ${userId}, returning cached data`);
+      return {
+        id: resumeId,
+        optimized_text: optimizedText,
+        last_saved_text: editedText
+      };
+    }
+    
+    // Increment load attempts counter
+    loadAttemptsRef.current++;
+    
+    // Set loading state and track that we're loading for this userId
+    setIsLoading(true);
+    currentLoadRequestUserIdRef.current = userId;
+    
     try {
-      setIsLoading(true);
+      console.log("Fetching latest resume for user:", userId);
       
+      // Call API to get latest resume
       const { data, error } = await getLatestOptimizedResume(userId);
       
+      // Handle API errors
       if (error) {
-        throw error;
+        console.error("Error from resume service:", error);
+        return null;
       }
       
-      if (!error && data) {
-        // Prevent loading the same resume multiple times
-        if (data.id === lastLoadedResumeIdRef.current) {
-          return data;
-        }
+      // Handle case where data is found
+      if (data) {
+        console.log("Resume found for user:", data.id);
         
+        // Update tracking state
         lastLoadedResumeIdRef.current = data.id;
+        resumeFoundRef.current = true;
+        loadAttemptsRef.current = 0; // Reset counter on success
         
-        // Update state with loaded resume data
+        // Update component state with resume data
         setResumeId(data.id);
         
-        // Check if there's a saved edited version
+        // PRIORITY LOGIC: Use last_saved_text if available, otherwise use optimized_text
         if (data.last_saved_text) {
           console.log("Found last_saved_text, using it for display");
           setEditedText(data.last_saved_text);
@@ -273,16 +311,24 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
           setEditedText(null);
         }
         
-        // Always keep the original optimized text
-        setOptimizedText(data.optimized_text);
+        // Always keep the original optimized text for reference and reset functionality
+        setOptimizedText(data.optimized_text || '');
+        
+        // Set ATS score or use default value if not available
         setOptimizationScore(data.ats_score || 65);
-
-        // Parse the data for structure
-        const parsedData = parseOptimizedText(data.optimized_text);
-        setOptimizedData(parsedData);
+  
+        // Parse the data for structure to prepare for template application
+        try {
+          const parsedData = parseOptimizedText(data.optimized_text);
+          setOptimizedData(parsedData);
+        } catch (parseError) {
+          console.error("Error parsing optimized text:", parseError);
+          // Continue even if parsing fails - original text is still usable
+        }
         
         // Set keywords if available
         if (data.keywords && data.keywords.length > 0) {
+          // Map the database format to our internal state format
           setKeywords(data.keywords.map(k => ({
             text: k.keyword || k.text,
             applied: k.is_applied || k.applied || false
@@ -291,8 +337,9 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
         
         // Set suggestions if available
         if (data.suggestions && data.suggestions.length > 0) {
+          // Map the database format to our internal state format
           setSuggestions(data.suggestions.map(s => ({
-            id: s.id,
+            id: s.id || String(Math.random()),
             text: s.text,
             type: s.type || 'general',
             impact: s.impact || 'medium',
@@ -300,6 +347,14 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
           })));
         }
         
+        // Check if any changes need regeneration
+        const hasAppliedChanges = 
+          (data.keywords && data.keywords.some(k => k.is_applied || k.applied)) ||
+          (data.suggestions && data.suggestions.some(s => s.is_applied || s.isApplied));
+        
+        setNeedsRegeneration(hasAppliedChanges && !data.last_saved_text);
+        
+        // Success toast
         toast.message(
           "Resume loaded", {
           description: "Your previous optimized resume has been loaded."
@@ -307,26 +362,45 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
         
         return data;
       } else {
-        // Clear last loaded ID if no data found
-        lastLoadedResumeIdRef.current = null;
+        // No resume found - expected for new users
+        console.log("No resume found for user - expected for new users");
         
-        toast.message(
-          "No resume found", {
-          description: "You don't have any previously optimized resumes."
-        });
+        // Clear tracking refs to ensure future attempts are allowed
+        lastLoadedResumeIdRef.current = null;
+        resumeFoundRef.current = false;
+        
+        // Show welcome message only once
+        if (!welcomeMessageShownRef.current) {
+          welcomeMessageShownRef.current = true;
+          toast.message(
+            "Welcome to CareerBoost", {
+            description: "Upload your resume to get started with AI optimization."
+          });
+        }
+        
         return null;
       }
     } catch (error: any) {
-      // Handle loading errors
+      // Handle unexpected errors
+      console.error("Error or timeout loading resume:", error);
+      
+      // Only show toast message if this is not an automatic load
       toast.error(
         "Error loading resume", {
-        description: error.message
+        description: error.message || "An unexpected error occurred while loading your resume."
       });
+      
+      // Clear tracking refs on error to allow future attempts
+      lastLoadedResumeIdRef.current = null;
+      resumeFoundRef.current = false;
+      
       return null;
     } finally {
+      // Always reset loading state
       setIsLoading(false);
+      currentLoadRequestUserIdRef.current = null;
     }
-  };
+  }, [isLoading, resumeId, optimizedText, editedText]);
   
   /**
    * Applies a template to the current resume
@@ -335,20 +409,22 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
    * @param templateId - ID of the template to apply
    */
   const applyTemplateToResume = useCallback((templateId: string) => {
-    // Clear any pending updates
+    // Clear any pending updates to prevent rapid changes
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
     }
     
-    // Debounce the state update
+    // Debounce the state update to prevent multiple rapid changes
     updateTimeoutRef.current = setTimeout(() => {
+      // Mark that regeneration is needed after template change
       setNeedsRegeneration(true);
       
+      // Notify user of template application
       toast.message(
         "Template applied", {
         description: `The ${templateId} template has been applied to your resume.`
       });
-    }, 150);
+    }, 150);  // 150ms debounce timer
   }, []);
   
   /**
@@ -358,9 +434,11 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
    * @param suggestionIndex - Index of the suggestion to apply
    */
   const applySuggestion = async (suggestionIndex: number) => {
+    // Validate parameters and state
     if (!resumeId || !suggestions[suggestionIndex] || operationInProgressRef.current) return;
     
     try {
+      // Set operation flag to prevent concurrent operations
       operationInProgressRef.current = true;
       const suggestion = suggestions[suggestionIndex];
       
@@ -368,7 +446,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       await updateSuggestionStatus(
         resumeId, 
         suggestion.id || String(suggestionIndex), 
-        !suggestion.isApplied // Toggle status
+        !suggestion.isApplied  // Toggle status
       );
       
       // Update local state using functional update to ensure consistency
@@ -384,6 +462,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       // Mark that changes need to be regenerated
       setNeedsRegeneration(true);
       
+      // Notify user of the change
       toast.message(
         suggestion.isApplied ? "Suggestion removed" : "Suggestion applied", {
         description: suggestion.isApplied 
@@ -394,9 +473,10 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       // Handle error applying suggestion
       toast.error(
         "Error applying suggestion", {
-        description: error.message
+        description: error.message || "Failed to update suggestion status."
       });
     } finally {
+      // Always clear operation flag
       operationInProgressRef.current = false;
     }
   };
@@ -408,9 +488,11 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
    * @param index - Index of the keyword to toggle
    */
   const toggleKeyword = async (index: number) => {
+    // Validate parameters and state
     if (!resumeId || !keywords[index] || operationInProgressRef.current) return;
     
     try {
+      // Set operation flag to prevent concurrent operations
       operationInProgressRef.current = true;
       const keyword = keywords[index];
       const newAppliedState = !keyword.applied;
@@ -435,6 +517,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       // Mark that changes need to be regenerated
       setNeedsRegeneration(true);
       
+      // Notify user of the change
       toast.message(
         newAppliedState ? "Keyword added" : "Keyword removed", {
         description: `"${keyword.text}" has been ${newAppliedState ? 'added to' : 'removed from'} your resume.`
@@ -443,158 +526,10 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       // Handle error updating keyword
       toast.error(
         "Error updating keyword", {
-        description: error.message
+        description: error.message || "Failed to update keyword status."
       });
     } finally {
-      operationInProgressRef.current = false;
-    }
-  };
-  
-  /**
-   * Applies all selected changes using AI reoptimization
-   * This is the new function that handles the reoptimization process
-   * 
-   * @returns Promise resolving to true if successful, false otherwise
-   */
-  const applyChanges = async (): Promise<boolean> => {
-    if (!resumeId || !needsRegeneration || operationInProgressRef.current) return false;
-    
-    try {
-      operationInProgressRef.current = true;
-      setIsApplyingReoptimization(true);
-      
-      // Get all applied suggestions
-      const selectedSuggestions = suggestions.filter(s => s.isApplied);
-      
-      // Get all applied keywords
-      const appliedKeywordsList = keywords
-        .filter(keyword => keyword.applied)
-        .map(keyword => keyword.text);
-      
-      // Get current content to reoptimize (either edited or original)
-      const currentText = editedText || optimizedText;
-      
-      // Extract language from optimized data or default to English
-      const language = optimizedData?.language || 'English';
-      
-      // Send request to reoptimization API
-      const response = await fetch('/api/reoptimize', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          resumeId,
-          selectedSuggestions,
-          appliedKeywords: appliedKeywordsList,
-          currentText,
-          language
-        })
-      });
-      
-      // Handle API errors
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to apply changes');
-      }
-      
-      // Parse response data
-      const result = await response.json();
-      
-      if (result.success && result.optimizedText) {
-        // Update state with reoptimized content
-        setOptimizedText(result.optimizedText);
-        // Clear any edited version
-        setEditedText(null);
-        // Update score
-        setOptimizationScore(result.atsScore || calculateAtsScore(optimizedData!));
-        // Save improvements summary
-        setImprovementsSummary(result.improvements || '');
-        // Reset needs regeneration flag
-        setNeedsRegeneration(false);
-        
-        // Show success message
-        toast.message(
-          "Changes applied", {
-          description: `Your resume has been updated with all selected improvements. New ATS score: ${result.atsScore}/100`
-        });
-        
-        return true;
-      } else {
-        throw new Error('Reoptimization returned incomplete data');
-      }
-      
-    } catch (error: any) {
-      // Handle reoptimization errors
-      console.error('Error applying changes:', error);
-      toast.error(
-        "Error applying changes", {
-        description: error.message
-      });
-      return false;
-    } finally {
-      setIsApplyingReoptimization(false);
-      operationInProgressRef.current = false;
-    }
-  };
-
-  /**
-   * Regenerates the resume with all applied changes
-   * This is the existing regeneration function maintained for compatibility
-   * 
-   * @returns Promise resolving to true if successful, false otherwise
-   */
-  const regenerateResume = async () => {
-    if (!resumeId || !needsRegeneration || operationInProgressRef.current) return false;
-    
-    try {
-      operationInProgressRef.current = true;
-      setIsApplyingChanges(true);
-      
-      // Get all applied keywords
-      const appliedKeywords = keywords
-        .filter(keyword => keyword.applied)
-        .map(keyword => keyword.text);
-      
-      // Get all applied suggestions
-      const appliedSuggestions = suggestions
-        .filter(suggestion => suggestion.isApplied)
-        .map(suggestion => suggestion.id || suggestion.type);
-      
-      // Regenerate the resume with applied changes using existing API
-      const { success, optimizedText: newText, atsScore: newScore, error } = 
-        await regenerateResume(resumeId, appliedKeywords, appliedSuggestions);
-      
-      if (error) {
-        throw error;
-      }
-      
-      if (success && newText) {
-        // Update state with regenerated resume
-        setOptimizedText(newText);
-        // Clear any edited version
-        setEditedText(null);
-        setOptimizationScore(newScore || calculateAtsScore(optimizedData!));
-        setNeedsRegeneration(false);
-        
-        toast.message(
-          "Changes applied", {
-          description: "Your resume has been updated with all applied changes."
-        });
-        
-        return true;
-      }
-      
-      return false;
-    } catch (error: any) {
-      // Handle regeneration errors
-      toast.error(
-        "Error applying changes", {
-        description: error.message
-      });
-      return false;
-    } finally {
-      setIsApplyingChanges(false);
+      // Always clear operation flag
       operationInProgressRef.current = false;
     }
   };
@@ -606,9 +541,11 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
    * @returns Promise resolving to true if successful, false otherwise
    */
   const resetResume = async (): Promise<boolean> => {
+    // Validate state before proceeding
     if (!resumeId || operationInProgressRef.current) return false;
     
     try {
+      // Set operation flag
       operationInProgressRef.current = true;
       setIsResetting(true);
       
@@ -622,6 +559,7 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
         })
       });
       
+      // Handle API errors
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to reset resume');
@@ -630,20 +568,30 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
       // Parse the response
       const result = await response.json();
       
+      // Update local state
       // Clear the edited text state
       setEditedText(null);
+      
+      // Reset suggestions (all to unapplied)
+      setSuggestions(prev => prev.map(s => ({...s, isApplied: false})));
+      
+      // Reset keywords (all to unapplied)
+      setKeywords(prev => prev.map(k => ({...k, applied: false})));
       
       // Reset needs regeneration flag
       setNeedsRegeneration(false);
       
+      // Notify user
       toast.success('Resume reset to original optimized version');
       
       return true;
     } catch (error: any) {
+      // Handle reset errors
       console.error('Error resetting resume:', error);
-      toast.error(`Failed to reset resume: ${error.message}`);
+      toast.error(`Failed to reset resume: ${error.message || 'An unexpected error occurred'}`);
       return false;
     } finally {
+      // Always reset operation flag
       setIsResetting(false);
       operationInProgressRef.current = false;
     }
@@ -685,14 +633,19 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
    */
   function detectLanguage(text: string): string {
     try {
-      // This is a very basic implementation
-      // In a real app, you would use a more sophisticated approach
+      // This is a basic implementation using word frequency analysis
+      // In a production app, use a more sophisticated language detection library
       
       // Common French words
       const frenchWords = ['le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'je', 'tu', 'il', 'elle', 'nous', 'vous', 'ils', 'elles', 'pour', 'dans', 'avec', 'sur'];
       
       // Common Spanish words
       const spanishWords = ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'o', 'yo', 'tú', 'él', 'ella', 'nosotros', 'vosotros', 'ellos', 'ellas', 'para', 'en', 'con', 'sobre'];
+      
+      // Skip empty text
+      if (!text || text.length < 20) {
+        return 'French'; // Default to French if insufficient text
+      }
       
       // Count word occurrences
       const words = text.toLowerCase().split(/\s+/);
@@ -704,40 +657,65 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
         if (spanishWords.includes(word)) spanishCount++;
       });
       
-      // Determine language based on counts
+      // Determine language based on counts and threshold (5% of words)
       if (frenchCount > spanishCount && frenchCount > words.length * 0.05) {
         return 'French';
       } else if (spanishCount > frenchCount && spanishCount > words.length * 0.05) {
         return 'Spanish';
       }
       
-      // Default to English
-      return 'English';
+      // Default to French for CareerBoost
+      return 'French';
     } catch (error) {
       console.error("Error detecting language:", error);
-      return 'English';
+      return 'French'; // Default to French when there's an error
     }
   }
   
-  // Clean up function to clear timeouts on unmount
+  // Effect to load resume when component mounts if userId is available
+  // This is kept separate from loadLatestResume to prevent infinite loops
+  useEffect(() => {
+    // Only attempt to load a resume if we have a userId and aren't already loading
+    if (userId && !isLoading && currentLoadRequestUserIdRef.current === null && loadAttemptsRef.current < MAX_LOAD_ATTEMPTS) {
+      // Use a timeout to ensure we don't start loading immediately
+      // This prevents loops in case of rapid component re-renders
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
+      
+      loadTimeoutRef.current = setTimeout(() => {
+        loadLatestResume(userId);
+      }, 100);
+    }
+    
+    // Clean up function to clear timeout if component unmounts
+    return () => {
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
+    };
+  }, [userId, isLoading, loadLatestResume]);
+  
+  // Effect to cleanup on component unmount - clear all timeouts
   useEffect(() => {
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
       }
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
     };
   }, []);
   
-  // Return all state and functions
+  // Return hook interface
   return {
     // Status states
     isUploading,
     isParsing,
     isOptimizing,
     isLoading,
-    isApplyingChanges,
     isResetting,
-    isApplyingReoptimization,
     needsRegeneration,
     
     // Data states
@@ -759,7 +737,6 @@ export function useResumeOptimizer(userId?: string | null): ResumeOptimizerState
     applyTemplateToResume,
     applySuggestion,
     toggleKeyword,
-    applyChanges,  // New reoptimization function
     resetResume,
     
     // Setters

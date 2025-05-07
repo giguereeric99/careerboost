@@ -197,11 +197,12 @@ export async function GET(req: NextRequest) {
         // Continue execution, as we might still find resumes with other methods
       }
       
-      // If all approaches failed but no errors occurred, return empty data
+      // IMPORTANT: If all approaches failed but no errors occurred, return null data with 200 status
+      // This is critical to prevent infinite loading loops for users with no resumes
       console.log('No resumes found for this user through any ID field');
       return NextResponse.json({
         data: null
-      });
+      }, { status: 200 });
     }
     
   } catch (error: any) {
