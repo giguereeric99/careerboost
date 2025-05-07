@@ -158,6 +158,7 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
     id: string;
     original_text: string;
     optimized_text: string;
+    last_saved_text?: string;
     language: string;
     file_name: string;
     file_type: string;
@@ -168,38 +169,69 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
   } | null;
   error: Error | null;
 }> {
+  // Reject empty user IDs early
+  if (!userId) {
+    console.log("No user ID provided to getLatestOptimizedResume");
+    return { data: null, error: new Error('User ID is required') };
+  }
+
   try {
     console.log("Getting latest resume for user:", userId);
     
     // Use the API route instead of direct Supabase query
-    const response = await fetch(`/api/resumes?userId=${userId}`);
+    const response = await fetch(`/api/resumes?userId=${encodeURIComponent(userId)}`);
     
+    // Parse the response regardless of status code
+    const result = await response.json();
+    
+    // Check if the API returned an error
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to load resume");
+      throw new Error(result.error || "Failed to load resume");
     }
     
-    const { data } = await response.json();
-    
-    if (data) {
-      // Resume found - log success
-      console.log("Resume loaded successfully");
-      return { data, error: null };
+    // Check if data exists
+    if (result.data) {
+      console.log("Resume loaded successfully", result.data.id);
+      
+      // Process data for consistency
+      const processedData = {
+        ...result.data,
+        // Ensure keywords have a consistent structure
+        keywords: Array.isArray(result.data.keywords) 
+          ? result.data.keywords.map((k: any) => ({
+              text: k.keyword || k.text,
+              applied: k.is_applied || k.applied || false
+            }))
+          : [],
+        // Ensure suggestions have a consistent structure  
+        suggestions: Array.isArray(result.data.suggestions) 
+          ? result.data.suggestions.map((s: any) => ({
+              id: s.id,
+              text: s.text,
+              type: s.type || 'general',
+              impact: s.impact || 'medium',
+              isApplied: s.is_applied || s.isApplied || false
+            }))
+          : []
+      };
+      
+      return { data: processedData, error: null };
     } else {
-      // No resume found for this user
-      console.log("No previous resume found for user");
+      // No resume found - this is normal for new users
+      console.log("No resume found for user - this is expected for new users");
+      
+      // Return null data but NO ERROR - this is key to prevent loops
       return { data: null, error: null };
     }
   } catch (error: any) {
-    // Handle any unexpected exceptions
-    console.error("Exception in getLatestOptimizedResume:", error);
+    // Log and return the error
+    console.error("Error loading resume:", error);
     return { 
       data: null, 
       error: new Error(`Failed to get resume: ${error.message}`) 
     };
   }
 }
-
 /**
  * Updates the status of a keyword for a resume
  * Uses the API route instead of direct database access

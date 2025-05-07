@@ -30,19 +30,18 @@ import { useResumeScoreManager } from '@/hooks/useResumeScoreManager';
 import { useResumeLoader } from '@/hooks/useResumeLoader';
 
 // Import components
-import UploadSection from '@/components/ResumeOptimizer/uploadSection';
-import ResumePreview from '@/components/ResumeOptimizer/resumePreview';
-import ScoreCard from '@/components/ResumeOptimizer/scoreCard';
-import SuggestionsList from '@/components/ResumeOptimizer/suggestionsList';
-import KeywordList from '@/components/ResumeOptimizer/keywordList';
-import TemplateGallery from '@/components/ResumeOptimizer/templateGallery';
+import UploadSection from '@/components/resumeOptimizer/uploadSection';
+import ResumePreview from '@/components/resumeOptimizer/resumePreview';
+import ScoreCard from '@/components/resumeOptimizer/scoreCard';
+import SuggestionsList from '@/components/resumeOptimizer/suggestionsList';
+import KeywordList from '@/components/resumeOptimizer/keywordList';
+import TemplateGallery from '@/components/resumeOptimizer/templateGallery';
 import ProUpgradeDialog from '@/components/Dialogs/proUpgradeDialog';
 import ResetConfirmationDialog from '@/components/Dialogs/resetConfirmationDialog';
-import LoadingState from '@/components/ResumeOptimizer/loadingState';
-import EmptyPreviewState from '@/components/ResumeOptimizer/emptyPreviewState';
-import EditVersionBanner from '@/components/ResumeOptimizer/editVersionBanner';
-import RegenerateButton from '@/components/ResumeOptimizer/regenerateButton';
-import OptimizationMetrics from '@/components/ResumeOptimizer/optimizationMetrics';
+import LoadingState from '@/components/resumeOptimizer/loadingState';
+import EmptyPreviewState from '@/components/resumeOptimizer/emptyPreviewState';
+import EditVersionBanner from '@/components/resumeOptimizer/editVersionBanner';
+import OptimizationMetrics from '@/components/resumeOptimizer/optimizationMetrics';
 import { resumeTemplates } from '@/constants/resumeTemplates';
 
 /**
@@ -119,7 +118,7 @@ const ResumeOptimizer: React.FC = () => {
   
   // Process tracking state - Tracks the analysis workflow
   const [isAnalysisDisabled, setIsAnalysisDisabled] = useState(false); // Tab is disabled during analysis
-  const [hasResume, setHasResume] = useState(false);                   // User has a resume saved
+  const [hasResume, setHasResume] = useState<boolean | null>(null);    // User has a resume saved
   const [isUploadInProgress, setIsUploadInProgress] = useState(false); // File upload/analysis in progress
   
   // Refs for managing asynchronous operations and preventing race conditions
@@ -174,7 +173,7 @@ const ResumeOptimizer: React.FC = () => {
     return (
       isAnalysisInProgress ||
       isUploadInProgress ||
-      (!hasResume && !optimizedText && activeTab !== "preview") ||
+      (hasResume === false && !optimizedText && activeTab !== "preview") ||
       (isUploading || isParsing || isOptimizing)
     );
   }, [
@@ -294,7 +293,7 @@ const ResumeOptimizer: React.FC = () => {
   const handleSubmitText = useCallback(async () => {
     // Validate minimum length
     if (!rawText || rawText.length < 50) {
-      toast.error("Please enter at least 50 characters");
+      toast.error("Veuillez saisir au moins 50 caractères");
       return;
     }
 
@@ -316,7 +315,7 @@ const ResumeOptimizer: React.FC = () => {
       // Handle API errors
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || "Failed to optimize resume");
+        throw new Error(errData.error || "Échec de l'optimisation du CV");
       }
       
       // Success - analysis complete
@@ -327,8 +326,8 @@ const ResumeOptimizer: React.FC = () => {
       setIsAnalysisDisabled(false);
       setIsUploadInProgress(false);
       
-      toast.error("Optimization failed", {
-        description: error.message || "An unexpected error occurred."
+      toast.error("Échec de l'optimisation", {
+        description: error.message || "Une erreur inattendue s'est produite."
       });
     }
   }, [rawText, user?.id, handleAnalysisStart, handleAnalysisComplete]);
@@ -371,7 +370,7 @@ const ResumeOptimizer: React.FC = () => {
   const handleTabChange = useCallback((value: string) => {
     // Prevent switching to preview if disabled
     if (value === "preview" && isPreviewTabDisabled) {
-      toast.info("Please wait for the analysis to complete");
+      toast.info("Veuillez attendre que l'analyse soit terminée");
       return;
     }
     
@@ -407,8 +406,8 @@ const ResumeOptimizer: React.FC = () => {
     // Check if regeneration is needed
     if (needsRegeneration) {
       toast({
-        title: "Changes not applied",
-        description: "Please apply your changes before downloading."
+        title: "Modifications non appliquées",
+        description: "Veuillez appliquer vos modifications avant de télécharger."
       });
       return;
     }
@@ -416,7 +415,7 @@ const ResumeOptimizer: React.FC = () => {
     // Validate content exists
     const contentToDownload = displayContent;
     if (!contentToDownload) {
-      toast.error("No content to download");
+      toast.error("Aucun contenu à télécharger");
       return;
     }
     
@@ -428,7 +427,7 @@ const ResumeOptimizer: React.FC = () => {
     <html>
     <head>
       <meta charset="utf-8">
-      <title>Resume</title>
+      <title>Curriculum Vitae</title>
       <style>
         body {
           font-family: Arial, sans-serif;
@@ -453,13 +452,13 @@ const ResumeOptimizer: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'resume.html';
+    a.download = 'cv.html';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    toast.success("Resume downloaded");
+    toast.success("CV téléchargé avec succès");
   }, [needsRegeneration, displayContent, selectedTemplate]);
 
   // -------------------------------------------------------------------------
@@ -489,8 +488,9 @@ const ResumeOptimizer: React.FC = () => {
             console.log("User has a resume");
             setHasResume(true);
           } else {
-            console.log("User has no resume");
+            console.log("User has no resume - normal for new users");
             setHasResume(false);
+            // No error toast for new users
           }
         }
       } catch (error) {
@@ -534,17 +534,17 @@ const ResumeOptimizer: React.FC = () => {
   const renderEmptyPreviewStateWithLoad = useCallback(() => (
     <div className="flex flex-col items-center justify-center h-[500px] border rounded-lg p-4">
       <Sparkles className="h-12 w-12 text-brand-600 mb-4" />
-      <p className="text-lg font-medium">No resume data available</p>
+      <p className="text-lg font-medium">Aucun CV disponible</p>
       <p className="text-sm text-gray-500 text-center max-w-md">
         {loadAttemptedRef.current 
-          ? "You don't have any resumes yet. Upload a resume or paste content to get started."
-          : "Upload a resume or paste content to get started with AI optimization"}
+          ? "Vous n'avez pas encore de CV. Téléchargez un CV ou collez du contenu pour commencer."
+          : "Téléchargez un CV ou collez du contenu pour commencer l'optimisation par IA"}
       </p>
       <div className="flex gap-4 mt-4">
         <Button 
           onClick={() => setActiveTab("upload")}
         >
-          Go to Upload
+          Télécharger un CV
         </Button>
         
         {!loadAttemptedRef.current && user && (
@@ -553,7 +553,7 @@ const ResumeOptimizer: React.FC = () => {
             onClick={handleLoadResume}
             disabled={isLoadingInProgress.current}
           >
-            {isLoadingInProgress.current ? "Loading..." : "Check for Resumes"}
+            {isLoadingInProgress.current ? "Chargement..." : "Vérifier les CV disponibles"}
           </Button>
         )}
       </div>
@@ -576,8 +576,8 @@ const ResumeOptimizer: React.FC = () => {
 
       {/* Header section */}
       <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold">AI Resume Optimizer</h2>
-        <p className="text-gray-500">Perfect your resume with AI-powered suggestions</p>
+        <h2 className="text-2xl font-bold">Optimiseur de CV par IA</h2>
+        <p className="text-gray-500">Perfectionnez votre CV avec des suggestions alimentées par l'IA</p>
       </div>
 
       {/* Main tabs - preview tab disabled during analysis */}
@@ -587,12 +587,12 @@ const ResumeOptimizer: React.FC = () => {
         className="max-w-5xl mx-auto"
       >
         <TabsList className="grid w-full grid-cols-2 mb-8">
-          <TabsTrigger value="upload">Upload Resume</TabsTrigger>
+          <TabsTrigger value="upload">Télécharger CV</TabsTrigger>
           <TabsTrigger 
             value="preview" 
             disabled={isPreviewTabDisabled}
           >
-            Optimize & Preview
+            Optimiser & Prévisualiser
             {(isAnalysisInProgress || isUploadInProgress ) && (
               <span className="ml-2 inline-flex items-center">
                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -667,7 +667,7 @@ const ResumeOptimizer: React.FC = () => {
                         onSave={handleSave}
                         onTextChange={handlePreviewContentChange}
                         isOptimizing={isOptimizing || isApplyingChanges}
-                        language={optimizedData?.language || "English"}
+                        language={optimizedData?.language || "French"}
                         onEditModeChange={setIsEditing}
                         onReset={hasEdits ? () => setShowResetDialog(true) : undefined}
                       />
