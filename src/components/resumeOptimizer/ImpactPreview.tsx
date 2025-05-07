@@ -259,14 +259,14 @@ const ImpactPreview: React.FC<ImpactPreviewProps> = (props) => {
   }
   
   // If collapsible, wrap in Collapsible component
-  return (
+  return ( 
     <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <div className="p-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center">
               <div 
-                className="w-2 h-2 rounded-full mr-2"
+                className="w-2 h-2 rounded-full mr-2 "
                 style={{ backgroundColor: getImpactColor(props.impactLevel) }}
               />
               <h4 className="text-sm font-medium">{getImpactLabel(props.impactLevel)}</h4>

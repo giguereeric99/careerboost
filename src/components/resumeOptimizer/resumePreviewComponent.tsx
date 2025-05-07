@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { Button } from "@/components/ui/button";
-import { 
+import {  
   Download, Save, Eye, Edit, ChevronLeft,
   Check, FileText, RotateCcw 
 } from "lucide-react";
