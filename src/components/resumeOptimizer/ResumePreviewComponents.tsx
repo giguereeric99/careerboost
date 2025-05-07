@@ -17,7 +17,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import TipTapResumeEditor from '@/components/ResumeOptimizer/TipTapResumeEditor';
+import TipTapResumeEditor from '@/components/ResumeOptimizer/tipTapResumeEditor';
 import { Suggestion } from '@/types/resume';
 import { ResumeTemplateType } from '@/types/resumeTemplateTypes';
 
