@@ -592,4 +592,42 @@ export class ResumeScoreService {
     
     return this.currentScore;
   }
+
+  /**
+   * Update the base score directly
+   * This method allows direct updating of the base score from an external source (like API)
+   * It should be used when a specific score value needs to take precedence over calculated values
+   * 
+   * @param newBaseScore - The new base score to use
+   * @returns The new current score after update
+   */
+  public updateBaseScore(newBaseScore: number): number {
+    // Validate input to prevent invalid scores
+    if (isNaN(newBaseScore) || newBaseScore < 0 || newBaseScore > 100) {
+      console.warn("Invalid base score value:", newBaseScore);
+      return this.currentScore;
+    }
+    
+    console.log(`Directly updating base score from ${this.baseScore} to ${newBaseScore}`);
+    
+    // Update the base score
+    this.baseScore = newBaseScore;
+    
+    // Recalculate the current score with the new base score
+    // This ensures all suggestion and keyword effects are still applied
+    this.recalculateScore();
+    
+    // Return the new current score
+    return this.currentScore;
+  }
+
+  /**
+   * Get the current base score
+   * This method allows external components to access the base score value
+   * 
+   * @returns The current base score
+   */
+  public getBaseScore(): number {
+    return this.baseScore;
+  }
 }

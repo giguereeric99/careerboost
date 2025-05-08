@@ -10,6 +10,7 @@
  * - Detailed breakdown of score components
  * - Potential score improvement indicator
  * - Enhanced score transition animations
+ * - Loading animation while score is being calculated
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -35,12 +36,13 @@ interface ScoreCardProps {
   potentialScore?: number | null;  // Maximum possible score with all recommendations
   initialScore?: number | null;    // Starting score before any optimizations
   showDetails?: boolean;           // Whether to show detailed metrics (default: true)
+  isCalculating?: boolean;         // Whether the score is currently being calculated
 }
 
 /**
  * ScoreCard component displays a circular visual representation of the resume score
- * along with contextual feedback and improvement metrics
- * Enhanced to handle score updates smoothly with animations
+ * along with contextual feedback and improvement metrics.
+ * Enhanced to handle score updates smoothly with animations and show calculation state.
  */
 const ScoreCard: React.FC<ScoreCardProps> = ({
   optimizationScore,
@@ -50,82 +52,137 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   scoreBreakdown = null,
   potentialScore = null,
   initialScore = null,
-  showDetails = true
+  showDetails = true,
+  isCalculating = false
 }) => {
+  // =========================================================================
+  // State Management
+  // =========================================================================
+  
   // State for animated score display - enhanced for smoother transitions
   const [displayScore, setDisplayScore] = useState(optimizationScore || 65);
   const [previousScore, setPreviousScore] = useState(optimizationScore || 65);
   const [isIncreasing, setIsIncreasing] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
   
+  // =========================================================================
+  // Animation References
+  // =========================================================================
+  
   // Ref to track animation in progress
   const animationInProgressRef = useRef(false);
+  // Ref to store animation frame ID for cancellation
   const animationFrameRef = useRef<number | null>(null);
-  
-  // Animation configuration - adjusted for smoother transitions
-  const ANIMATION_DURATION = 800; // 0.8 seconds - faster for better user experience
-  const ANIMATION_FPS = 60; // frames per second - higher for smoother animation
-  
-  // Animation start time tracking
+  // Animation start time tracking for smoother transitions
   const startTimeRef = useRef<number>(0);
+  
+  // =========================================================================
+  // Animation Configuration
+  // =========================================================================
+  
+  // Animation duration in milliseconds - faster for better user experience
+  const ANIMATION_DURATION = 800; // 0.8 seconds
+  // Target frames per second - higher for smoother animation
+  const ANIMATION_FPS = 60;
 
+  // =========================================================================
+  // Utility Functions
+  // =========================================================================
+  
   /**
    * Get appropriate color based on score range
-   * Higher scores get more positive colors
+   * Maps score values to color codes with semantic meaning
+   * Higher scores get more positive colors (green/blue)
+   * Lower scores get warning colors (amber/red)
+   * 
+   * @param score - The score to get a color for (0-100)
+   * @returns Color hex code for the score
    */
   const getScoreColor = useCallback((score: number): string => {
-    if (score >= 85) return "#10b981"; // Green for excellent scores
-    if (score >= 70) return "#3b82f6"; // Blue for good scores
-    if (score >= 50) return "#f59e0b"; // Amber for average scores
-    return "#ef4444"; // Red for poor scores
+    if (score >= 85) return "#10b981"; // Green for excellent scores (85-100)
+    if (score >= 70) return "#3b82f6"; // Blue for good scores (70-84)
+    if (score >= 50) return "#f59e0b"; // Amber for average scores (50-69)
+    return "#ef4444"; // Red for poor scores (0-49)
   }, []);
 
   /**
+   * Calculate the stroke-dasharray value for SVG progress circle
+   * Maps score (0-100) to circle circumference for accurate visual representation
+   * 
+   * @param score - Score value (0-100)
+   * @returns SVG stroke-dasharray value as string
+   */
+  const getCircleProgress = useCallback((score: number): string => {
+    // Circumference of a circle with radius 45 is 2 * π * 45 ≈ 282.7
+    const circumference = 282.7;
+    // Calculate filled portion based on score percentage
+    const progressValue = score * circumference / 100;
+    // Return filled and unfilled portions as required by SVG
+    return `${progressValue} ${circumference - progressValue}`;
+  }, []);
+
+  // =========================================================================
+  // Animation Functions
+  // =========================================================================
+  
+  /**
    * Animate score changes using requestAnimationFrame for smoother transitions
-   * This implementation provides better performance than setInterval
+   * This implementation provides better performance than setInterval by
+   * synchronizing with the browser's refresh rate
+   * 
+   * @param targetScore - The final score to animate to
+   * @param startScore - The starting score to animate from
+   * @returns Cleanup function to cancel animation if component unmounts
    */
   const animateScoreChange = useCallback((targetScore: number, startScore: number) => {
-    // Cancel any ongoing animation
+    // Cancel any ongoing animation to prevent conflicts
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current);
     }
     
-    // Set animation in progress flag
+    // Set animation in progress flag to track state
     animationInProgressRef.current = true;
     
-    // Record start time for animation
+    // Record start time for animation timing
     startTimeRef.current = performance.now();
     
-    // Animation frame function
+    /**
+     * Animation frame function - called on each frame
+     * Calculates intermediate values for smooth animation
+     * 
+     * @param timestamp - Current timestamp from requestAnimationFrame
+     */
     const animate = (timestamp: number) => {
-      // Calculate progress (0 to 1)
+      // Calculate progress ratio (0 to 1) based on elapsed time
       const elapsed = timestamp - startTimeRef.current;
       const progress = Math.min(elapsed / ANIMATION_DURATION, 1);
       
       // Apply easing function for smoother animation (ease-out)
+      // This makes the animation start fast and slow down at the end
       const easedProgress = 1 - Math.pow(1 - progress, 2);
       
-      // Calculate current score value
+      // Calculate current intermediate score value
       const currentValue = startScore + (targetScore - startScore) * easedProgress;
       
-      // Update display score
+      // Update display score state with current value
       setDisplayScore(currentValue);
       
-      // Continue animation if not complete
+      // Continue animation if not complete (progress < 1)
       if (progress < 1) {
         animationFrameRef.current = requestAnimationFrame(animate);
       } else {
-        // Ensure final value is exactly the target value
+        // Animation complete - ensure final value is exactly the target value
         setDisplayScore(targetScore);
+        // Reset animation state
         animationInProgressRef.current = false;
         animationFrameRef.current = null;
       }
     };
     
-    // Start animation
+    // Start animation by requesting first frame
     animationFrameRef.current = requestAnimationFrame(animate);
     
-    // Cleanup function to cancel animation if component unmounts
+    // Return cleanup function to cancel animation if component unmounts
     return () => {
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -135,23 +192,33 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
     };
   }, []);
 
+  // =========================================================================
+  // Effects
+  // =========================================================================
+  
   /**
    * Handle score changes and animate transitions
+   * Triggers animation when the optimizationScore prop changes
    * Improved to detect and properly animate even small score changes
    */
   useEffect(() => {
+    // Skip animation if score is being calculated
+    if (isCalculating) {
+      return;
+    }
+    
     // Ensure we have a valid score value
     const currentScore = optimizationScore || 65;
     
     // Log incoming score changes for debugging
     console.log(`ScoreCard: Score update received: ${currentScore} (previous: ${previousScore})`);
     
-    // Skip if no change or invalid values
+    // Skip if no change or invalid values to prevent unnecessary animations
     if (currentScore === previousScore || isNaN(currentScore)) {
       return;
     }
     
-    // Determine if score is increasing or decreasing
+    // Determine if score is increasing or decreasing for UI feedback
     setIsIncreasing(currentScore > previousScore);
     
     // Store the previous score for future comparison
@@ -160,16 +227,22 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
     // Start animation from current display score to new target score
     animateScoreChange(currentScore, displayScore);
     
-  }, [optimizationScore, previousScore, displayScore, animateScoreChange]);
+  }, [optimizationScore, previousScore, displayScore, animateScoreChange, isCalculating]);
 
   /**
    * Set appropriate feedback message based on score range
-   * Updates when display score changes
+   * Updates when display score changes to provide contextual guidance
    */
   useEffect(() => {
+    // Skip if score is being calculated
+    if (isCalculating) {
+      return;
+    }
+    
     // Round the display score for message selection
     const roundedScore = Math.round(displayScore);
     
+    // Select appropriate feedback message based on score range
     if (roundedScore >= 90) {
       setFeedbackMessage("Excellent! Your resume is highly optimized for ATS systems.");
     } else if (roundedScore >= 80) {
@@ -181,21 +254,11 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
     } else {
       setFeedbackMessage("Your resume needs significant optimization to pass ATS filters.");
     }
-  }, [displayScore]);
-
-  /**
-   * Calculate the stroke-dasharray value for SVG progress circle
-   * Maps score (0-100) to circle circumference
-   */
-  const getCircleProgress = useCallback((score: number): string => {
-    // Circumference of a circle with radius 45 is 2 * π * 45 ≈ 282.7
-    const circumference = 282.7;
-    const progressValue = score * circumference / 100;
-    return `${progressValue} ${circumference - progressValue}`;
-  }, []);
+  }, [displayScore, isCalculating]);
 
   /**
    * Clean up animations on component unmount
+   * Prevents memory leaks by canceling any ongoing animations
    */
   useEffect(() => {
     return () => {
@@ -206,17 +269,28 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
     };
   }, []);
 
-  // Calculate metrics for display
+  // =========================================================================
+  // Calculated Values
+  // =========================================================================
+  
+  // Get color based on current score
   const scoreColor = getScoreColor(displayScore);
-  // Use actual display score for rendered value
+  
+  // Round display score for integer presentation
   const displayScoreRounded = Math.round(displayScore);
   
-  // Calculate improvement metrics
+  // Calculate improvement metrics for display
   const improvement = initialScore ? Math.round((optimizationScore - initialScore) * 10) / 10 : 0;
+  
+  // Calculate potential remaining improvement
   const remainingPotential = potentialScore && potentialScore > optimizationScore 
     ? Math.round((potentialScore - optimizationScore) * 10) / 10 
     : 0;
 
+  // =========================================================================
+  // Component Rendering
+  // =========================================================================
+  
   return (
     <Card className="bg-gray-50 border">
       <CardHeader className="pb-2">
@@ -246,51 +320,66 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
         {/* Score Display Circle */}
         <div className="flex items-center justify-center">
           <div className="relative w-32 h-32">
-            {/* Score indicator */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-4xl font-bold">{displayScoreRounded}%</span>
-              {isIncreasing && (
-                <span className="absolute -top-1 -right-1 text-xs text-green-500 font-medium animate-pulse">
-                  +{(optimizationScore - previousScore).toFixed(1)}
-                </span>
-              )}
-            </div>
-            
-            {/* Score progress circle */}
-            <svg className="w-full h-full" viewBox="0 0 100 100">
-              {/* Background circle */}
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                fill="none"
-                stroke="#e6e6e6"
-                strokeWidth="10"
-              />
-              {/* Progress circle with animation */}
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                fill="none"
-                stroke={scoreColor}
-                strokeWidth="10"
-                strokeDasharray={getCircleProgress(displayScore)}
-                strokeLinecap="round"
-                transform="rotate(-90 50 50)"
-                className="transition-all duration-300 ease-in-out"
-              />
-            </svg>
+            {isCalculating ? (
+              // Calculation in progress - show loading animation
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="animate-spin h-8 w-8 border-4 border-brand-600 border-t-transparent rounded-full mb-2"></div>
+                <span className="text-sm text-gray-600">Calculating score...</span>
+              </div>
+            ) : (
+              // Score display - show when calculation is complete
+              <>
+                {/* Score indicator with numeric display */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-4xl font-bold">{displayScoreRounded}%</span>
+                  {/* Show improvement indicator when score is increasing */}
+                  {isIncreasing && (
+                    <span className="absolute -top-1 -right-1 text-xs text-green-500 font-medium animate-pulse">
+                      +{(optimizationScore - previousScore).toFixed(1)}
+                    </span>
+                  )}
+                </div>
+                
+                {/* SVG Circle Progress Indicator */}
+                <svg className="w-full h-full" viewBox="0 0 100 100">
+                  {/* Background circle (light gray) */}
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="#e6e6e6"
+                    strokeWidth="10"
+                  />
+                  {/* Progress circle with dynamic color based on score */}
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke={scoreColor}
+                    strokeWidth="10"
+                    strokeDasharray={getCircleProgress(displayScore)}
+                    strokeLinecap="round"
+                    transform="rotate(-90 50 50)" // Rotate to start from top
+                    className="transition-all duration-300 ease-in-out"
+                  />
+                </svg>
+              </>
+            )}
           </div>
         </div>
         
-        {/* Feedback message */}
+        {/* Feedback message - contextual guidance based on score */}
         <p className="text-center text-sm mt-2">
-          {feedbackMessage}
+          {isCalculating 
+            ? "We're analyzing your resume to calculate the optimal ATS score..." 
+            : feedbackMessage
+          }
         </p>
         
-        {/* Applied changes and improvement metrics */}
-        {showDetails && (suggestionsApplied > 0 || keywordsApplied > 0) && (
+        {/* Applied changes and improvement metrics - only show when not calculating */}
+        {!isCalculating && showDetails && (suggestionsApplied > 0 || keywordsApplied > 0) && (
           <div className="mt-3 text-xs text-gray-600 border-t pt-2">
             <div className="flex justify-between">
               <span>Suggestions applied:</span>
@@ -301,6 +390,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
               <span className="font-medium">{keywordsApplied}</span>
             </div>
             
+            {/* Show score improvement if positive */}
             {improvement > 0 && (
               <div className="flex justify-between text-green-600">
                 <span>Score improvement:</span>
@@ -308,6 +398,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
               </div>
             )}
             
+            {/* Show potential improvement if available */}
             {remainingPotential > 0 && (
               <div className="flex justify-between text-blue-500">
                 <span>Potential improvement:</span>
@@ -320,8 +411,8 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
           </div>
         )}
         
-        {/* Score breakdown (if available and details should be shown) */}
-        {showDetails && scoreBreakdown && (
+        {/* Score breakdown by section - only show when not calculating */}
+        {!isCalculating && showDetails && scoreBreakdown && (
           <div className="mt-3 pt-2 border-t border-gray-200">
             <h4 className="text-xs font-medium mb-1">Score Breakdown:</h4>
             <div className="grid grid-cols-1 gap-1">
@@ -329,7 +420,8 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
                 // Only show sections with non-zero scores
                 if (score <= 0) return null;
                 
-                // Format section name from ID
+                // Format section name from ID for better readability
+                // Converts "resume-experience" to "Experience"
                 const sectionName = sectionId
                   .replace('resume-', '')
                   .replace(/-/g, ' ')

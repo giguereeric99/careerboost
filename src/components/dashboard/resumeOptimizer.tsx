@@ -42,7 +42,7 @@ import { resumeTemplates } from '@/constants/resumeTemplates';
 /**
  * ResumeOptimizer Component
  * Main component for the resume optimization workflow
- * Enhanced with improved ATS score handling
+ * Enhanced with improved ATS score handling and loading sequence control
  */
 const ResumeOptimizer: React.FC = () => {
   // =========================================================================
@@ -112,14 +112,14 @@ const ResumeOptimizer: React.FC = () => {
   // =========================================================================
   
   // UI state - Controls the overall component behavior
-  const [activeTab, setActiveTab] = useState("upload");        // Current active tab
-  const [resumeContent, setResumeContent] = useState("");      // Raw text input content
-  const [rawText, setRawText] = useState<string>("");          // Raw text for optimization
-  const [fileUrl, setFileUrl] = useState<string | null>(null); // Uploaded file URL
-  const [fileName, setFileName] = useState<string | null>(null);// Uploaded file name
+  const [activeTab, setActiveTab] = useState("upload");            // Current active tab
+  const [resumeContent, setResumeContent] = useState("");          // Raw text input content
+  const [rawText, setRawText] = useState<string>("");              // Raw text for optimization
+  const [fileUrl, setFileUrl] = useState<string | null>(null);     // Uploaded file URL
+  const [fileName, setFileName] = useState<string | null>(null);   // Uploaded file name
   const [selectedTemplate, setSelectedTemplate] = useState("basic"); // Template ID
-  const [showProDialog, setShowProDialog] = useState(false);   // Show pro upgrade dialog
-  const [showResetDialog, setShowResetDialog] = useState(false);// Show reset confirmation
+  const [showProDialog, setShowProDialog] = useState(false);       // Show pro upgrade dialog
+  const [showResetDialog, setShowResetDialog] = useState(false);   // Show reset confirmation
   
   // Process tracking state - Tracks the analysis workflow
   const [isAnalysisDisabled, setIsAnalysisDisabled] = useState(false); // Tab is disabled during analysis
@@ -127,8 +127,8 @@ const ResumeOptimizer: React.FC = () => {
   const [isUploadInProgress, setIsUploadInProgress] = useState(false); // File upload/analysis in progress
   
   // ATS Score tracking state - Enhanced to track score updates
-  // This local score state helps ensure we always have the latest value
-  const [localAtsScore, setLocalAtsScore] = useState<number>(optimizationScore);
+  const [localAtsScore, setLocalAtsScore] = useState<number>(optimizationScore);  // Local score state for real-time updates
+  const [isScoreCalculating, setIsScoreCalculating] = useState(false);  // Whether score is currently being calculated
   
   // Refs for managing asynchronous operations and preventing race conditions
   const isLoadingInProgressRef = useRef(false);    // Prevent concurrent loading
@@ -137,10 +137,69 @@ const ResumeOptimizer: React.FC = () => {
   const loadingAttemptsRef = useRef(0);            // Track number of loading attempts
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Safety timeout to prevent infinite loading
   const scoreUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce score updates
+  
+  // Flag to track loading sequence
+  const [dataLoadingSequence, setDataLoadingSequence] = useState({
+    textLoaded: false,       // Whether optimized text is loaded
+    suggestionsLoaded: false, // Whether suggestions are loaded
+    keywordsLoaded: false,   // Whether keywords are loaded
+    scoreInitialized: false  // Whether score has been initialized
+  });
 
   // =========================================================================
-  // Effects for Score Handling
+  // Effects for Score Handling and Loading Sequence
   // =========================================================================
+  
+  /**
+   * Track loading sequence to ensure proper order of component initialization
+   * This helps coordinate the loading of data elements and score calculation
+   */
+  useEffect(() => {
+    // Update text loaded status
+    if (optimizedText && !dataLoadingSequence.textLoaded) {
+      setDataLoadingSequence(prev => ({ ...prev, textLoaded: true }));
+    }
+    
+    // Update suggestions loaded status
+    if (suggestions.length > 0 && !dataLoadingSequence.suggestionsLoaded) {
+      setDataLoadingSequence(prev => ({ ...prev, suggestionsLoaded: true }));
+    }
+    
+    // Update keywords loaded status
+    if (keywords.length > 0 && !dataLoadingSequence.keywordsLoaded) {
+      setDataLoadingSequence(prev => ({ ...prev, keywordsLoaded: true }));
+    }
+  }, [optimizedText, suggestions, keywords, dataLoadingSequence]);
+  
+  /**
+   * Final score calculation after all dependencies are loaded
+   * This ensures the score is calculated only after all components are ready
+   */
+  useEffect(() => {
+    const { textLoaded, suggestionsLoaded, keywordsLoaded, scoreInitialized } = dataLoadingSequence;
+    
+    // Only proceed if all data is loaded but score is not yet initialized
+    if (textLoaded && suggestionsLoaded && keywordsLoaded && !scoreInitialized) {
+      console.log("All dependencies loaded, finalizing score calculation");
+      
+      // Indicate score calculation is in progress for UI
+      setIsScoreCalculating(true);
+      
+      // Use a timeout to both show the calculation animation and ensure
+      // all other components have rendered completely
+      setTimeout(() => {
+        // If we have a score manager, force update the score
+        if (scoreManager && scoreManager.updateBaseScore && localAtsScore > 0) {
+          console.log("Updating base score in score manager to:", localAtsScore);
+          scoreManager.updateBaseScore(localAtsScore);
+        }
+        
+        // Mark score calculation as complete
+        setIsScoreCalculating(false);
+        setDataLoadingSequence(prev => ({ ...prev, scoreInitialized: true }));
+      }, 1200); // Slight delay for UX and to ensure other renders are complete
+    }
+  }, [dataLoadingSequence, scoreManager, localAtsScore]);
   
   /**
    * Synchronize optimizationScore to local state
@@ -346,12 +405,23 @@ const ResumeOptimizer: React.FC = () => {
   const handleAnalysisStart = useCallback(() => {
     setIsAnalysisDisabled(true);     // Disable preview tab
     setIsUploadInProgress(true);     // Mark upload in progress
+    
+    // Reset loading sequence for the new analysis
+    setDataLoadingSequence({
+      textLoaded: false,
+      suggestionsLoaded: false, 
+      keywordsLoaded: false,
+      scoreInitialized: false
+    });
+    
+    // Indicate score calculation will be needed
+    setIsScoreCalculating(true);
   }, []);
 
   /**
    * Called when analysis completes (from UploadSection)
    * Enhanced to receive optimized text, resume ID, ATS score, suggestions and keywords directly 
-   * with improved score handling
+   * with controlled loading sequence for better score calculation
    */
   const handleAnalysisComplete = useCallback((
     optimizedTextContent?: string, 
@@ -361,52 +431,90 @@ const ResumeOptimizer: React.FC = () => {
     keywordsData?: any[]
   ) => {
     // Step 1: Re-enable UI elements
-    setIsAnalysisDisabled(false);    // Re-enable preview tab
-    setIsUploadInProgress(false);    // Mark upload complete
+    setIsAnalysisDisabled(false);   // Re-enable preview tab
+    setIsUploadInProgress(false);   // Mark upload complete
     
     // Step 2: Update resume state
-    setHasResume(true);              // User now has a resume
+    setHasResume(true);             // User now has a resume
     
-    // Step 3: Handle direct data updates if provided
+    // Step 3: Handle direct data updates in controlled sequence
     if (optimizedTextContent && optimizedTextContent.length > 0) {
       console.log("Received optimized text directly with length:", optimizedTextContent.length);
       
-      // Update optimized text with received content
+      // Reset loading sequence - will track components as they load
+      setDataLoadingSequence({
+        textLoaded: false,
+        suggestionsLoaded: false,
+        keywordsLoaded: false,
+        scoreInitialized: false
+      });
+      
+      // Indicate score calculation in progress for better UX - shows loading animation
+      setIsScoreCalculating(true);
+      
+      // STAGE 1: Update optimized text and resume ID first
       if (setOptimizedText) {
         setOptimizedText(optimizedTextContent);
       }
       
-      // Update resume ID if provided
       if (resumeIdValue && setResumeId) {
         setResumeId(resumeIdValue);
       }
       
-      // Update score if provided - ENHANCED SCORE HANDLING
-      if (scoreValue !== undefined && !isNaN(scoreValue)) {
-        console.log("Received ATS score directly:", scoreValue);
-        
-        // Update both local and main score states
-        setLocalAtsScore(scoreValue);
-        
-        if (setOptimizationScore) {
-          setOptimizationScore(scoreValue);
+      // STAGE 2: After a short delay, update suggestions and keywords
+      // This slight delay helps ensure the text is processed before other updates
+      setTimeout(() => {
+        // Update suggestions if provided
+        if (suggestionsData && Array.isArray(suggestionsData) && setSuggestions) {
+          console.log("Setting suggestions directly:", suggestionsData.length);
+          setSuggestions(suggestionsData);
         }
-      }
+        
+        // Update keywords if provided
+        if (keywordsData && Array.isArray(keywordsData) && setKeywords) {
+          console.log("Setting keywords directly:", keywordsData.length);
+          setKeywords(keywordsData);
+        }
+        
+        // STAGE 3: After all other data is loaded, update the score
+        setTimeout(() => {
+          // Update score if provided
+          if (scoreValue !== undefined && !isNaN(scoreValue)) {
+            console.log("Setting final ATS score:", scoreValue);
+            
+            // IMPORTANT: Update both local and main score states first
+            setLocalAtsScore(scoreValue);
+            
+            if (setOptimizationScore) {
+              setOptimizationScore(scoreValue);
+            }
+            
+            // CRITICAL: Update score directly in score manager using the new API
+            if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
+              console.log("Directly updating score in score manager to:", scoreValue);
+              scoreManager.updateBaseScore(scoreValue);
+            }
+            
+            // Debug log to verify all score values are in sync
+            console.log("DEBUG - Scores after update:", {
+              scoreValueFromAPI: scoreValue,
+              localAtsScore: scoreValue, // Use the value we're setting rather than the state variable
+              optimizationScore: scoreValue, // Use the value we're setting rather than the state variable
+              scoreManagerBaseScore: scoreManager?.getBaseScore?.() || 'N/A',
+              scoreManagerCurrentScore: scoreManager?.currentScore || 'N/A'
+            });
+          }
+          
+          // End the score calculation animation after all updates
+          setTimeout(() => {
+            setIsScoreCalculating(false);
+            
+            // Switch to preview tab now that data is loaded
+            setActiveTab("preview");
+          }, 500); // Slight additional delay for the animation effect
+        }, 300); // Delay for score update after keywords and suggestions
+      }, 200); // Delay for suggestions and keywords after text
       
-      // Update suggestions if provided
-      if (suggestionsData && Array.isArray(suggestionsData) && setSuggestions) {
-        console.log("Setting suggestions directly:", suggestionsData.length);
-        setSuggestions(suggestionsData);
-      }
-      
-      // Update keywords if provided
-      if (keywordsData && Array.isArray(keywordsData) && setKeywords) {
-        console.log("Setting keywords directly:", keywordsData.length);
-        setKeywords(keywordsData);
-      }
-      
-      // Switch to preview tab directly since we have all needed data
-      setActiveTab("preview");
       return;
     }
     
@@ -422,6 +530,15 @@ const ResumeOptimizer: React.FC = () => {
           try {
             const result = await loadLatestResume(user.id);
             console.log("Resume data loaded:", result ? "success" : "no data");
+            
+            // If we have a successful load and a score, ensure it's properly set
+            if (result && result.atsScore) {
+              // Update score manager directly with the loaded score
+              if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
+                console.log("Updating score manager with loaded score:", result.atsScore);
+                scoreManager.updateBaseScore(result.atsScore);
+              }
+            }
             
             // Switch to preview tab after loading completes
             setActiveTab("preview");
@@ -450,7 +567,9 @@ const ResumeOptimizer: React.FC = () => {
     setResumeId, 
     setOptimizationScore,
     setSuggestions,
-    setKeywords
+    setKeywords,
+    scoreManager,
+    setLocalAtsScore
   ]);
 
   /**
@@ -535,6 +654,7 @@ const ResumeOptimizer: React.FC = () => {
       // Reset analysis state on error
       setIsAnalysisDisabled(false);
       setIsUploadInProgress(false);
+      setIsScoreCalculating(false);
       
       toast.error("Optimization failed", {
         description: error.message || "An unexpected error occurred."
@@ -734,7 +854,7 @@ const ResumeOptimizer: React.FC = () => {
 
   /**
    * Cleanup effect for timeouts
-   * Ensures timeouts are cleared on unmount
+   * Ensures timeouts are cleared on unmount to prevent memory leaks
    */
   useEffect(() => {
     return () => {
@@ -937,6 +1057,7 @@ const ResumeOptimizer: React.FC = () => {
                         scoreBreakdown={currentScoreData.breakdown}
                         potentialScore={currentScoreData.potentialScore}
                         initialScore={optimizationScore}
+                        isCalculating={isScoreCalculating} // Pass our new calculating state
                       />
 
                       {/* AI Suggestions with impact analysis */}
