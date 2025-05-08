@@ -7,6 +7,8 @@
  * 3. Adds safeguards against concurrent updates
  * 4. Simplifies effect dependencies
  * 5. Fixes loading state issues that could cause UI to get stuck
+ * 6. Exposes state setters for direct manipulation from components (score, resumeId, suggestions, keywords)
+ * 7. Facilitates direct data transfer from API to UI without requiring database reload
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useResumeOptimizer } from '@/hooks/useResumeOptimizer';
@@ -36,8 +38,12 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   const [appliedSuggestions, setAppliedSuggestions] = useState<number[]>([]);
   const [appliedKeywords, setAppliedKeywords] = useState<string[]>([]);
   const [optimizationMetrics, setOptimizationMetrics] = useState<any>(null);
-  const [isApplyingChanges, setIsApplyingChanges] = useState(false);  
-  // Add local loading state to track our own loading status
+  
+  // Add local states to enable direct updates for all relevant data
+  const [localOptimizationScore, setLocalOptimizationScore] = useState<number>(optimizationScore);
+  const [localResumeId, setLocalResumeId] = useState<string | null>(resumeId);
+  const [localSuggestions, setLocalSuggestions] = useState<any[]>(suggestions || []);
+  const [localKeywords, setLocalKeywords] = useState<any[]>(keywords || []);
   const [internalLoading, setInternalLoading] = useState(false);
   
   // Refs to prevent infinite loops and unnecessary rerenders
@@ -49,24 +55,47 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   const lastProcessedContentRef = useRef<string>('');
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Safety timeout reference
   
+  // Sync local states with base hook's states
+  useEffect(() => {
+    setLocalOptimizationScore(optimizationScore);
+  }, [optimizationScore]);
+  
+  useEffect(() => {
+    setLocalResumeId(resumeId);
+  }, [resumeId]);
+  
+  useEffect(() => {
+    if (suggestions && suggestions.length > 0) {
+      setLocalSuggestions(suggestions);
+    }
+  }, [suggestions]);
+  
+  useEffect(() => {
+    if (keywords && keywords.length > 0) {
+      setLocalKeywords(keywords);
+    }
+  }, [keywords]);
+  
   // Initialize advanced score manager if available
   const scoreManager = useResumeScoreManager ? useResumeScoreManager({
     initialScore: optimizationScore,
     resumeContent: optimizedText || editedText || '',
-    initialSuggestions: suggestions.map(s => ({
+    initialSuggestions: localSuggestions.map(s => ({
       id: s.id,
       type: s.type || 'general',
       text: s.text,
       impact: s.impact || 'medium',
       isApplied: s.isApplied || false
     })),
-    initialKeywords: keywords.map(k => ({
+    initialKeywords: localKeywords.map(k => ({
       text: k.text,
       applied: k.applied
     })),
-    resumeId: resumeId,
+    resumeId: localResumeId,
     onScoreChange: (newScore) => {
       console.log("Advanced score updated:", newScore);
+      // Update local score when score manager changes it
+      setLocalOptimizationScore(newScore);
     }
   }) : null;
 
@@ -169,7 +198,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     }, 50);
     
     return () => clearTimeout(timeoutId);
-  }, [optimizedText, editedText, isLoading, internalLoading, scoreManager]); 
+  }, [optimizedText, editedText, isLoading, internalLoading, scoreManager]);
   
   /**
    * Track applied suggestions and keywords without causing loops
@@ -186,8 +215,8 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
         let updated = false;
         
         // For suggestions
-        if (suggestions && suggestions.length > 0) {
-          const newApplied = suggestions
+        if (localSuggestions && localSuggestions.length > 0) {
+          const newApplied = localSuggestions
             .map((s, i) => s.isApplied ? i : -1)
             .filter(i => i !== -1);
           
@@ -202,8 +231,8 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
         }
         
         // For keywords
-        if (keywords && keywords.length > 0) {
-          const newApplied = keywords
+        if (localKeywords && localKeywords.length > 0) {
+          const newApplied = localKeywords
             .filter(k => k.applied)
             .map(k => k.text);
           
@@ -230,7 +259,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     const timeoutId = setTimeout(updateTracking, 100);
     
     return () => clearTimeout(timeoutId);
-  }, [suggestions, keywords]); 
+  }, [localSuggestions, localKeywords]); 
   
   /**
    * Generate metrics with error handling and debouncing
@@ -240,9 +269,9 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
 
     try {
       const initialScore = optimizationScore;
-      const currentScore = scoreManager?.currentScore || optimizationScore;
-      const appliedSugs = suggestions.filter((s, i) => appliedSuggestions.includes(i));
-      const appliedKeys = keywords.filter(k => appliedKeywords.includes(k.text));
+      const currentScore = scoreManager?.currentScore || localOptimizationScore || optimizationScore;
+      const appliedSugs = localSuggestions.filter((s, i) => appliedSuggestions.includes(i));
+      const appliedKeys = localKeywords.filter(k => appliedKeywords.includes(k.text));
 
       const metrics = generateOptimizationMetrics(
         initialScore,
@@ -260,8 +289,9 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     }
   }, [
     optimizationScore, 
-    suggestions, 
-    keywords, 
+    localOptimizationScore,
+    localSuggestions, 
+    localKeywords, 
     appliedSuggestions, 
     appliedKeywords, 
     scoreManager
@@ -338,73 +368,143 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   }, [resumeOptimizer.setEditedText, scoreManager]);
   
   /**
+   * Set suggestions with validation and formatting
+   * This function allows directly setting suggestions from external components
+   */
+  const setSuggestions = useCallback((newSuggestions: any[]) => {
+    console.log("Setting suggestions:", newSuggestions?.length || 0);
+    
+    // Validate input
+    if (!newSuggestions || !Array.isArray(newSuggestions)) {
+      console.warn("Invalid suggestions format, must be an array");
+      return;
+    }
+    
+    try {
+      // Format suggestions to ensure consistent structure
+      const formattedSuggestions = newSuggestions.map(suggestion => ({
+        id: suggestion.id || String(Math.random()),
+        type: suggestion.type || 'general',
+        text: suggestion.text || '',
+        impact: suggestion.impact || 'This suggestion may improve your resume.',
+        isApplied: suggestion.isApplied || suggestion.is_applied || false
+      }));
+      
+      // Update local suggestions state
+      setLocalSuggestions(formattedSuggestions);
+      
+      // Update score manager if available
+      if (scoreManager) {
+        // Since we can't directly access score manager's setSuggestions,
+        // we'll need to regenerate metrics after setting suggestions
+        setTimeout(() => {
+          generateMetrics();
+        }, 100);
+      }
+    } catch (error) {
+      console.error("Error setting suggestions:", error);
+    }
+  }, [scoreManager, generateMetrics]);
+  
+  /**
+   * Set keywords with validation and formatting
+   * This function allows directly setting keywords from external components
+   */
+  const setKeywords = useCallback((newKeywords: any[]) => {
+    console.log("Setting keywords:", newKeywords?.length || 0);
+    
+    // Validate input
+    if (!newKeywords || !Array.isArray(newKeywords)) {
+      console.warn("Invalid keywords format, must be an array");
+      return;
+    }
+    
+    try {
+      // Format keywords to ensure consistent structure
+      const formattedKeywords = newKeywords.map(keyword => {
+        // Handle different possible formats
+        if (typeof keyword === 'string') {
+          return {
+            text: keyword,
+            applied: false
+          };
+        }
+        
+        return {
+          text: keyword.text || keyword.keyword || '',
+          applied: keyword.applied || keyword.is_applied || false,
+          impact: keyword.impact || 0.5,
+          category: keyword.category || 'general'
+        };
+      });
+      
+      // Update local keywords state
+      setLocalKeywords(formattedKeywords);
+      
+      // Update score manager if available
+      if (scoreManager) {
+        // Since we can't directly access score manager's setKeywords,
+        // we'll need to regenerate metrics after setting keywords
+        setTimeout(() => {
+          generateMetrics();
+        }, 100);
+      }
+    } catch (error) {
+      console.error("Error setting keywords:", error);
+    }
+  }, [scoreManager, generateMetrics]);
+  
+  /**
    * Apply suggestion with improved state management
    */
   const handleApplySuggestion = useCallback((index: number) => {
     // Prevent invalid index
-    if (index < 0 || index >= suggestions.length) return;
+    if (index < 0 || index >= localSuggestions.length) return;
     
     // Use score manager if available
     if (scoreManager) {
       scoreManager.applySuggestion(index);
     }
     
+    // Update local suggestions state
+    setLocalSuggestions(prev => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        isApplied: !updated[index].isApplied
+      };
+      return updated;
+    });
+    
     // Call original hook function
     applySuggestion(index);
-  }, [applySuggestion, scoreManager, suggestions.length]);
+  }, [applySuggestion, scoreManager, localSuggestions.length]);
   
   /**
    * Apply keyword with improved state management
    */
   const handleKeywordApply = useCallback((index: number) => {
     // Prevent invalid index
-    if (index < 0 || index >= keywords.length) return;
+    if (index < 0 || index >= localKeywords.length) return;
     
     // Use score manager if available
     if (scoreManager) {
       scoreManager.applyKeyword(index);
     }
     
+    // Update local keywords state
+    setLocalKeywords(prev => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        applied: !updated[index].applied
+      };
+      return updated;
+    });
+    
     // Call original hook function
     toggleKeyword(index);
-  }, [toggleKeyword, scoreManager, keywords.length]);
-  
-  /**
-   * Handle regeneration of resume with suggestions and keywords
-   * Wrapper function for working with UI components that need regeneration functionality
-   */
-  const handleRegenerateResume = useCallback(async () => {
-    try {
-      setIsApplyingChanges(true);
-      
-      // Since applyChanges was removed from the base hook, we're implementing
-      // a basic regeneration functionality here by calling resetResume
-      // This is a temporary solution until a proper regeneration API is implemented
-      
-      // Wait briefly to simulate processing
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Update score manager if available
-      if (scoreManager) {
-        scoreManager.applyAllChanges();
-      }
-      
-      // Generate metrics for reporting
-      generateMetrics();
-      
-      toast.success("Changes applied successfully", {
-        description: "Your resume has been updated with your changes."
-      });
-      
-      return true;
-    } catch (error) {
-      console.error("Error regenerating resume:", error);
-      toast.error("Failed to regenerate resume");
-      return false;
-    } finally {
-      setIsApplyingChanges(false);
-    }
-  }, [scoreManager, generateMetrics]);
+  }, [toggleKeyword, scoreManager, localKeywords.length]);
   
   /**
    * Reset resume with improved error handling and state cleanup
@@ -428,6 +528,10 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
         setAppliedSuggestions([]);
         setAppliedKeywords([]);
         
+        // Reset suggestions and keywords to their initial state
+        setLocalSuggestions(localSuggestions.map(s => ({...s, isApplied: false})));
+        setLocalKeywords(localKeywords.map(k => ({...k, applied: false})));
+        
         // Set processed HTML to the original optimized text
         if (optimizedText) {
           try {
@@ -448,7 +552,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       toast.error("Failed to reset resume");
       return false;
     }
-  }, [resetResume, optimizedText, scoreManager]);
+  }, [resetResume, optimizedText, scoreManager, localSuggestions, localKeywords]);
   
   /**
    * Save resume with improved validation and error handling
@@ -477,7 +581,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       }
       
       // If we don't have a resume ID, we can't save
-      if (!resumeId) {
+      if (!localResumeId) {
         toast.error("Cannot save resume", {
           description: "No resume ID found for saving."
         });
@@ -491,7 +595,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          resumeId: resumeId,
+          resumeId: localResumeId,
           content: safeContent,
           userId: userId
         }),
@@ -538,7 +642,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       // Return failure
       return false;
     }
-  }, [resumeId, userId, resumeOptimizer.setEditedText, scoreManager]);
+  }, [localResumeId, userId, resumeOptimizer.setEditedText, scoreManager]);
   
   /**
    * Return enhanced hook with improved state management
@@ -553,16 +657,22 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     appliedKeywords,
     optimizationMetrics,
     scoreManager,
-    isApplyingChanges,
+    // Use local states instead of base hook states
+    suggestions: localSuggestions,
+    keywords: localKeywords,
     // IMPORTANT: Use our enhanced wrapper and internal loading state instead of original
     loadLatestResume,
     isLoading: isLoading || internalLoading, // Combine both loading states for UI
+    // Add these state setters to allow direct updates from components
+    setOptimizationScore: setLocalOptimizationScore,
+    setResumeId: setLocalResumeId,
+    setSuggestions, // New function to update suggestions
+    setKeywords,    // New function to update keywords
     generateMetrics,
     exportReport,
     handlePreviewContentChange,
     handleApplySuggestion,
     handleKeywordApply,
-    handleRegenerateResume,
     handleReset,
     handleSave,
     // Expose loading state for debugging

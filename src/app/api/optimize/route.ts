@@ -3,9 +3,9 @@
  * 
  * This unified route handles all resume optimization operations:
  * - Initial optimization with AI services (OpenAI, Gemini, Claude)
- * - Reoptimization of existing resumes
  * - Extraction of text from various file formats
  * - Language detection
+ * - Support for resetting last_saved_text on new uploads
  * 
  * The route implements a cascading strategy for AI services:
  * 1. Tries OpenAI first (usually best quality)
@@ -13,26 +13,26 @@
  * 3. Falls back to Claude as a last resort
  * 4. Uses a fallback generator if all services fail
  * 
- * Improvements from previous version:
+ * Improvements:
  * - Unified API endpoint for all optimization operations
  * - Modular service architecture for better maintainability
  * - Improved error handling with consistent response format
  * - Better file handling with proper cleanup
- * - Standardized optimization results across all providers
+ * - Added support for resetting last_saved_text on new uploads
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase-admin';
 import { extractTextFromFile } from './services/extraction';
 import { detectLanguage } from './services/language';
-import { optimizeResume, reoptimizeResume } from './services/optimization';
+import { optimizeResume } from './services/optimization';
 import { generateFallbackOptimization } from './services/optimization/fallback';
 import { getSupabaseUuid } from './services/userMapping';
 import { cleanupTempFile } from './services/fileHandler';
 import { OptimizationResult } from './types';
 
 /**
- * POST handler for both initial optimization and reoptimization
+ * POST handler for resume optimization
  */
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
@@ -43,45 +43,24 @@ export async function POST(req: NextRequest) {
     const fileUrl = formData.get("fileUrl") as string | null;
     const rawText = formData.get("rawText") as string | null;
     const userId = formData.get("userId") as string | null;
-    const resumeId = formData.get("resumeId") as string | null;
     const fileName = formData.get("fileName") as string | null;
     const fileType = formData.get("fileType") as string | null;
     
-    // For reoptimization
-    const appliedKeywords = formData.get("appliedKeywords") ? 
-      JSON.parse(formData.get("appliedKeywords") as string) : [];
-    const appliedSuggestions = formData.get("appliedSuggestions") ? 
-      JSON.parse(formData.get("appliedSuggestions") as string) : [];
+    // NEW: Check if we should reset last_saved_text
+    const resetLastSavedText = formData.get("resetLastSavedText") === "true";
 
     // Validate input
     if (!userId) {
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
     }
 
-    if (!resumeId && !fileUrl && !rawText) {
+    if (!fileUrl && !rawText) {
       return NextResponse.json({ 
-        error: "Missing required fields: either resumeId (for reoptimization) or fileUrl/rawText (for new optimization)" 
+        error: "Missing required fields: either fileUrl or rawText is required for optimization" 
       }, { status: 400 });
     }
 
-    // Determine if this is a reoptimization request
-    const isReoptimization = !!resumeId;
-
-    // Handle reoptimization flow
-    if (isReoptimization) {
-      console.log(`Reoptimizing resume ${resumeId} for user ${userId}`);
-      
-      const result = await reoptimizeResume(
-        resumeId,
-        userId,
-        appliedKeywords,
-        appliedSuggestions
-      );
-      
-      return NextResponse.json(result);
-    }
-
-    // Handle new optimization flow
+    // Handle optimization flow
     console.log(`New optimization for user ${userId}`);
     
     // Get text content from file or rawText
@@ -135,6 +114,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Save results to database if user ID is provided
+    let resumeData = null;
     if (userId) {
       try {
         // Get Supabase admin client
@@ -144,7 +124,8 @@ export async function POST(req: NextRequest) {
         const supabaseUserId = await getSupabaseUuid(supabaseAdmin, userId);
         
         // Insert into database
-        const { data: resumeData, error } = await supabaseAdmin
+        // NOTE: last_saved_text is explicitly set to null for new uploads
+        const { data: insertedResumeData, error } = await supabaseAdmin
           .from('resumes')
           .insert({
             user_id: supabaseUserId,
@@ -152,6 +133,8 @@ export async function POST(req: NextRequest) {
             supabase_user_id: supabaseUserId,
             original_text: resumeText,
             optimized_text: optimizationResult.optimizedText,
+            // NEW: Explicitly set last_saved_text to null for new uploads
+            last_saved_text: null,
             language: language,
             ats_score: optimizationResult.atsScore || 65,
             file_url: fileUrl || null,
@@ -165,7 +148,8 @@ export async function POST(req: NextRequest) {
         
         if (error) {
           console.error("Error saving resume to database:", error);
-        } else if (resumeData) {
+        } else if (insertedResumeData) {
+          resumeData = insertedResumeData;
           console.log("Resume saved successfully with ID:", resumeData.id);
           optimizationResult.resumeId = resumeData.id;
           

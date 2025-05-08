@@ -1,3 +1,15 @@
+/**
+ * Enhanced UploadSection Component
+ * 
+ * Provides an interface for users to upload or paste their resume content.
+ * Features:
+ * - File upload via drag & drop or button click
+ * - Text input for pasting resume content
+ * - Automatic transition to preview after successful optimization
+ * - Visual feedback during processing
+ * - Direct data transfer to parent component without requiring database reload
+ */
+
 'use client';
 
 import React, { useRef, useState, useEffect } from "react";
@@ -12,6 +24,7 @@ import { useUser, SignInButton } from "@clerk/nextjs";
 /**
  * Props interface for the UploadSection component
  * Defines the expected properties for controlling the upload and analysis process
+ * Updated to include optimizedText and resumeId in onAnalysisComplete
  */
 interface UploadSectionProps {
   isUploading: boolean;              // Whether a file is currently being uploaded
@@ -20,11 +33,17 @@ interface UploadSectionProps {
   resumeContent: string;             // Content from pasted resume or extracted from file
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;  // Handler for file input change
   onContentChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;  // Handler for textarea change
-  onContinue: () => void;            // Handler for continue button click (kept for compatibility but won't be used)
+  onContinue: () => void;            // Handler for continue button click
   onFileUpload: (url: string, name: string, size?: number, type?: string) => void;  // Handler for successful file upload
   setActiveTab?: (tab: string) => void; // Optional prop to control tab navigation
-  onAnalysisStart?: () => void;      // Called when analysis starts (upload or text analysis)
-  onAnalysisComplete?: () => void;   // Called when analysis completes
+  onAnalysisStart?: () => void;      // Called when analysis starts
+  onAnalysisComplete?: (
+    optimizedText?: string, 
+    resumeId?: string,
+    atsScore?: number,
+    suggestions?: any[],
+    keywords?: any[]
+  ) => void;  // Called when analysis completes with all necessary data
 }
 
 /**
@@ -41,12 +60,7 @@ const mimeLabelMap: Record<string, string> = {
  * UploadSection Component
  * 
  * Provides an interface for users to upload or paste their resume content.
- * Features:
- * - File upload via drag & drop or button click
- * - Text input for pasting resume content
- * - Automatic transition to preview after successful optimization
- * - Visual feedback during processing
- * - Integration with parent component for state management
+ * Enhanced to pass optimized text directly to parent component, avoiding reload
  */
 const UploadSection: React.FC<UploadSectionProps> = ({
   isUploading,
@@ -87,17 +101,12 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   /**
    * Convert bytes to KB with 1 decimal place
    * Makes file sizes more readable for users
-   * 
-   * @param bytes - Size in bytes
-   * @returns Formatted string with KB unit
    */
   const readableSize = (bytes: number) => (bytes / 1024).toFixed(1) + " KB";
 
   /**
    * Check if analysis is currently in progress
    * Used to determine if UI should be disabled
-   * 
-   * @returns Boolean indicating if analysis is active
    */
   const isAnalysisInProgress = () => {
     return isParsing || isProcessing || isUploadInProgress;
@@ -106,11 +115,65 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   /**
    * Determine if upload buttons should be disabled
    * Disable when already uploading, processing, or file already uploaded
-   * 
-   * @returns Boolean indicating if upload should be disabled
    */
   const shouldDisableUpload = () => {
     return isUploading || isParsing || isProcessing || !!uploadedInfo || isUploadInProgress;
+  };
+
+  /**
+   * Processes API response to extract all necessary data
+   * Formats data consistently for parent component
+   */
+  const processApiResponse = (result: any) => {
+    if (!result || typeof result !== 'object') {
+      throw new Error('Invalid API response format');
+    }
+    
+    // Extract basic data
+    const optimizedText = result.optimizedText || result.optimized_text || '';
+    const resumeId = result.resumeId || result.resume_id || '';
+    const atsScore = result.atsScore || result.ats_score || 65;
+    
+    // Extract or process suggestions
+    let suggestions = result.suggestions || [];
+    
+    // Ensure suggestions have consistent format
+    suggestions = suggestions.map((suggestion: any) => ({
+      id: suggestion.id || String(Math.random()),
+      type: suggestion.type || 'general',
+      text: suggestion.text || '',
+      impact: suggestion.impact || 'This suggestion may improve your resume.',
+      isApplied: suggestion.isApplied || suggestion.is_applied || false
+    }));
+    
+    // Extract or process keywords
+    let keywords = [];
+    
+    // Handle different possible keyword formats
+    if (Array.isArray(result.keywords) && result.keywords.length > 0) {
+      keywords = result.keywords.map((k: any) => ({
+        text: k.text || k.keyword || '',
+        applied: k.applied || k.is_applied || false,
+        impact: k.impact || 0.5,
+        category: k.category || 'general'
+      }));
+    } else if (Array.isArray(result.keywordSuggestions) && result.keywordSuggestions.length > 0) {
+      // Convert string arrays to keyword objects
+      keywords = result.keywordSuggestions.map((text: string) => ({
+        text,
+        applied: false,
+        impact: 0.5,
+        category: 'general'
+      }));
+    }
+    
+    return {
+      optimizedText,
+      resumeId,
+      atsScore,
+      suggestions,
+      keywords
+    };
   };
 
   // -------------------------------------------------------------------------
@@ -120,27 +183,27 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   /**
    * Handles direct text input analysis
    * Processes pasted resume content and automatically transitions to preview
+   * Enhanced to extract and pass all data directly to parent component
    */
   const handleTextAnalysis = async () => {
-    // Skip if no content or already processing
+    // Validate minimum content length
     if (!resumeContent || resumeContent.length < 50 || isProcessing) return;
     
-    // ===== START ANALYSIS =====
     // Notify parent that analysis is starting
     if (onAnalysisStart) {
       onAnalysisStart();
     }
     
-    // Update processing state
+    // Update processing state for UI feedback
     setIsProcessing(true);
     const loadingToastId = toast.loading("Analyzing resume content...");
     
     try {
-      // ===== API CALL =====
-      // Create form data for API request
+      // Prepare form data for API request
       const formData = new FormData();
       formData.append("rawText", resumeContent);
       if (user?.id) formData.append("userId", user.id);
+      formData.append("resetLastSavedText", "true");
       
       // Call optimization API
       const optimizeRes = await fetch("/api/optimize", {
@@ -148,37 +211,49 @@ const UploadSection: React.FC<UploadSectionProps> = ({
         body: formData,
       });
       
-      // Parse response
+      // Parse the response
       const result = await optimizeRes.json();
       
-      // ===== HANDLE RESPONSE =====
+      // Handle successful optimization
       if (optimizeRes.ok && result?.optimizedText) {
+        // Clear loading toast and show success message
         toast.dismiss(loadingToastId);
         toast.success("Resume content analyzed successfully");
         
-        // ===== CRITICAL TIMING SECTION =====
-        // Wait for database to save the data
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Mark analysis as complete
+        // Mark analysis as completed for UI state
         setAnalysisCompleted(true);
         
-        // Notify parent that analysis is complete
-        // This will trigger the preview tab switch
+        // Process the API response to extract all data
+        const { 
+          optimizedText, 
+          resumeId, 
+          atsScore, 
+          suggestions, 
+          keywords 
+        } = processApiResponse(result);
+        
+        // Pass all extracted data to parent component
         if (onAnalysisComplete) {
-          onAnalysisComplete();
+          onAnalysisComplete(
+            optimizedText,
+            resumeId,
+            atsScore,
+            suggestions,
+            keywords
+          );
         }
       } else {
-        // ===== ERROR HANDLING =====
+        // Handle API error response
         throw new Error(result?.error || "Analysis failed");
       }
     } catch (err: any) {
+      // Handle analysis errors with user feedback
       toast.dismiss(loadingToastId);
       toast.error("Content analysis error", {
         description: err.message,
       });
     } finally {
-      // ===== CLEANUP =====
+      // Always reset processing state
       setIsProcessing(false);
     }
   };
@@ -189,16 +264,10 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   
   /**
    * Handles the resume optimization process after file upload
-   * Manages the entire workflow from upload to automatic preview transition
-   * 
-   * @param fileUrl - URL of the uploaded file
-   * @param fileName - Name of the uploaded file
-   * @param fileSize - Size of the uploaded file
-   * @param fileType - MIME type of the uploaded file
+   * Extracts all necessary data from API response to avoid additional server calls
    */
   const handleResumeOptimization = async (fileUrl: string, fileName: string, fileSize: number, fileType: string) => {
-    // ===== START UPLOAD PROCESS =====
-    // Track upload progress for UI state
+    // Set upload in progress state for UI feedback
     setIsUploadInProgress(true);
     
     // Notify parent that analysis is starting
@@ -206,73 +275,90 @@ const UploadSection: React.FC<UploadSectionProps> = ({
       onAnalysisStart();
     }
     
-    // Set processing state to display loading indicators
+    // Update processing state for UI feedback
     setIsProcessing(true);
     setAnalysisCompleted(false);
     
-    // Show loading toast with unique ID for later dismissal
+    // Show loading toast for user feedback
     const loadingToastId = toast.loading("Analyzing uploaded resume...");
     
-    // ===== PREPARE API REQUEST =====
-    // Create form data for API request
+    // Prepare API request data
     const formData = new FormData();
     formData.append("fileUrl", fileUrl);
     formData.append("fileName", fileName);
     formData.append("fileType", fileType || "");
     formData.append("userId", user?.id || "");
+    formData.append("resetLastSavedText", "true");
 
     try {
-      // ===== API CALL =====
-      // Send request to optimization API
+      // Call the API to optimize the resume
       const optimizeRes = await fetch("/api/optimize", {
         method: "POST",
         body: formData,
       });
 
-      // Parse the JSON response
+      // Parse the API response
       const result = await optimizeRes.json();
 
-      // ===== HANDLE RESPONSE =====
+      // Handle successful optimization
       if (optimizeRes.ok && result?.optimizedText) {
-        // Update parent component with upload information
+        // Update file upload state in parent component
         onFileUpload(fileUrl, fileName, fileSize, fileType);
         
-        // Save uploaded file information for UI display
+        // Update local upload info for UI
         setUploadedInfo({
           name: fileName,
           size: fileSize,
           type: fileType,
         });
         
-        // Dismiss loading toast and show success message
+        // Clear loading toast and show success message
         toast.dismiss(loadingToastId);
         toast.success("Resume uploaded and optimized");
         
-        // ===== CRITICAL TIMING SECTION =====
-        // Wait for database to save the data
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Mark analysis as complete
+        // Mark analysis as completed for UI state
         setAnalysisCompleted(true);
         
-        // Notify parent that analysis is complete
-        // This will trigger the preview tab switch
+        // Process the API response to extract all data
+        const { 
+          optimizedText, 
+          resumeId, 
+          atsScore, 
+          suggestions, 
+          keywords 
+        } = processApiResponse(result);
+        
+        // Log the data being passed to parent component for debugging
+        console.log("Passing data to parent:", {
+          textLength: optimizedText.length,
+          resumeId,
+          atsScore,
+          suggestionsCount: suggestions.length,
+          keywordsCount: keywords.length
+        });
+        
+        // Pass all extracted data to parent component
         if (onAnalysisComplete) {
-          onAnalysisComplete();
+          onAnalysisComplete(
+            optimizedText,
+            resumeId,
+            atsScore,
+            suggestions,
+            keywords
+          );
         }
       } else {
-        // ===== ERROR HANDLING =====
+        // Handle API error response
         throw new Error(result?.error || "Optimization failed");
       }
     } catch (err: any) {
-      // Display error message to user
+      // Handle optimization errors with user feedback
       toast.dismiss(loadingToastId);
       toast.error("Upload analysis error", {
         description: err.message,
       });
     } finally {
-      // ===== CLEANUP =====
-      // Reset processing state regardless of outcome
+      // Always reset processing states
       setIsProcessing(false);
       setIsUploadInProgress(false);
     }

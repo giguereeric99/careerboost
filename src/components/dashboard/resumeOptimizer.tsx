@@ -1,18 +1,14 @@
 /**
  * Enhanced ResumeOptimizer Component
  * 
- * Main component that manages the resume optimization workflow with advanced score tracking.
+ * Main component that manages the complete resume optimization workflow with direct data transfer.
  * Features:
  * - File upload and text input for resumes
- * - AI-powered optimization with real-time score feedback
- * - Detailed keyword and suggestion impact analysis
- * - Automatic score calculation with breakdown visualization
- * - Optimized state management to prevent unnecessary re-renders
- * - Template selection and application
- * - Export and download capabilities
- * 
- * This component uses advanced memoization techniques to ensure optimal performance
- * even with complex score calculations and UI updates.
+ * - AI-powered optimization with real-time feedback
+ * - Improved state management with proper loading states
+ * - Efficient data handling to minimize API requests
+ * - Responsive layout with split view for content and suggestions
+ * - Direct data propagation from API to UI without database reload
  */
 
 'use client';
@@ -26,8 +22,6 @@ import { Button } from "@/components/ui/button";
 
 // Import custom hooks
 import { useResumeOptimizerEnhanced } from '@/hooks/useResumeOptimizerEnhanced';
-import { useResumeScoreManager } from '@/hooks/useResumeScoreManager';
-import { useResumeLoader } from '@/hooks/useResumeLoader';
 
 // Import components
 import UploadSection from '@/components/resumeOptimizer/uploadSection';
@@ -49,9 +43,9 @@ import { resumeTemplates } from '@/constants/resumeTemplates';
  * Main component for the resume optimization workflow
  */
 const ResumeOptimizer: React.FC = () => {
-  // -------------------------------------------------------------------------
+  // =========================================================================
   // Authentication & Hook Setup
-  // -------------------------------------------------------------------------
+  // =========================================================================
   
   // Get user authentication state from Clerk
   const { user } = useUser();
@@ -65,6 +59,7 @@ const ResumeOptimizer: React.FC = () => {
     isApplyingChanges,    // Applying suggestions/keywords in progress
     isResetting,          // Reset operation in progress
     needsRegeneration,    // Content needs regeneration before download
+    isLoading,            // General loading state
     
     // Data states - The actual resume content and related data
     selectedFile,         // Currently selected file
@@ -82,13 +77,14 @@ const ResumeOptimizer: React.FC = () => {
     appliedSuggestions,   // Indices of applied suggestions
     appliedKeywords,      // Array of applied keywords
     scoreManager,         // Score calculation manager
+    resumeId,             // ID of the current resume
     
     // Action handlers - Functions to interact with the resume
     setSelectedFile,              // Set selected file
     handlePreviewContentChange,   // Handle content changes in preview
     handleApplySuggestion,        // Apply a suggestion
     handleKeywordApply,           // Apply a keyword
-    handleRegenerateResume,       // Regenerate resume
+    handleRegenerateResume,       // Regenerate resume with applied changes
     handleReset,                  // Reset to original
     handleSave,                   // Save changes
     exportReport,                 // Export optimization report
@@ -99,12 +95,19 @@ const ResumeOptimizer: React.FC = () => {
     
     // Advanced score simulation
     simulateKeywordImpact,        // Simulate impact of applying a keyword
-    simulateSuggestionImpact      // Simulate impact of applying a suggestion
+    simulateSuggestionImpact,     // Simulate impact of applying a suggestion
+    
+    // Additional state setters needed for direct data update
+    setOptimizedText,             // Set optimized text directly
+    setResumeId,                  // Set resume ID directly
+    setOptimizationScore,         // Set optimization score directly
+    setSuggestions,               // Set suggestions directly
+    setKeywords,                  // Set keywords directly
   } = useResumeOptimizerEnhanced(user?.id);
   
-  // -------------------------------------------------------------------------
+  // =========================================================================
   // Component State Management
-  // -------------------------------------------------------------------------
+  // =========================================================================
   
   // UI state - Controls the overall component behavior
   const [activeTab, setActiveTab] = useState("upload");        // Current active tab
@@ -122,15 +125,15 @@ const ResumeOptimizer: React.FC = () => {
   const [isUploadInProgress, setIsUploadInProgress] = useState(false); // File upload/analysis in progress
   
   // Refs for managing asynchronous operations and preventing race conditions
-  const isLoadingInProgress = useRef(false);    // Prevent concurrent loading
-  const loadAttemptedRef = useRef(false);       // Track if load has been attempted
+  const isLoadingInProgressRef = useRef(false);    // Prevent concurrent loading
+  const loadAttemptedRef = useRef(false);          // Track if load has been attempted
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timeout reference
-  const loadingAttempts = useRef(0);            // Track number of loading attempts
-  const loadTimeout = useRef<NodeJS.Timeout | null>(null); // Safety timeout to prevent infinite loading
+  const loadingAttemptsRef = useRef(0);            // Track number of loading attempts
+  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Safety timeout to prevent infinite loading
 
-  // -------------------------------------------------------------------------
+  // =========================================================================
   // Computed Values & Memoization
-  // -------------------------------------------------------------------------
+  // =========================================================================
   
   /**
    * Display content priority:
@@ -169,13 +172,15 @@ const ResumeOptimizer: React.FC = () => {
    * - Analysis is in progress
    * - Upload is in progress
    * - User has no resume and hasn't switched to preview tab yet
+   * - Any loading operation is happening
    */
   const isPreviewTabDisabled = useMemo(() => {
     return (
       isAnalysisInProgress ||
       isUploadInProgress ||
       (hasResume === false && !optimizedText && activeTab !== "preview") ||
-      (isUploading || isParsing || isOptimizing)
+      (isUploading || isParsing || isOptimizing) ||
+      isLoading
     );
   }, [
     isAnalysisInProgress,
@@ -185,7 +190,8 @@ const ResumeOptimizer: React.FC = () => {
     activeTab,
     isUploading,
     isParsing,
-    isOptimizing
+    isOptimizing,
+    isLoading
   ]);
 
   /**
@@ -204,39 +210,41 @@ const ResumeOptimizer: React.FC = () => {
    */
   const hasEdits = useMemo(() => Boolean(editedText), [editedText]);
 
-  // -------------------------------------------------------------------------
-  // Effect to prevent infinite loading states
-  // -------------------------------------------------------------------------
+  // =========================================================================
+  // Safety Timeouts & Error Prevention
+  // =========================================================================
   
   /**
    * Safety timeout effect to prevent infinite loading states
    * This ensures loading state is never stuck on indefinitely
    */
   useEffect(() => {
-    // Set a safety timeout whenever loading begins
-    if (isLoadingInProgress.current) {
-      if (loadTimeout.current) {
-        clearTimeout(loadTimeout.current);
-      }
-      
-      // Force loading state to false after 10 seconds at maximum
-      loadTimeout.current = setTimeout(() => {
+    // Clear any existing timeout
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
+
+    // If we're in a loading state, set a safety timeout to force exit after max time
+    if (isLoadingInProgressRef.current) {
+      loadTimeoutRef.current = setTimeout(() => {
         console.log("Safety timeout triggered - forcing loading state to false");
-        isLoadingInProgress.current = false;
+        isLoadingInProgressRef.current = false;
       }, 10000); // 10 seconds max loading time
     }
     
-    // Clean up timeout on unmount or when loading completes
+    // Cleanup on unmount
     return () => {
-      if (loadTimeout.current) {
-        clearTimeout(loadTimeout.current);
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
       }
     };
   }, [activeTab]); // Re-run when active tab changes
 
-  // -------------------------------------------------------------------------
+  // =========================================================================
   // Event Handlers - Optimized with useCallback
-  // -------------------------------------------------------------------------
+  // =========================================================================
   
   /**
    * Handle text input changes in the textarea
@@ -283,45 +291,101 @@ const ResumeOptimizer: React.FC = () => {
 
   /**
    * Called when analysis completes (from UploadSection)
-   * Sets up loading state for preview tab transition
-   * FIXED: Now guarantees isLoadingInProgress is reset in all scenarios
+   * Enhanced to receive optimized text and resume ID directly 
+   * with additional handling for score, suggestions and keywords
    */
-  const handleAnalysisComplete = useCallback(() => {
+  const handleAnalysisComplete = useCallback((
+    optimizedTextContent?: string, 
+    resumeIdValue?: string,
+    scoreValue?: number,
+    suggestionsData?: any[],
+    keywordsData?: any[]
+  ) => {
+    // Step 1: Re-enable UI elements
     setIsAnalysisDisabled(false);    // Re-enable preview tab
     setIsUploadInProgress(false);    // Mark upload complete
     
-    // Force resume existence to true since analysis just completed
-    setHasResume(true);
+    // Step 2: Update resume state
+    setHasResume(true);              // User now has a resume
     
-    // Switch to preview tab immediately
-    setActiveTab("preview");
-    
-    // Try to load the resume data, but don't get stuck if it fails
-    if (user?.id && loadLatestResume) {
-      // Set loading state - we'll reset this regardless of outcome
-      isLoadingInProgress.current = true;
+    // Step 3: Handle direct data updates if provided
+    if (optimizedTextContent && optimizedTextContent.length > 0) {
+      console.log("Received optimized text directly with length:", optimizedTextContent.length);
       
-      // Use setTimeout to avoid blocking the UI
+      // Update optimized text with received content
+      if (setOptimizedText) {
+        setOptimizedText(optimizedTextContent);
+      }
+      
+      // Update resume ID if provided
+      if (resumeIdValue && setResumeId) {
+        setResumeId(resumeIdValue);
+      }
+      
+      // Update score if provided
+      if (scoreValue !== undefined && setOptimizationScore) {
+        setOptimizationScore(scoreValue);
+      }
+      
+      // Update suggestions if provided
+      if (suggestionsData && Array.isArray(suggestionsData) && setSuggestions) {
+        console.log("Setting suggestions directly:", suggestionsData.length);
+        setSuggestions(suggestionsData);
+      }
+      
+      // Update keywords if provided
+      if (keywordsData && Array.isArray(keywordsData) && setKeywords) {
+        console.log("Setting keywords directly:", keywordsData.length);
+        setKeywords(keywordsData);
+      }
+      
+      // Switch to preview tab directly since we have all needed data
+      setActiveTab("preview");
+      return;
+    }
+    
+    // Step 4: If not all data provided directly, load from server
+    console.log("No direct content received, loading from server...");
+    
+    if (user?.id && loadLatestResume) {
+      isLoadingInProgressRef.current = true;
+      
+      // Add slight delay to ensure database records are available
       setTimeout(() => {
         const loadResumeData = async () => {
           try {
-            await loadLatestResume(user.id);
+            const result = await loadLatestResume(user.id);
+            console.log("Resume data loaded:", result ? "success" : "no data");
+            
+            // Switch to preview tab after loading completes
+            setActiveTab("preview");
           } catch (error) {
             console.error("Error loading resume:", error);
+            toast.error("Failed to load resume data", {
+              description: "Please try refreshing the page"
+            });
           } finally {
-            // CRITICAL: Always reset loading state regardless of outcome
-            isLoadingInProgress.current = false;
+            isLoadingInProgressRef.current = false;
           }
         };
         
         loadResumeData();
-      }, 100);
+      }, 1000);
     } else {
-      // If we can't load for any reason, don't get stuck in loading state
-      console.log("Cannot load resume data - no userId or loadLatestResume function");
-      isLoadingInProgress.current = false;
+      // Switch to preview even if we can't load data - will show empty state
+      console.log("Cannot load resume data - switching to preview tab anyway");
+      setActiveTab("preview");
     }
-  }, [user?.id, loadLatestResume]);
+  }, [
+    user?.id, 
+    loadLatestResume, 
+    setActiveTab, 
+    setOptimizedText, 
+    setResumeId, 
+    setOptimizationScore,
+    setSuggestions,
+    setKeywords
+  ]);
 
   /**
    * Submit text for optimization
@@ -355,8 +419,39 @@ const ResumeOptimizer: React.FC = () => {
         throw new Error(errData.error || "Failed to optimize resume");
       }
       
-      // Success - analysis complete
-      handleAnalysisComplete();
+      // Parse API response to extract all needed data
+      const result = await res.json();
+      
+      // If we get data from the API, use it directly
+      if (result && result.optimizedText) {
+        // Extract all necessary data
+        const optimizedText = result.optimizedText;
+        const resumeId = result.resumeId;
+        const atsScore = result.atsScore || 65;
+        
+        // Extract suggestions
+        const suggestions = result.suggestions || [];
+        
+        // Extract keywords or prepare from keywordSuggestions
+        const keywords = result.keywords || 
+          (result.keywordSuggestions ? 
+            result.keywordSuggestions.map((text: string) => ({ 
+              text, 
+              applied: false 
+            })) : []);
+        
+        // Call handleAnalysisComplete with all data
+        handleAnalysisComplete(
+          optimizedText,
+          resumeId,
+          atsScore,
+          suggestions,
+          keywords
+        );
+      } else {
+        // Simple completion without data if API didn't return expected results
+        handleAnalysisComplete();
+      }
       
     } catch (error: any) {
       // Reset analysis state on error
@@ -375,12 +470,12 @@ const ResumeOptimizer: React.FC = () => {
    */
   const handleLoadResume = useCallback(async () => {
     // Skip if already loading
-    if (isLoadingInProgress.current) return;
+    if (isLoadingInProgressRef.current) return;
     
     try {
-      isLoadingInProgress.current = true;
+      isLoadingInProgressRef.current = true;
       loadAttemptedRef.current = true;
-      loadingAttempts.current = 0;  // Reset attempts
+      loadingAttemptsRef.current = 0;  // Reset attempts
       
       if (user?.id) {
         const result = await loadLatestResume(user.id);
@@ -397,7 +492,7 @@ const ResumeOptimizer: React.FC = () => {
       setHasResume(false);
     } finally {
       // IMPORTANT: Always reset loading state
-      isLoadingInProgress.current = false;
+      isLoadingInProgressRef.current = false;
     }
   }, [user?.id, loadLatestResume]);
 
@@ -417,10 +512,10 @@ const ResumeOptimizer: React.FC = () => {
     // Load data when switching to preview tab if no content exists
     if (value === "preview" && user && (!displayContent || !optimizedText)) {
       // Reset loading attempts for fresh try
-      loadingAttempts.current = 0;
+      loadingAttemptsRef.current = 0;
       
       // Set loading state
-      isLoadingInProgress.current = true;
+      isLoadingInProgressRef.current = true;
       
       // Load immediately
       if (user?.id) {
@@ -431,11 +526,11 @@ const ResumeOptimizer: React.FC = () => {
           console.error("Error loading resume:", error);
         }).finally(() => {
           // CRITICAL: Always reset loading state
-          isLoadingInProgress.current = false;
+          isLoadingInProgressRef.current = false;
         });
       } else {
         // Reset loading state if we can't load
-        isLoadingInProgress.current = false;
+        isLoadingInProgressRef.current = false;
       }
     }
   }, [user, isPreviewTabDisabled, loadLatestResume, displayContent, optimizedText]);
@@ -503,9 +598,9 @@ const ResumeOptimizer: React.FC = () => {
     toast.success("Resume downloaded successfully");
   }, [needsRegeneration, displayContent, selectedTemplate]);
 
-  // -------------------------------------------------------------------------
-  // Effects
-  // -------------------------------------------------------------------------
+  // =========================================================================
+  // Effects - Data Loading & Resource Management
+  // =========================================================================
   
   /**
    * Check for existing resume on component mount
@@ -516,10 +611,10 @@ const ResumeOptimizer: React.FC = () => {
     
     const checkResume = async () => {
       // Skip if already loading or no user
-      if (!user?.id || isLoadingInProgress.current) return;
+      if (!user?.id || isLoadingInProgressRef.current) return;
       
       try {
-        isLoadingInProgress.current = true;
+        isLoadingInProgressRef.current = true;
         
         console.log("Checking if user has resume...");
         const result = await loadLatestResume(user.id);
@@ -543,7 +638,7 @@ const ResumeOptimizer: React.FC = () => {
       } finally {
         // CRITICAL: Always reset loading state
         if (isMounted) {
-          isLoadingInProgress.current = false;
+          isLoadingInProgressRef.current = false;
         }
       }
     };
@@ -555,7 +650,7 @@ const ResumeOptimizer: React.FC = () => {
       isMounted = false;
       
       // Ensure loading state is reset on unmount
-      isLoadingInProgress.current = false;
+      isLoadingInProgressRef.current = false;
     };
   }, [user?.id, loadLatestResume]);
 
@@ -569,15 +664,15 @@ const ResumeOptimizer: React.FC = () => {
         clearTimeout(loadingTimeoutRef.current);
       }
       
-      if (loadTimeout.current) {
-        clearTimeout(loadTimeout.current);
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
       }
     };
   }, []);
 
-  // -------------------------------------------------------------------------
-  // UI Helpers & Render Functions
-  // -------------------------------------------------------------------------
+  // =========================================================================
+  // UI Helper Components
+  // =========================================================================
   
   /**
    * Render empty state with loading button
@@ -603,18 +698,18 @@ const ResumeOptimizer: React.FC = () => {
           <Button
             variant="outline"
             onClick={handleLoadResume}
-            disabled={isLoadingInProgress.current}
+            disabled={isLoadingInProgressRef.current}
           >
-            {isLoadingInProgress.current ? "Loading..." : "Check for available resumes"}
+            {isLoadingInProgressRef.current ? "Loading..." : "Check for available resumes"}
           </Button>
         )}
       </div>
     </div>
   ), [user, handleLoadResume]);
 
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
+  // =========================================================================
+  // Main Component Render
+  // =========================================================================
   
   return (
     <div className="py-8">
@@ -645,7 +740,7 @@ const ResumeOptimizer: React.FC = () => {
             disabled={isPreviewTabDisabled}
           >
             Optimize & Preview
-            {(isAnalysisInProgress || isUploadInProgress ) && (
+            {(isAnalysisInProgress || isUploadInProgress || isLoading) && (
               <span className="ml-2 inline-flex items-center">
                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -673,15 +768,15 @@ const ResumeOptimizer: React.FC = () => {
           />
         </TabsContent>
         
-        {/* Preview tab with improved loading state handling */}
+        {/* Preview tab with optimized loading state handling */}
         <TabsContent value="preview" className="space-y-6">
           {/* 
-           * FIXED: Modified loading state condition to prevent getting stuck
-           * Only show loading state when:
-           * 1. Loading is in progress AND there's no display content yet
-           * 2. No display content exists AND we're not in analysis
+           * Enhanced loading state logic:
+           * 1. Show loading spinner when actual loading occurs and no content yet
+           * 2. Show empty state when loading is complete but no content exists
+           * 3. Show content when it becomes available
            */}
-          {(isLoadingInProgress.current && !displayContent) || (!displayContent && !isAnalysisInProgress) ? (
+          {(isLoadingInProgressRef.current && !displayContent) || isLoading ? (
             <LoadingState />
           ) : (
             <>
@@ -697,7 +792,7 @@ const ResumeOptimizer: React.FC = () => {
                     />
                   )}
                 
-                  {/* Regenerate button */}
+                  {/* Regenerate button - shows when changes need to be applied */}
                   {needsRegeneration && !isEditing && (
                     <div className="flex justify-end">
                       <Button 
@@ -725,8 +820,9 @@ const ResumeOptimizer: React.FC = () => {
                     </div>
                   )}
                   
+                  {/* Main content area with 5-column grid layout */}
                   <div className="grid md:grid-cols-5 gap-6">
-                    {/* Resume preview */}
+                    {/* Resume preview - takes 3 columns */}
                     <div className="col-span-3">
                       <ResumePreview
                         optimizedText={displayContent}
@@ -734,19 +830,23 @@ const ResumeOptimizer: React.FC = () => {
                         selectedTemplate={selectedTemplate}
                         templates={resumeTemplates}
                         appliedKeywords={appliedKeywordsArray}
-                        suggestions={[]}
+                        suggestions={suggestions}
                         onDownload={handleDownload}
                         onSave={handleSave}
                         onTextChange={handlePreviewContentChange}
                         isOptimizing={isOptimizing || isApplyingChanges}
+                        isApplyingChanges={isApplyingChanges}
                         language={optimizedData?.language || "English"}
                         onEditModeChange={setIsEditing}
                         onReset={hasEdits ? () => setShowResetDialog(true) : undefined}
+                        onRegenerateContent={handleRegenerateResume}
+                        needsRegeneration={needsRegeneration}
                       />
                     </div>
-                    {/* Sidebar */}
+
+                    {/* Sidebar with optimization controls - takes 2 columns */}
                     <div className="col-span-2 flex flex-col gap-4">
-                      {/* Score card */}
+                      {/* ATS Score card with detailed metrics */}
                       <ScoreCard 
                         optimizationScore={currentScoreData.score}
                         resumeContent={displayContent}
@@ -757,7 +857,7 @@ const ResumeOptimizer: React.FC = () => {
                         initialScore={optimizationScore}
                       />
 
-                      {/* Suggestions */}
+                      {/* AI Suggestions with impact analysis */}
                       <SuggestionsList
                         suggestions={suggestions.map((s, i) => ({
                           ...s,
@@ -771,7 +871,7 @@ const ResumeOptimizer: React.FC = () => {
                         simulateSuggestionImpact={simulateSuggestionImpact}
                       />
                       
-                      {/* Keywords */}
+                      {/* Keywords with impact analysis */}
                       <KeywordList
                         keywords={keywords.map(k => ({
                           ...k,
@@ -784,14 +884,14 @@ const ResumeOptimizer: React.FC = () => {
                         simulateKeywordImpact={simulateKeywordImpact}
                       />
 
-                      {/* Templates */}
+                      {/* Template selection gallery */}
                       <TemplateGallery
                         templates={resumeTemplates}
                         selectedTemplate={selectedTemplate}
                         onTemplateSelect={handleTemplateSelect}
                       />
                       
-                      {/* Optimization metrics */}
+                      {/* Optimization metrics and export options */}
                       {displayContent && (
                         <OptimizationMetrics 
                           metrics={optimizationMetrics}
@@ -808,7 +908,7 @@ const ResumeOptimizer: React.FC = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Pro subscription dialog */}
+      {/* Pro subscription dialog - shown when selecting premium templates */}
       <ProUpgradeDialog
         open={showProDialog}
         onOpenChange={setShowProDialog}
