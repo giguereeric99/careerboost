@@ -33,43 +33,43 @@ import ImpactPreview from './impactPreview';
 // Define suggestion types with descriptions for better user context
 const SUGGESTION_TYPES = {
   "structure": {
-    title: "Structure & Mise en page",
-    description: "Suggestions pour améliorer l'organisation et le formatage",
+    title: "Structure & Layout",
+    description: "Suggestions to improve organization and formatting",
     icon: BarChart2
   },
   "content": {
-    title: "Amélioration du contenu",
-    description: "Suggestions pour améliorer la qualité de votre contenu",
+    title: "Content Improvement",
+    description: "Suggestions to improve the quality of your content",
     icon: Sparkles
   },
   "keyword": {
-    title: "Mots-clés d'industrie",
-    description: "L'inclusion de ces termes augmentera la visibilité avec les systèmes ATS",
+    title: "Industry Keywords",
+    description: "Including these terms will increase visibility with ATS systems",
     icon: TrendingUp
   },
   "achievement": {
-    title: "Quantifier les réalisations",
-    description: "Ajouter des métriques pour démontrer l'impact de votre travail",
+    title: "Quantify Achievements",
+    description: "Add metrics to demonstrate the impact of your work",
     icon: TrendingUp
   },
   "format": {
-    title: "Améliorer le formatage",
-    description: "Changements de structure pour améliorer la lisibilité et l'apparence visuelle",
+    title: "Improve Formatting",
+    description: "Structural changes to improve readability and visual appearance",
     icon: BarChart2
   },
   "language": {
-    title: "Améliorer le langage",
-    description: "Mots d'action et verbes puissants pour renforcer les descriptions",
+    title: "Improve Language",
+    description: "Action words and powerful verbs to strengthen descriptions",
     icon: Sparkles
   },
   "skills": {
-    title: "Mise en valeur des compétences",
-    description: "Mieux présenter vos compétences techniques et humaines",
+    title: "Skills Highlighting",
+    description: "Better present your technical and soft skills",
     icon: Check
   },
   "ats": {
-    title: "Optimisation ATS", 
-    description: "Améliorations spécifiques pour la compatibilité ATS",
+    title: "ATS Optimization", 
+    description: "Specific improvements for ATS compatibility",
     icon: AlertTriangle
   }
 };
@@ -78,23 +78,23 @@ const SUGGESTION_TYPES = {
 const FALLBACK_SUGGESTION_TYPES = [
   {
     type: "keyword",
-    title: "Ajouter des mots-clés d'industrie",
-    description: "L'inclusion de ces termes augmentera la visibilité avec les systèmes ATS."
+    title: "Add Industry Keywords",
+    description: "Including these terms will increase visibility with ATS systems."
   },
   {
     type: "achievement",
-    title: "Quantifier les réalisations",
-    description: "Ajoutez des métriques pour démontrer l'impact de votre travail."
+    title: "Quantify Achievements",
+    description: "Add metrics to demonstrate the impact of your work."
   },
   {
     type: "format",
-    title: "Améliorer le formatage",
-    description: "Changements de structure pour améliorer la lisibilité et l'apparence visuelle."
+    title: "Improve Formatting",
+    description: "Structural changes to improve readability and visual appearance."
   },
   {
     type: "language",
-    title: "Améliorer le langage",
-    description: "Mots d'action et verbes puissants pour renforcer les descriptions."
+    title: "Improve Language",
+    description: "Action words and powerful verbs to strengthen descriptions."
   }
 ];
 
@@ -214,11 +214,11 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
     <div className="bg-brand-50 border border-brand-100 rounded-lg p-4">
       <div className="flex items-center gap-2 mb-3">
         <Sparkles className="h-5 w-5 text-brand-600" />
-        <h3 className="font-medium">Suggestions IA</h3>
+        <h3 className="font-medium">AI Suggestions</h3>
       </div>
       
       {isOptimizing ? (
-        <p className="text-sm text-gray-500">Génération des suggestions...</p>
+        <p className="text-sm text-gray-500">Generating suggestions...</p>
       ) : suggestions && suggestions.length > 0 ? (
         <div className="space-y-4">
           {/* Group suggestions by type */}
@@ -227,7 +227,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
             // Get type info for the group
             const typeInfo = SUGGESTION_TYPES[groupKey as keyof typeof SUGGESTION_TYPES] || {
               title: groupKey.charAt(0).toUpperCase() + groupKey.slice(1),
-              description: "Suggestions pour améliorer votre CV",
+              description: "Suggestions to improve your resume",
               icon: Sparkles
             };
             
@@ -324,10 +324,10 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
                                   {suggestion.isApplied ? (
                                     <>
                                       <Check className="h-3 w-3 mr-1" />
-                                      Appliqué
+                                      Applied
                                     </>
                                   ) : (
-                                    'Appliquer la suggestion'
+                                    'Apply Suggestion'
                                   )}
                                 </Button>
                               )}

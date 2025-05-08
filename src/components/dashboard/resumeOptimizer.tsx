@@ -9,6 +9,7 @@
  * - Efficient data handling to minimize API requests
  * - Responsive layout with split view for content and suggestions
  * - Direct data propagation from API to UI without database reload
+ * - Enhanced ATS score handling and real-time updates
  */
 
 'use client';
@@ -41,6 +42,7 @@ import { resumeTemplates } from '@/constants/resumeTemplates';
 /**
  * ResumeOptimizer Component
  * Main component for the resume optimization workflow
+ * Enhanced with improved ATS score handling
  */
 const ResumeOptimizer: React.FC = () => {
   // =========================================================================
@@ -124,12 +126,65 @@ const ResumeOptimizer: React.FC = () => {
   const [hasResume, setHasResume] = useState<boolean | null>(null);    // User has a resume saved
   const [isUploadInProgress, setIsUploadInProgress] = useState(false); // File upload/analysis in progress
   
+  // ATS Score tracking state - Enhanced to track score updates
+  // This local score state helps ensure we always have the latest value
+  const [localAtsScore, setLocalAtsScore] = useState<number>(optimizationScore);
+  
   // Refs for managing asynchronous operations and preventing race conditions
   const isLoadingInProgressRef = useRef(false);    // Prevent concurrent loading
   const loadAttemptedRef = useRef(false);          // Track if load has been attempted
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timeout reference
   const loadingAttemptsRef = useRef(0);            // Track number of loading attempts
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Safety timeout to prevent infinite loading
+  const scoreUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce score updates
+
+  // =========================================================================
+  // Effects for Score Handling
+  // =========================================================================
+  
+  /**
+   * Synchronize optimizationScore to local state
+   * Ensures we always have the latest score value available
+   */
+  useEffect(() => {
+    // Only update if score actually changed and is a valid number
+    if (!isNaN(optimizationScore) && optimizationScore > 0 && optimizationScore !== localAtsScore) {
+      console.log(`Updating local ATS score from ${localAtsScore} to ${optimizationScore}`);
+      setLocalAtsScore(optimizationScore);
+    }
+  }, [optimizationScore, localAtsScore]);
+  
+  /**
+   * Handle score manager updates
+   * Ensures score changes from score manager propagate to state
+   */
+  useEffect(() => {
+    if (scoreManager?.currentScore && !isNaN(scoreManager.currentScore)) {
+      // Debounce score updates to prevent rapid UI changes
+      if (scoreUpdateTimeoutRef.current) {
+        clearTimeout(scoreUpdateTimeoutRef.current);
+      }
+      
+      scoreUpdateTimeoutRef.current = setTimeout(() => {
+        const newScore = scoreManager.currentScore;
+        console.log(`Score Manager update: new score ${newScore}`);
+        
+        // Update both local state and main state
+        setLocalAtsScore(newScore);
+        
+        // Only update main state if it has actually changed to prevent loops
+        if (newScore !== optimizationScore) {
+          setOptimizationScore(newScore);
+        }
+      }, 100);
+    }
+    
+    return () => {
+      if (scoreUpdateTimeoutRef.current) {
+        clearTimeout(scoreUpdateTimeoutRef.current);
+      }
+    };
+  }, [scoreManager?.currentScore, optimizationScore, setOptimizationScore]);
 
   // =========================================================================
   // Computed Values & Memoization
@@ -149,14 +204,18 @@ const ResumeOptimizer: React.FC = () => {
   /**
    * Calculate current resume score with breakdown
    * Using useMemo to prevent unnecessary recalculations
+   * Enhanced to use local score state for real-time updates
    */
   const currentScoreData = useMemo(() => {
+    // Always use the most up-to-date score available
+    const currentScore = localAtsScore || optimizationScore || 65;
+    
     return {
-      score: optimizationScore,
+      score: currentScore,
       breakdown: scoreManager?.scoreBreakdown || null,
       potentialScore: scoreManager?.scoreBreakdown?.potential || null
     };
-  }, [optimizationScore, scoreManager?.scoreBreakdown]);
+  }, [localAtsScore, optimizationScore, scoreManager?.scoreBreakdown]);
 
   /**
    * Check if any analysis process is currently active
@@ -291,8 +350,8 @@ const ResumeOptimizer: React.FC = () => {
 
   /**
    * Called when analysis completes (from UploadSection)
-   * Enhanced to receive optimized text and resume ID directly 
-   * with additional handling for score, suggestions and keywords
+   * Enhanced to receive optimized text, resume ID, ATS score, suggestions and keywords directly 
+   * with improved score handling
    */
   const handleAnalysisComplete = useCallback((
     optimizedTextContent?: string, 
@@ -322,9 +381,16 @@ const ResumeOptimizer: React.FC = () => {
         setResumeId(resumeIdValue);
       }
       
-      // Update score if provided
-      if (scoreValue !== undefined && setOptimizationScore) {
-        setOptimizationScore(scoreValue);
+      // Update score if provided - ENHANCED SCORE HANDLING
+      if (scoreValue !== undefined && !isNaN(scoreValue)) {
+        console.log("Received ATS score directly:", scoreValue);
+        
+        // Update both local and main score states
+        setLocalAtsScore(scoreValue);
+        
+        if (setOptimizationScore) {
+          setOptimizationScore(scoreValue);
+        }
       }
       
       // Update suggestions if provided
@@ -390,6 +456,7 @@ const ResumeOptimizer: React.FC = () => {
   /**
    * Submit text for optimization
    * Handles the API call for text-based resume optimization
+   * Enhanced with better score handling
    */
   const handleSubmitText = useCallback(async () => {
     // Validate minimum length
@@ -422,12 +489,23 @@ const ResumeOptimizer: React.FC = () => {
       // Parse API response to extract all needed data
       const result = await res.json();
       
+      // Log the complete API response for debugging ATS score
+      console.log("Complete API response:", result);
+      
       // If we get data from the API, use it directly
       if (result && result.optimizedText) {
         // Extract all necessary data
         const optimizedText = result.optimizedText;
         const resumeId = result.resumeId;
-        const atsScore = result.atsScore || 65;
+        
+        // Extract and validate ATS score with improved error handling
+        let atsScore = 65; // Default value
+        if (result.atsScore !== undefined && !isNaN(result.atsScore)) {
+          atsScore = result.atsScore;
+          console.log("Extracted valid ATS score:", atsScore);
+        } else {
+          console.warn("Invalid or missing ATS score in API response, using default:", atsScore);
+        }
         
         // Extract suggestions
         const suggestions = result.suggestions || [];
@@ -667,6 +745,10 @@ const ResumeOptimizer: React.FC = () => {
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
       }
+      
+      if (scoreUpdateTimeoutRef.current) {
+        clearTimeout(scoreUpdateTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -846,7 +928,7 @@ const ResumeOptimizer: React.FC = () => {
 
                     {/* Sidebar with optimization controls - takes 2 columns */}
                     <div className="col-span-2 flex flex-col gap-4">
-                      {/* ATS Score card with detailed metrics */}
+                      {/* ATS Score card with detailed metrics - Enhanced with proper score data */}
                       <ScoreCard 
                         optimizationScore={currentScoreData.score}
                         resumeContent={displayContent}
