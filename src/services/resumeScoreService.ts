@@ -612,6 +612,10 @@ export class ResumeScoreService {
     
     // Update the base score
     this.baseScore = newBaseScore;
+
+    // IMPORTANT: Update the current score directly to match the new base score
+    // This ensures the API score takes precedence
+    this.currentScore = newBaseScore;
     
     // Recalculate the current score with the new base score
     // This ensures all suggestion and keyword effects are still applied

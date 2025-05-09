@@ -188,9 +188,16 @@ const ResumeOptimizer: React.FC = () => {
       // Use a timeout to both show the calculation animation and ensure
       // all other components have rendered completely
       setTimeout(() => {
-        // If we have a score manager, force update the score
-        if (scoreManager && scoreManager.updateBaseScore && localAtsScore > 0) {
-          console.log("Updating base score in score manager to:", localAtsScore);
+        // MODIFICATION ICI: Vérifier d'abord le scoreManager
+        // Si scoreManager a déjà un score supérieur à localAtsScore, utiliser ce score
+        if (scoreManager && scoreManager.getCurrentScore && scoreManager.getCurrentScore() > localAtsScore) {
+          const scoreManagerScore = scoreManager.getCurrentScore();
+          console.log(`Using higher score from scoreManager: ${scoreManagerScore} instead of localAtsScore: ${localAtsScore}`);
+          setLocalAtsScore(scoreManagerScore);
+        }
+        // Sinon, si nous avons un score local valide, utiliser ce score pour mettre à jour le scoreManager
+        else if (localAtsScore > 0 && scoreManager && scoreManager.updateBaseScore) {
+          console.log("Updating scoreManager with localAtsScore:", localAtsScore);
           scoreManager.updateBaseScore(localAtsScore);
         }
         
@@ -205,13 +212,32 @@ const ResumeOptimizer: React.FC = () => {
    * Synchronize optimizationScore to local state
    * Ensures we always have the latest score value available
    */
+  /**
+ * Synchronize optimizationScore to local state
+ * Ensures we always have the latest score value available
+ */
   useEffect(() => {
+    // PROBLÈME ICI: Cette ligne reset à 65 quand optimizationScore est 65
     // Only update if score actually changed and is a valid number
     if (!isNaN(optimizationScore) && optimizationScore > 0 && optimizationScore !== localAtsScore) {
+      // Ajout d'une protection pour éviter de revenir à un score inférieur
+      // après avoir reçu un score supérieur de l'API
+      if (localAtsScore > optimizationScore) {
+        console.log(`Ignoring downgrade of score from ${localAtsScore} to ${optimizationScore}`);
+        
+        // Si le scoreManager existe, forcer sa valeur à notre valeur supérieure
+        if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
+          console.log(`Ensuring scoreManager uses higher score: ${localAtsScore}`);
+          scoreManager.updateBaseScore(localAtsScore);
+        }
+        
+        return;
+      }
+      
       console.log(`Updating local ATS score from ${localAtsScore} to ${optimizationScore}`);
       setLocalAtsScore(optimizationScore);
     }
-  }, [optimizationScore, localAtsScore]);
+  }, [optimizationScore, localAtsScore, scoreManager]);
   
   /**
    * Handle score manager updates
@@ -388,6 +414,62 @@ const ResumeOptimizer: React.FC = () => {
   }, []);
 
   /**
+   * Emergency method to force update the score across all components
+   * This method bypasses normal update mechanisms to force a score value
+   * throughout the system, ensuring consistency across all components
+   * 
+   * Used when a specific score value needs to take precedence over
+   * calculated values, such as when receiving a score from the API
+   * 
+   * @param scoreValue - The new score value to force across the system
+   */
+  const forceScoreUpdate = useCallback((scoreValue: number) => {
+    // Validate input to prevent invalid scores
+    if (!scoreValue || isNaN(scoreValue) || scoreValue <= 0 || scoreValue > 100) {
+      console.log("Invalid score value ignored:", scoreValue);
+      return;
+    }
+    
+    console.log("Force updating score across the system:", scoreValue);
+    
+    // 1. Update local state for immediate UI feedback
+    setLocalAtsScore(scoreValue);
+    
+    // 2. Update main optimization score state for persistence
+    if (setOptimizationScore) {
+      setOptimizationScore(scoreValue);
+    }
+    
+    // 3. Force update in score manager which handles calculations and metrics
+    if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
+      console.log("Direct score update in scoreManager:", scoreValue);
+      scoreManager.updateBaseScore(scoreValue);
+      
+      // Optional: Force refresh score breakdown if method available
+      if (scoreManager.getScoreBreakdown) {
+        const breakdown = scoreManager.getScoreBreakdown();
+        console.log("Updated score breakdown after force update:", breakdown);
+      }
+    }
+    
+    // 4. Mark score initialization as completed to prevent further automatic updates
+    // that might override our forced value
+    setDataLoadingSequence(prev => ({ ...prev, scoreInitialized: true }));
+    
+    // 5. Log final state for debugging purposes
+    setTimeout(() => {
+      console.log("Score system state after force update:", {
+        forcedValue: scoreValue,
+        localAtsScore: localAtsScore,
+        optimizationScore: optimizationScore,
+        scoreManagerBaseScore: scoreManager?.getBaseScore?.() || 'N/A',
+        scoreManagerCurrentScore: scoreManager?.currentScore || 'N/A',
+        loadingSequence: dataLoadingSequence
+      });
+    }, 100);
+  }, [setOptimizationScore, scoreManager, setDataLoadingSequence, localAtsScore, optimizationScore, dataLoadingSequence]);
+
+  /**
    * Handle file upload completion
    * Updates file-related state variables
    */
@@ -483,17 +565,7 @@ const ResumeOptimizer: React.FC = () => {
             console.log("Setting final ATS score:", scoreValue);
             
             // IMPORTANT: Update both local and main score states first
-            setLocalAtsScore(scoreValue);
-            
-            if (setOptimizationScore) {
-              setOptimizationScore(scoreValue);
-            }
-            
-            // CRITICAL: Update score directly in score manager using the new API
-            if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
-              console.log("Directly updating score in score manager to:", scoreValue);
-              scoreManager.updateBaseScore(scoreValue);
-            }
+            forceScoreUpdate(scoreValue)
             
             // Debug log to verify all score values are in sync
             console.log("DEBUG - Scores after update:", {
@@ -569,7 +641,8 @@ const ResumeOptimizer: React.FC = () => {
     setSuggestions,
     setKeywords,
     scoreManager,
-    setLocalAtsScore
+    setLocalAtsScore,
+    forceScoreUpdate
   ]);
 
   /**
@@ -992,34 +1065,6 @@ const ResumeOptimizer: React.FC = () => {
                       isEditing={isEditing} 
                       onReset={() => setShowResetDialog(true)} 
                     />
-                  )}
-                
-                  {/* Regenerate button - shows when changes need to be applied */}
-                  {needsRegeneration && !isEditing && (
-                    <div className="flex justify-end">
-                      <Button 
-                        onClick={handleRegenerateResume}
-                        disabled={isApplyingChanges}
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                      >
-                        {isApplyingChanges ? (
-                          <>
-                            <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                            </svg>
-                            Applying changes...
-                          </>
-                        ) : (
-                          <>
-                            <svg className="h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
-                            </svg>
-                            Apply Changes
-                          </>
-                        )}
-                      </Button>
-                    </div>
                   )}
                   
                   {/* Main content area with 5-column grid layout */}

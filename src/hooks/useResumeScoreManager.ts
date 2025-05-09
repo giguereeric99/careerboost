@@ -10,6 +10,7 @@
  * - Clean separation of UI state and business logic
  * - Cache mechanism to prevent unnecessary recalculations
  * - Enhanced event propagation for score changes
+ * - API score priority to ensure correct display of ATS scores
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -62,6 +63,7 @@ interface ResumeScoreManagerResult {
   updateContent: (newContent: string) => void; // Update resume content
   resetAllChanges: () => void;      // Reset all to initial state
   applyAllChanges: () => void;      // Apply all suggestions and keywords
+  forceUpdateScore: (score: number) => void; // Force update the score (from API)
   
   // Impact simulation
   simulateSuggestionImpact: (index: number) => { 
@@ -142,6 +144,59 @@ export function useResumeScoreManager({
   // Update tracking refs - Used to prevent recursive updates
   const isUpdatingRef = useRef<boolean>(false);
   const pendingScoreUpdatesRef = useRef<boolean>(false);
+  
+  // API score override tracking - Used to prioritize API-provided scores
+  const directScoreUpdateRef = useRef<number | null>(null);
+  const apiScoreRef = useRef<number | null>(null);
+  
+  // =========================================================================
+  // Metrics Generation - Defined early to avoid circular dependencies
+  // =========================================================================
+  
+  /**
+   * Generate metrics with error handling
+   * Calculates and updates optimization metrics for reporting and analytics
+   * 
+   * @returns The newly generated metrics or null if generation fails
+   */
+  const generateMetrics = useCallback(() => {
+    // Validate required dependencies and service
+    if (!generateOptimizationMetrics || !scoreServiceRef.current) return null;
+
+    try {
+      // Get current data from service for consistent metrics calculation
+      const service = scoreServiceRef.current;
+      const initialScoreVal = service.getBaseScore();
+      const currentScoreVal = service.getCurrentScore();
+      const appliedSugs = service.getAppliedSuggestions();
+      const appliedKeys = service.getAppliedKeywords();
+
+      // Generate metrics using the metrics exporter service
+      const newMetrics = generateOptimizationMetrics(
+        initialScoreVal,
+        currentScoreVal,
+        appliedSugs,
+        appliedKeys,
+        startTimeRef.current
+      );
+
+      // Log metrics for debugging
+      console.log("Generated optimization metrics:", {
+        initialScore: initialScoreVal,
+        currentScore: currentScoreVal,
+        improvement: currentScoreVal - initialScoreVal,
+        appliedSuggestions: appliedSugs.length,
+        appliedKeywords: appliedKeys.length
+      });
+
+      // Update metrics state with new data
+      setMetrics(newMetrics);
+      return newMetrics;
+    } catch (error) {
+      console.error("Error generating metrics:", error);
+      return null;
+    }
+  }, []);
   
   // =========================================================================
   // Score Change Notification
@@ -236,6 +291,11 @@ export function useResumeScoreManager({
       
       console.log("Initializing score service with score:", scoreToUse, "instead of default:", initialScore);
       
+      // IMPORTANT: Si le currentScore est déjà défini et supérieur à initialScore,
+      // utiliser currentScore pour éviter de revenir à un score inférieur
+      const finalScoreToUse = Math.max(scoreToUse, initialScore);
+      console.log(`Final score used for initialization: ${finalScoreToUse}`);
+      
       // Update reference values to track changes for future comparisons
       prevInitialScoreRef.current = initialScore;
       prevResumeContentRef.current = resumeContent;
@@ -244,7 +304,7 @@ export function useResumeScoreManager({
       
       // Create score service with configuration and debounced callback
       scoreServiceRef.current = new ResumeScoreService(
-        scoreToUse,  // Use actual current score instead of initial value
+        finalScoreToUse,  // Use actual current score instead of initial value
         resumeContent,
         initialSuggestions,
         initialKeywords,
@@ -263,7 +323,7 @@ export function useResumeScoreManager({
         setScoreBreakdown(breakdown);
         
         // Ensure UI correctly shows the initial score
-        notifyScoreChange(scoreToUse);
+        notifyScoreChange(finalScoreToUse);
       }
       
       // Mark as initialized to avoid unnecessary reinitializations
@@ -294,9 +354,9 @@ export function useResumeScoreManager({
     try {
       console.log("Safely updating score service");
       
-      // Use the current score from state instead of the initial prop
-      // This ensures the latest score value is maintained during updates
-      const scoreToUse = currentScore || initialScore;
+      // Prioritize API-provided scores over other values
+      // This ensures score from API always takes precedence
+      const scoreToUse = apiScoreRef.current || directScoreUpdateRef.current || currentScore || initialScore;
       console.log("Using score for update:", scoreToUse);
       
       // Update reference values for future change detection
@@ -324,6 +384,10 @@ export function useResumeScoreManager({
       // Update UI state with new data
       setSuggestions(initialSuggestions);
       setKeywords(initialKeywords);
+      
+      // Clear the reference values after use
+      apiScoreRef.current = null;
+      directScoreUpdateRef.current = null;
       
     } catch (error) {
       console.error("Error updating score service:", error);
@@ -369,8 +433,25 @@ export function useResumeScoreManager({
     haveDependenciesChanged
   ]);
 
+  /**
+   * Ensure API scores take priority over internal scores
+   * This effect monitors for API score changes and ensures they are applied
+   */
+  useEffect(() => {
+    // If an API score has been set and it's different from current score
+    if (apiScoreRef.current && apiScoreRef.current !== currentScore) {
+      console.log(`API score override: ${apiScoreRef.current} differs from current (${currentScore})`);
+      
+      // Use forceUpdateScore to update the score immediately
+      forceUpdateScore(apiScoreRef.current);
+      
+      // Clear the API score reference to prevent repeated updates
+      apiScoreRef.current = null;
+    }
+  }, [currentScore]); // Only depend on currentScore to prevent unnecessary triggers
+  
   // =========================================================================
-  // Direct Score Update Methods (NEW)
+  // Direct Score Update Methods
   // =========================================================================
   
   /**
@@ -388,7 +469,8 @@ export function useResumeScoreManager({
     
     console.log("DIRECT BASE SCORE UPDATE:", score);
     
-    // Store the direct update score for initialization/update methods to use
+    // Store the API score for initialization/update methods to use
+    apiScoreRef.current = score;
     directScoreUpdateRef.current = score;
     
     // If score service is already initialized, update it directly
@@ -414,12 +496,9 @@ export function useResumeScoreManager({
       
       // Notify about the score change
       notifyScoreChange(score);
-      
-      // Clear the direct update ref after use
-      directScoreUpdateRef.current = null;
     } else {
       // If service not initialized yet, just update state
-      // The direct update ref will be used during initialization
+      // The API score ref will be used during initialization
       console.log("Service not initialized yet, updating state directly");
       notifyScoreChange(score);
     }
@@ -446,55 +525,42 @@ export function useResumeScoreManager({
     }
     return currentScore;
   }, [currentScore]);
-  
-  // =========================================================================
-  // Metrics Generation
-  // =========================================================================
-  
+
   /**
-   * Generate metrics with error handling
-   * Calculates and updates optimization metrics for reporting and analytics
+   * Force update the base score directly
+   * This method is used to ensure the score from API is properly applied
+   * It bypasses normal score calculation to ensure API score is honored
    * 
-   * @returns The newly generated metrics or null if generation fails
+   * @param newScore - The new score from API
    */
-  const generateMetrics = useCallback(() => {
-    // Validate required dependencies and service
-    if (!generateOptimizationMetrics || !scoreServiceRef.current) return null;
-
-    try {
-      // Get current data from service for consistent metrics calculation
-      const service = scoreServiceRef.current;
-      const initialScoreVal = service.getBaseScore();
-      const currentScoreVal = service.getCurrentScore();
-      const appliedSugs = service.getAppliedSuggestions();
-      const appliedKeys = service.getAppliedKeywords();
-
-      // Generate metrics using the metrics exporter service
-      const newMetrics = generateOptimizationMetrics(
-        initialScoreVal,
-        currentScoreVal,
-        appliedSugs,
-        appliedKeys,
-        startTimeRef.current
-      );
-
-      // Log metrics for debugging
-      console.log("Generated optimization metrics:", {
-        initialScore: initialScoreVal,
-        currentScore: currentScoreVal,
-        improvement: currentScoreVal - initialScoreVal,
-        appliedSuggestions: appliedSugs.length,
-        appliedKeywords: appliedKeys.length
-      });
-
-      // Update metrics state with new data
-      setMetrics(newMetrics);
-      return newMetrics;
-    } catch (error) {
-      console.error("Error generating metrics:", error);
-      return null;
+  const forceUpdateScore = useCallback((newScore: number) => {
+    // Validate input
+    if (isNaN(newScore) || newScore < 0 || newScore > 100) {
+      console.warn("Invalid score value for forceUpdateScore:", newScore);
+      return;
     }
-  }, []);
+    
+    console.log("FORCE UPDATE: Setting score directly to", newScore);
+    
+    // Update internal state immediately
+    setCurrentScore(newScore);
+    
+    // Store the API score for future use
+    apiScoreRef.current = newScore;
+    
+    // If score service exists, update it directly
+    if (scoreServiceRef.current && typeof scoreServiceRef.current.updateBaseScore === 'function') {
+      console.log("Forcing score update in service to:", newScore);
+      scoreServiceRef.current.updateBaseScore(newScore);
+      
+      // Update breakdown to ensure UI consistency
+      const breakdown = scoreServiceRef.current.getScoreBreakdown();
+      setScoreBreakdown(breakdown);
+      
+      // Generate new metrics with the updated score
+      generateMetrics();
+    }
+  }, [generateMetrics]);
   
   // =========================================================================
   // Core Score Manipulation Functions
@@ -1012,6 +1078,7 @@ export function useResumeScoreManager({
     updateContent,
     resetAllChanges,
     applyAllChanges,
+    forceUpdateScore,  // New direct score update function
     
     // Impact simulation for previews
     simulateSuggestionImpact,
@@ -1024,11 +1091,3 @@ export function useResumeScoreManager({
     saveState
   };
 }
-
-/**
- * Default export for compatibility with various import styles
- * Allows both named and default imports:
- * import { useResumeScoreManager } from './useResumeScoreManager';
- * import useResumeScoreManager from './useResumeScoreManager';
- */
-export default useResumeScoreManager;

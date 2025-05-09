@@ -509,50 +509,69 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   /**
    * Reset resume with improved error handling and state cleanup
    */
-  const handleReset = useCallback(async () => {
+  const handleReset = useCallback(async (): Promise<boolean> => {
+    // Validate state before proceeding
+    if (!resumeId || operationInProgressRef.current) return false;
+    
     try {
-      // Call original hook function
-      const success = await resetResume();
+      // Set operation flag
+      operationInProgressRef.current = true;
+      setIsResetting(true);
       
-      if (success) {
-        // Reset score manager if available
-        if (scoreManager) {
-          scoreManager.resetAllChanges();
-        }
-        
-        // Clear tracking refs
-        appliedSuggestionsRef.current = [];
-        appliedKeywordsRef.current = [];
-        
-        // Reset state
-        setAppliedSuggestions([]);
-        setAppliedKeywords([]);
-        
-        // Reset suggestions and keywords to their initial state
-        setLocalSuggestions(localSuggestions.map(s => ({...s, isApplied: false})));
-        setLocalKeywords(localKeywords.map(k => ({...k, applied: false})));
-        
-        // Set processed HTML to the original optimized text
-        if (optimizedText) {
-          try {
-            const processedContent = prepareOptimizedTextForEditor(optimizedText);
-            setProcessedHtml(processedContent);
-            lastProcessedContentRef.current = processedContent;
-          } catch (error) {
-            console.error("Error processing optimized text after reset:", error);
-            setProcessedHtml(optimizedText);
-            lastProcessedContentRef.current = optimizedText;
-          }
-        }
+      // Call the API to reset the resume
+      const response = await fetch('/api/resumes', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resumeId,
+          action: 'reset',
+          resetScore: true // New parameter indicating to reset the score as well
+        })
+      });
+      
+      // Handle API errors
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to reset resume');
       }
       
-      return success;
-    } catch (error) {
-      console.error("Error resetting resume:", error);
-      toast.error("Failed to reset resume");
+      // Parse the response
+      const result = await response.json();
+      
+      // Update local state
+      // Clear the edited text state
+      setEditedText(null);
+      
+      // Reset suggestions (all to unapplied)
+      setSuggestions(prev => prev.map(s => ({...s, isApplied: false})));
+      
+      // Reset keywords (all to unapplied)
+      setKeywords(prev => prev.map(k => ({...k, applied: false})));
+      
+      // Reset needs regeneration flag
+      setNeedsRegeneration(false);
+      
+      // Reset score to original optimized score if available
+      if (scoreManager && typeof scoreManager.resetAllChanges === 'function') {
+        console.log("Resetting score in score manager to original state");
+        scoreManager.resetAllChanges();
+      }
+      
+      // Notify user
+      toast.success('Resume reset to original optimized version');
+      
+      return true;
+    } catch (error: any) {
+      // Handle reset errors
+      console.error('Error resetting resume:', error);
+      toast.error(`Failed to reset resume: ${error.message || 'An unexpected error occurred'}`);
       return false;
+    } finally {
+      // Always reset operation flag
+      setIsResetting(false);
+      operationInProgressRef.current = false;
     }
-  }, [resetResume, optimizedText, scoreManager, localSuggestions, localKeywords]);
+  }, [resumeId, setEditedText, setSuggestions, setKeywords, resumeOptimizer, scoreManager]);
   
   /**
    * Save resume with improved validation and error handling
@@ -588,6 +607,23 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
         return false;
       }
       
+      // Get current score for persistence
+      // Try multiple sources to ensure we have the most accurate score
+      let currentScore = 65; // Default fallback
+      
+      if (scoreManager && typeof scoreManager.getCurrentScore === 'function') {
+        currentScore = scoreManager.getCurrentScore();
+        console.log("Using score from scoreManager.getCurrentScore():", currentScore);
+      } else if (localOptimizationScore) {
+        currentScore = localOptimizationScore;
+        console.log("Using score from localOptimizationScore:", currentScore);
+      } else if (optimizationScore) {
+        currentScore = optimizationScore;
+        console.log("Using score from optimizationScore:", currentScore);
+      }
+      
+      console.log("Final score being saved to database:", currentScore);
+      
       // Save to database using the API
       const response = await fetch('/api/resumes', {
         method: 'POST',
@@ -597,7 +633,8 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
         body: JSON.stringify({
           resumeId: localResumeId,
           content: safeContent,
-          userId: userId
+          userId: userId,
+          atsScore: currentScore, // Current ATS score to save in last_saved_score_ats
         }),
       });
       
@@ -642,7 +679,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       // Return failure
       return false;
     }
-  }, [localResumeId, userId, resumeOptimizer.setEditedText, scoreManager]);
+  }, [localResumeId, userId, resumeOptimizer.setEditedText, scoreManager, localOptimizationScore, optimizationScore]);
   
   /**
    * Return enhanced hook with improved state management

@@ -11,9 +11,11 @@
  * - Potential score improvement indicator
  * - Enhanced score transition animations
  * - Loading animation while score is being calculated
+ * - Score consistency protection to ensure accurate display
+ * - Support for legitimately low scores (below 65)
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Sparkles, Info, TrendingUp } from "lucide-react";
 import {
@@ -43,6 +45,8 @@ interface ScoreCardProps {
  * ScoreCard component displays a circular visual representation of the resume score
  * along with contextual feedback and improvement metrics.
  * Enhanced to handle score updates smoothly with animations and show calculation state.
+ * Added score consistency protection to ensure accuracy of displayed score.
+ * Added support for legitimately low scores (below 65) from the API.
  */
 const ScoreCard: React.FC<ScoreCardProps> = ({
   optimizationScore,
@@ -75,6 +79,14 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   const animationFrameRef = useRef<number | null>(null);
   // Animation start time tracking for smoother transitions
   const startTimeRef = useRef<number>(0);
+  // Track the highest score we've seen for reference
+  const highestScoreRef = useRef<number>(optimizationScore || 65);
+  // Store the last valid score breakdown for consistency
+  const lastValidBreakdownRef = useRef<ScoreBreakdown | null>(null);
+  // Flag to indicate if we've received at least one genuine API score
+  const hasReceivedApiScoreRef = useRef<boolean>(false);
+  // Track score from last breakdown for comparison
+  const lastBreakdownScoreRef = useRef<number | null>(null);
   
   // =========================================================================
   // Animation Configuration
@@ -84,6 +96,109 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   const ANIMATION_DURATION = 800; // 0.8 seconds
   // Target frames per second - higher for smoother animation
   const ANIMATION_FPS = 60;
+
+  // =========================================================================
+  // Score Processing Logic
+  // =========================================================================
+  
+  /**
+   * Process incoming score to ensure consistency and validity
+   * Uses multiple strategies to determine the most accurate score to display
+   * Updated to properly handle legitimately low scores (below default 65)
+   */
+  const processedScore = useMemo(() => {
+    // Start with the provided optimization score
+    let finalScore = optimizationScore;
+    const FALLBACK_SCORE = 65; // Default fallback score if all else fails
+    
+    // Log incoming score for debugging
+    console.log(`ScoreCard: Processing incoming score: ${optimizationScore}`);
+    
+    // STRATEGY 1: Check if this appears to be a direct API score (most reliable source)
+    // If scoreBreakdown is present with matching total, this is likely a fresh API score
+    if (scoreBreakdown && typeof scoreBreakdown.total === 'number') {
+      const breakdownTotal = scoreBreakdown.total;
+      
+      // Store breakdown score for future reference
+      lastBreakdownScoreRef.current = breakdownTotal;
+      lastValidBreakdownRef.current = scoreBreakdown;
+      
+      // Check if breakdown score matches optimization score (± small margin of error)
+      const scoreMatchesBreakdown = Math.abs(breakdownTotal - optimizationScore) <= 2;
+      
+      if (scoreMatchesBreakdown) {
+        // This is a reliable API score, mark as received and use it
+        hasReceivedApiScoreRef.current = true;
+        finalScore = optimizationScore;
+        console.log(`ScoreCard: Using matched score from API/breakdown: ${finalScore}`);
+      }
+      // If mismatch between breakdown.total and optimizationScore, prefer breakdown
+      else if (breakdownTotal > 0) {
+        console.log(`ScoreCard: Score mismatch - optimizationScore: ${optimizationScore}, breakdown.total: ${breakdownTotal}. Using breakdown score.`);
+        finalScore = breakdownTotal;
+        hasReceivedApiScoreRef.current = true;
+      }
+    }
+    // When we have optimization score but no breakdown
+    else if (optimizationScore !== undefined && optimizationScore !== null) {
+      // If score is in valid range and appears to be from API
+      if (optimizationScore >= 0 && optimizationScore <= 100) {
+        // Valid score range, mark as API score
+        hasReceivedApiScoreRef.current = true;
+      }
+    }
+    
+    // STRATEGY 2: Protection against incorrect score downgrades
+    // Only apply if:
+    // 1. We've already received a genuine API score
+    // 2. We have a higher recorded score
+    // 3. The current score drop is significant (>5 points) and doesn't come with a breakdown
+    // 4. We're not in score calculation state
+    if (!isCalculating && 
+        hasReceivedApiScoreRef.current && 
+        highestScoreRef.current && 
+        finalScore !== null && 
+        highestScoreRef.current > finalScore && 
+        (highestScoreRef.current - finalScore) > 5 &&
+        !scoreBreakdown) {
+      
+      // This looks like a suspicious downgrade
+      console.log(`ScoreCard: Suspicious score downgrade detected - from ${highestScoreRef.current} to ${finalScore}`);
+      
+      // Check if we have a valid last breakdown score for reference
+      if (lastBreakdownScoreRef.current !== null) {
+        console.log(`ScoreCard: Using last breakdown score: ${lastBreakdownScoreRef.current}`);
+        finalScore = lastBreakdownScoreRef.current;
+      } else {
+        // If no breakdown reference, use highest recorded score
+        console.log(`ScoreCard: Using highest recorded score: ${highestScoreRef.current}`);
+        finalScore = highestScoreRef.current;
+      }
+    }
+    
+    // STRATEGY 3: If score is NULL or invalid but we have a previous valid score
+    if ((finalScore === null || finalScore === undefined || isNaN(finalScore) || finalScore < 0) &&
+        lastBreakdownScoreRef.current) {
+      console.log(`ScoreCard: Invalid score detected, using last breakdown score: ${lastBreakdownScoreRef.current}`);
+      finalScore = lastBreakdownScoreRef.current;
+    }
+    
+    // Final fallback to default value if all else fails and we have no API score yet
+    if ((finalScore === null || finalScore === undefined || isNaN(finalScore)) && 
+        !hasReceivedApiScoreRef.current) {
+      console.log(`ScoreCard: Using default score (${FALLBACK_SCORE}) as fallback - no API score received yet`);
+      finalScore = FALLBACK_SCORE;
+    }
+    
+    // Update highest score reference if we have a new high
+    if (finalScore !== null && finalScore > highestScoreRef.current) {
+      console.log(`ScoreCard: Updating highest score record from ${highestScoreRef.current} to ${finalScore}`);
+      highestScoreRef.current = finalScore;
+    }
+    
+    // Return the processed score
+    return finalScore;
+  }, [optimizationScore, scoreBreakdown, isCalculating]);
 
   // =========================================================================
   // Utility Functions
@@ -198,7 +313,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   
   /**
    * Handle score changes and animate transitions
-   * Triggers animation when the optimizationScore prop changes
+   * Triggers animation when the processedScore changes
    * Improved to detect and properly animate even small score changes
    */
   useEffect(() => {
@@ -208,7 +323,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
     }
     
     // Ensure we have a valid score value
-    const currentScore = optimizationScore || 65;
+    const currentScore = processedScore;
     
     // Log incoming score changes for debugging
     console.log(`ScoreCard: Score update received: ${currentScore} (previous: ${previousScore})`);
@@ -227,7 +342,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
     // Start animation from current display score to new target score
     animateScoreChange(currentScore, displayScore);
     
-  }, [optimizationScore, previousScore, displayScore, animateScoreChange, isCalculating]);
+  }, [processedScore, previousScore, displayScore, animateScoreChange, isCalculating]);
 
   /**
    * Set appropriate feedback message based on score range
@@ -251,8 +366,12 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
       setFeedbackMessage("Good progress. Apply more suggestions to improve further.");
     } else if (roundedScore >= 60) {
       setFeedbackMessage("Your resume needs additional optimization to stand out.");
-    } else {
+    } else if (roundedScore >= 50) {
       setFeedbackMessage("Your resume needs significant optimization to pass ATS filters.");
+    } else if (roundedScore >= 30) {
+      setFeedbackMessage("Your resume needs major improvements to be considered by ATS systems.");
+    } else {
+      setFeedbackMessage("Your resume requires a complete overhaul to meet ATS standards.");
     }
   }, [displayScore, isCalculating]);
 
@@ -280,11 +399,11 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   const displayScoreRounded = Math.round(displayScore);
   
   // Calculate improvement metrics for display
-  const improvement = initialScore ? Math.round((optimizationScore - initialScore) * 10) / 10 : 0;
+  const improvement = initialScore ? Math.round((processedScore - initialScore) * 10) / 10 : 0;
   
   // Calculate potential remaining improvement
-  const remainingPotential = potentialScore && potentialScore > optimizationScore 
-    ? Math.round((potentialScore - optimizationScore) * 10) / 10 
+  const remainingPotential = potentialScore && potentialScore > processedScore 
+    ? Math.round((potentialScore - processedScore) * 10) / 10 
     : 0;
 
   // =========================================================================
@@ -335,7 +454,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
                   {/* Show improvement indicator when score is increasing */}
                   {isIncreasing && (
                     <span className="absolute -top-1 -right-1 text-xs text-green-500 font-medium animate-pulse">
-                      +{(optimizationScore - previousScore).toFixed(1)}
+                      +{(processedScore - previousScore).toFixed(1)}
                     </span>
                   )}
                 </div>

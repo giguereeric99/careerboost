@@ -4,13 +4,14 @@
  * 
  * Complete RESTful API for all resume operations:
  * - GET: Fetch resume by ID or latest resume for a user
- * - POST: Save/update resume content to last_saved_text
+ * - POST: Save/update resume content to last_saved_text and last_saved_score_ats
  * - PUT: Update resume properties
  * - DELETE: Delete a resume
- * - PATCH: Reset resume to original optimized version
+ * - PATCH: Reset resume to original optimized version (clears last_saved_text and last_saved_score_ats)
  * 
  * This combined approach centralizes all resume-related operations
  * while maintaining clear separation of concerns and robust error handling.
+ * Enhanced with support for the last_saved_score_ats field to track edited resume scores.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -57,6 +58,7 @@ try {
  * GET handler for resume data
  * Fetches a resume by ID or gets the latest resume for a user
  * Combines functionality from previous separate API routes
+ * Includes last_saved_score_ats in response
  */
 export async function GET(req: NextRequest) {
   try {
@@ -97,11 +99,16 @@ export async function GET(req: NextRequest) {
         }, { status: 404 });
       }
       
+      // Return with convenience fields for current version of text and score
       return NextResponse.json({
         data: {
           ...resume,
           keywords: resume.resume_keywords,
-          suggestions: resume.resume_suggestions
+          suggestions: resume.resume_suggestions,
+          // Add convenience fields for the most current version
+          current_text: resume.last_saved_text || resume.optimized_text,
+          current_score: resume.last_saved_score_ats !== null ? resume.last_saved_score_ats : resume.ats_score,
+          has_edits: !!resume.last_saved_text
         }
       });
     }
@@ -128,11 +135,17 @@ export async function GET(req: NextRequest) {
       if (!authUserError && authUserData && authUserData.length > 0) {
         console.log('Found resume using auth_user_id:', authUserData[0].id);
         
+        // Return with convenience fields for current version
         return NextResponse.json({
           data: {
             ...authUserData[0],
             keywords: authUserData[0].resume_keywords,
-            suggestions: authUserData[0].resume_suggestions
+            suggestions: authUserData[0].resume_suggestions,
+            // Add convenience fields for the most current version
+            current_text: authUserData[0].last_saved_text || authUserData[0].optimized_text,
+            current_score: authUserData[0].last_saved_score_ats !== null ? 
+              authUserData[0].last_saved_score_ats : authUserData[0].ats_score,
+            has_edits: !!authUserData[0].last_saved_text
           }
         });
       }
@@ -154,11 +167,17 @@ export async function GET(req: NextRequest) {
       if (!userIdError && userIdData && userIdData.length > 0) {
         console.log('Found resume using user_id:', userIdData[0].id);
         
+        // Return with convenience fields for current version
         return NextResponse.json({
           data: {
             ...userIdData[0],
             keywords: userIdData[0].resume_keywords,
-            suggestions: userIdData[0].resume_suggestions
+            suggestions: userIdData[0].resume_suggestions,
+            // Add convenience fields for the most current version
+            current_text: userIdData[0].last_saved_text || userIdData[0].optimized_text,
+            current_score: userIdData[0].last_saved_score_ats !== null ? 
+              userIdData[0].last_saved_score_ats : userIdData[0].ats_score,
+            has_edits: !!userIdData[0].last_saved_text
           }
         });
       }
@@ -184,11 +203,17 @@ export async function GET(req: NextRequest) {
         if (!supabaseUserError && supabaseUserData && supabaseUserData.length > 0) {
           console.log('Found resume using supabase_user_id:', supabaseUserData[0].id);
           
+          // Return with convenience fields for current version
           return NextResponse.json({
             data: {
               ...supabaseUserData[0],
               keywords: supabaseUserData[0].resume_keywords,
-              suggestions: supabaseUserData[0].resume_suggestions
+              suggestions: supabaseUserData[0].resume_suggestions,
+              // Add convenience fields for the most current version
+              current_text: supabaseUserData[0].last_saved_text || supabaseUserData[0].optimized_text,
+              current_score: supabaseUserData[0].last_saved_score_ats !== null ? 
+                supabaseUserData[0].last_saved_score_ats : supabaseUserData[0].ats_score,
+              has_edits: !!supabaseUserData[0].last_saved_text
             }
           });
         }
@@ -214,14 +239,15 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST handler for saving resume content
- * Updates the last_saved_text field of a resume
+ * POST handler for saving resume content and score
+ * Updates the last_saved_text field of a resume and last_saved_score_ats fields
+ * Enhanced with support for saving ATS score alongside the resume content
  */
 export async function POST(req: NextRequest) {
   try {
     // Parse request body
     const body = await req.json();
-    const { resumeId, content, userId } = body;
+    const { resumeId, content, userId, atsScore } = body;
     
     // Validate request body
     if (!resumeId || !content) {
@@ -260,6 +286,21 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
     
+    // Validate ATS score if provided
+    let validatedAtsScore = null;
+    if (atsScore !== undefined) {
+      // Convert to number if it's a string
+      const scoreValue = typeof atsScore === 'string' ? parseInt(atsScore, 10) : atsScore;
+      
+      // Check if it's a valid number in range 0-100
+      if (!isNaN(scoreValue) && scoreValue >= 0 && scoreValue <= 100) {
+        validatedAtsScore = scoreValue;
+        console.log(`Saving resume ID ${resumeId} with ATS score: ${validatedAtsScore}`);
+      } else {
+        console.warn(`Invalid ATS score provided: ${atsScore}. Will not save score.`);
+      }
+    }
+    
     console.log(`Saving resume ID ${resumeId} with content length: ${sanitizedContent.length}`);
     
     // Get Supabase admin client
@@ -296,13 +337,21 @@ export async function POST(req: NextRequest) {
       }, { status: 403 });
     }
     
-    // Update the resume with sanitized content in last_saved_text instead of optimized_text
+    // Prepare update object with text and potentially score
+    const updateObject: any = {
+      last_saved_text: sanitizedContent,
+      updated_at: new Date().toISOString()
+    };
+    
+    // Add ATS score to update if valid
+    if (validatedAtsScore !== null) {
+      updateObject.last_saved_score_ats = validatedAtsScore;
+    }
+    
+    // Update the resume with sanitized content and score
     const { data: updatedResume, error: updateError } = await supabaseAdmin
       .from("resumes")
-      .update({
-        last_saved_text: sanitizedContent,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateObject)
       .eq("id", resumeId)
       .select()
       .single();
@@ -332,6 +381,7 @@ export async function POST(req: NextRequest) {
 /**
  * PUT handler for updating resume properties
  * Updates various fields of a resume record
+ * Enhanced to support last_saved_score_ats and other fields
  */
 export async function PUT(req: NextRequest) {
   try {
@@ -524,13 +574,14 @@ export async function DELETE(req: NextRequest) {
 
 /**
  * PATCH handler for resetting resume to original version
- * Clears the last_saved_text field to restore the original optimized version
+ * Clears the last_saved_text and last_saved_score_ats fields to restore the original optimized version
+ * Enhanced to support resetting the score alongside the content
  */
 export async function PATCH(req: NextRequest) {
   try {
     // Parse request body
     const body = await req.json();
-    const { resumeId, userId, action } = body;
+    const { resumeId, userId, action, resetScore } = body;
     
     // Validate request parameters
     if (!resumeId || action !== 'reset') {
@@ -591,13 +642,22 @@ export async function PATCH(req: NextRequest) {
       }, { status: 400 });
     }
     
-    // Reset the resume by setting last_saved_text to null
+    // Create update object with fields to reset
+    const updateObject: any = {
+      last_saved_text: null,
+      updated_at: new Date().toISOString()
+    };
+    
+    // Also reset the score if requested or by default
+    // If resetScore parameter is explicitly false, don't reset the score
+    if (resetScore !== false) {
+      updateObject.last_saved_score_ats = null;
+    }
+    
+    // Reset the resume by setting last_saved_text and optionally last_saved_score_ats to null
     const { data: updatedResume, error: updateError } = await supabaseAdmin
       .from("resumes")
-      .update({
-        last_saved_text: null,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateObject)
       .eq("id", resumeId)
       .select()
       .single();
@@ -739,6 +799,7 @@ function sanitizeHtml(html: string): string {
 
 /**
  * Sanitizes object of updates to prevent unwanted field modifications
+ * Updated to allow last_saved_score_ats field in updates
  * 
  * @param updates - Object containing fields to update
  * @returns Sanitized updates object
@@ -746,8 +807,8 @@ function sanitizeHtml(html: string): string {
 function sanitizeUpdates(updates: any): any {
   // Define allowed fields for update
   const allowedFields = [
-    'optimized_text', 'last_saved_text', 'ats_score', 'language', 
-    'file_name', 'file_type', 'file_url', 'file_size',
+    'optimized_text', 'last_saved_text', 'ats_score', 'last_saved_score_ats',
+    'language', 'file_name', 'file_type', 'file_url', 'file_size',
     'ai_provider'
   ];
   
@@ -760,6 +821,19 @@ function sanitizeUpdates(updates: any): any {
       if ((field === 'optimized_text' || field === 'last_saved_text') && 
           typeof updates[field] === 'string') {
         sanitized[field] = sanitizeHtml(updates[field]);
+      } 
+      // Special handling for score fields
+      else if ((field === 'ats_score' || field === 'last_saved_score_ats') && 
+              updates[field] !== null) {
+        // Validate score is in range 0-100
+        const scoreValue = typeof updates[field] === 'string' ? 
+          parseInt(updates[field], 10) : updates[field];
+        
+        if (!isNaN(scoreValue) && scoreValue >= 0 && scoreValue <= 100) {
+          sanitized[field] = scoreValue;
+        } else {
+          console.warn(`Invalid score value for ${field}: ${updates[field]}. Skipping.`);
+        }
       } else {
         sanitized[field] = updates[field];
       }
