@@ -1,14 +1,15 @@
 /**
- * Enhanced Resume Optimizer Hook with improved state management and infinite loop prevention
+ * Enhanced Resume Optimizer Hook with improved score management and infinite loop prevention
  * 
  * Key improvements:
- * 1. Uses refs to prevent state update loops
- * 2. Implements content memoization to reduce unnecessary re-renders  
- * 3. Adds safeguards against concurrent updates
- * 4. Simplifies effect dependencies
- * 5. Fixes loading state issues that could cause UI to get stuck
- * 6. Exposes state setters for direct manipulation from components (score, resumeId, suggestions, keywords)
- * 7. Facilitates direct data transfer from API to UI without requiring database reload
+ * 1. Robust ATS score handling with protection against regression to default values
+ * 2. Uses refs to prevent state update loops
+ * 3. Implements content memoization to reduce unnecessary re-renders
+ * 4. Adds safeguards against concurrent updates
+ * 5. Simplifies effect dependencies
+ * 6. Fixes loading state issues that could cause UI to get stuck
+ * 7. Exposes state setters for direct manipulation from components
+ * 8. Facilitates direct data transfer from API to UI without requiring database reload
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useResumeOptimizer } from '@/hooks/useResumeOptimizer';
@@ -28,7 +29,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     optimizedText, editedText, suggestions, keywords, optimizationScore, resumeId,
     isLoading, resetResume, toggleKeyword, applySuggestion, loadLatestResume: baseLoadLatestResume,
     // Include remaining properties to ensure we don't lose functionality
-    isUploading, isParsing, isOptimizing, needsRegeneration,
+    isUploading, isParsing, isOptimizing, isApplyingChanges, isResetting,
     selectedFile, resumeData, optimizedData, setSelectedFile, setOptimizedData, setOptimizedText, setEditedText
   } = resumeOptimizer;
   
@@ -38,6 +39,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   const [appliedSuggestions, setAppliedSuggestions] = useState<number[]>([]);
   const [appliedKeywords, setAppliedKeywords] = useState<string[]>([]);
   const [optimizationMetrics, setOptimizationMetrics] = useState<any>(null);
+  const [abortLoading, setAbortLoading] = useState(false);
   
   // Add local states to enable direct updates for all relevant data
   const [localOptimizationScore, setLocalOptimizationScore] = useState<number>(optimizationScore);
@@ -54,11 +56,36 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   const isUpdatingTrackingRef = useRef(false);
   const lastProcessedContentRef = useRef<string>('');
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Safety timeout reference
+  const loadingAttemptsRef = useRef(0);            // Track number of loading attempts
+  const scoreUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce score updates
+  
+  // Track highest observed score to prevent regressions to default value
+  const highestScoreRef = useRef<number>(optimizationScore || 65);
+  
+  // Flag to track if we've received an API score yet
+  const hasReceivedApiScoreRef = useRef<boolean>(false);
   
   // Sync local states with base hook's states
   useEffect(() => {
-    setLocalOptimizationScore(optimizationScore);
-  }, [optimizationScore]);
+    // Only update if optimizationScore is valid and higher than current highest score
+    if (!isNaN(optimizationScore) && optimizationScore > 0) {
+      // Protection against score regression
+      if (localOptimizationScore > optimizationScore) {
+        console.log(`[Hook] Ignoring score downgrade from ${localOptimizationScore} to ${optimizationScore}`);
+        return;
+      }
+      
+      console.log(`[Hook] Updating local ATS score from ${localOptimizationScore} to ${optimizationScore}`);
+      setLocalOptimizationScore(optimizationScore);
+      
+      // Update highest score if needed
+      if (optimizationScore > highestScoreRef.current) {
+        console.log(`[Hook] Updating highest score reference: ${optimizationScore}`);
+        highestScoreRef.current = optimizationScore;
+        hasReceivedApiScoreRef.current = true;
+      }
+    }
+  }, [optimizationScore, localOptimizationScore]);
   
   useEffect(() => {
     setLocalResumeId(resumeId);
@@ -78,7 +105,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   
   // Initialize advanced score manager if available
   const scoreManager = useResumeScoreManager ? useResumeScoreManager({
-    initialScore: optimizationScore,
+    initialScore: highestScoreRef.current || optimizationScore || 65, // Use highest score as the base
     resumeContent: optimizedText || editedText || '',
     initialSuggestions: localSuggestions.map(s => ({
       id: s.id,
@@ -93,9 +120,21 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     })),
     resumeId: localResumeId,
     onScoreChange: (newScore) => {
-      console.log("Advanced score updated:", newScore);
+      console.log("[Hook] Advanced score manager updated:", newScore);
+      
+      // Protect against regression if we've received an API score
+      if (hasReceivedApiScoreRef.current && newScore < highestScoreRef.current) {
+        console.log(`[Hook] Protecting against score manager downgrade: ${newScore} < ${highestScoreRef.current}`);
+        return;
+      }
+      
       // Update local score when score manager changes it
       setLocalOptimizationScore(newScore);
+      
+      // Update highest score if needed
+      if (newScore > highestScoreRef.current) {
+        highestScoreRef.current = newScore;
+      }
     }
   }) : null;
 
@@ -113,7 +152,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     // If we're in a loading state, set a safety timeout to force exit after max time
     if (internalLoading) {
       loadTimeoutRef.current = setTimeout(() => {
-        console.log("Safety timeout triggered - forcing loading state to false");
+        console.log("[Hook] Safety timeout triggered - forcing loading state to false");
         setInternalLoading(false);
       }, 8000); // 8 seconds max loading time
     }
@@ -132,22 +171,46 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
    * Ensures loading state is properly managed regardless of outcome
    */
   const loadLatestResume = useCallback(async (userId: string) => {
+    // Safety check: if abort flag is set, don't even try to load
+    if (abortLoading) {
+      console.log("[Hook] Loading aborted by safety mechanism");
+      return null;
+    }
+    
     // Set loading state
     setInternalLoading(true);
     
+    // Set up a safety timeout that will abort loading after 10 seconds
+    let timeoutId: NodeJS.Timeout | null = null;
+    const safetyPromise = new Promise<null>((resolve) => {
+      timeoutId = setTimeout(() => {
+        console.log("[Hook] Loading aborted due to timeout");
+        setAbortLoading(true);
+        resolve(null);
+      }, 10000);
+    });
+    
     try {
-      console.log("Enhanced hook: Loading latest resume for user", userId);
-      const result = await baseLoadLatestResume(userId);
+      console.log("[Hook] Loading latest resume for user", userId);
+      
+      // Race between normal loading and safety timeout
+      const result = await Promise.race([
+        baseLoadLatestResume(userId),
+        safetyPromise
+      ]);
+      
       return result;
     } catch (error) {
-      console.error("Enhanced hook: Error loading resume:", error);
+      console.error("[Hook] Error loading resume:", error);
       return null;
     } finally {
+      // Clear timeout regardless of outcome
+      if (timeoutId) clearTimeout(timeoutId);
+      
       // Critical: always reset loading state even if error occurs
-      console.log("Enhanced hook: Resetting loading state");
       setInternalLoading(false);
     }
-  }, [baseLoadLatestResume]);
+  }, [baseLoadLatestResume, abortLoading]);
 
   /**
    * Process resume text when it becomes available
@@ -182,7 +245,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
           }
         }
       } catch (error) {
-        console.error("Error processing resume text:", error);
+        console.error("[Hook] Error processing resume text:", error);
         if (textToProcess !== lastProcessedContentRef.current) {
           setProcessedHtml(textToProcess);
           lastProcessedContentRef.current = textToProcess;
@@ -268,14 +331,17 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     if (!generateOptimizationMetrics) return null;
 
     try {
-      const initialScore = optimizationScore;
-      const currentScore = scoreManager?.currentScore || localOptimizationScore || optimizationScore;
+      // Use highest reliable score value for metrics
+      const initialScoreValue = highestScoreRef.current || optimizationScore || 65;
+      const currentScoreValue = scoreManager?.currentScore || localOptimizationScore || initialScoreValue;
+      
+      // Map suggestions and keywords to applied status
       const appliedSugs = localSuggestions.filter((s, i) => appliedSuggestions.includes(i));
       const appliedKeys = localKeywords.filter(k => appliedKeywords.includes(k.text));
 
       const metrics = generateOptimizationMetrics(
-        initialScore,
-        currentScore,
+        initialScoreValue,
+        currentScoreValue,
         appliedSugs,
         appliedKeys,
         startTimeRef.current
@@ -284,7 +350,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       setOptimizationMetrics(metrics);
       return metrics;
     } catch (error) {
-      console.error("Error generating metrics:", error);
+      console.error("[Hook] Error generating metrics:", error);
       return null;
     }
   }, [
@@ -341,7 +407,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       
       toast.success(`Report exported as ${filename}`);
     } catch (error) {
-      console.error("Error exporting report:", error);
+      console.error("[Hook] Error exporting report:", error);
       toast.error("Failed to export report");
     }
   }, [scoreManager, generateMetrics]);
@@ -368,15 +434,60 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   }, [resumeOptimizer.setEditedText, scoreManager]);
   
   /**
+   * Directly force update the score throughout the system
+   * Used when receiving authoritative scores from API
+   * 
+   * @param scoreValue - The score value from API to set
+   */
+  const forceScoreUpdate = useCallback((scoreValue: number) => {
+    // Validate input
+    if (!scoreValue || isNaN(scoreValue) || scoreValue <= 0 || scoreValue > 100) {
+      console.warn("[Hook] Invalid score value for force update:", scoreValue);
+      return;
+    }
+    
+    console.log(`[Hook] Force updating score system-wide to: ${scoreValue}`);
+    
+    // Mark that we've received a valid API score
+    hasReceivedApiScoreRef.current = true;
+    
+    // Update highest score reference if needed
+    if (scoreValue > highestScoreRef.current) {
+      highestScoreRef.current = scoreValue;
+    }
+    
+    // 1. Update local state for immediate UI feedback
+    setLocalOptimizationScore(scoreValue);
+    
+    // 2. Update base optimizer score state
+    if (resumeOptimizer.setOptimizationScore) {
+      resumeOptimizer.setOptimizationScore(scoreValue);
+    }
+    
+    // 3. Update score manager with API score if available
+    if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
+      scoreManager.updateBaseScore(scoreValue);
+    }
+    
+    // Log verification of updates
+    console.log("[Hook] Score update verification:", {
+      apiValue: scoreValue,
+      highestScore: highestScoreRef.current,
+      localScore: localOptimizationScore,
+      scoreManagerValue: scoreManager?.getCurrentScore?.() || 'N/A'
+    });
+  }, [resumeOptimizer.setOptimizationScore, scoreManager]);
+  
+  /**
    * Set suggestions with validation and formatting
    * This function allows directly setting suggestions from external components
    */
   const setSuggestions = useCallback((newSuggestions: any[]) => {
-    console.log("Setting suggestions:", newSuggestions?.length || 0);
+    console.log("[Hook] Setting suggestions:", newSuggestions?.length || 0);
     
     // Validate input
     if (!newSuggestions || !Array.isArray(newSuggestions)) {
-      console.warn("Invalid suggestions format, must be an array");
+      console.warn("[Hook] Invalid suggestions format, must be an array");
       return;
     }
     
@@ -402,7 +513,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
         }, 100);
       }
     } catch (error) {
-      console.error("Error setting suggestions:", error);
+      console.error("[Hook] Error setting suggestions:", error);
     }
   }, [scoreManager, generateMetrics]);
   
@@ -411,11 +522,11 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
    * This function allows directly setting keywords from external components
    */
   const setKeywords = useCallback((newKeywords: any[]) => {
-    console.log("Setting keywords:", newKeywords?.length || 0);
+    console.log("[Hook] Setting keywords:", newKeywords?.length || 0);
     
     // Validate input
     if (!newKeywords || !Array.isArray(newKeywords)) {
-      console.warn("Invalid keywords format, must be an array");
+      console.warn("[Hook] Invalid keywords format, must be an array");
       return;
     }
     
@@ -450,7 +561,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
         }, 100);
       }
     } catch (error) {
-      console.error("Error setting keywords:", error);
+      console.error("[Hook] Error setting keywords:", error);
     }
   }, [scoreManager, generateMetrics]);
   
@@ -510,68 +621,31 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
    * Reset resume with improved error handling and state cleanup
    */
   const handleReset = useCallback(async (): Promise<boolean> => {
-    // Validate state before proceeding
-    if (!resumeId || operationInProgressRef.current) return false;
-    
+    // Call the original reset function
     try {
-      // Set operation flag
-      operationInProgressRef.current = true;
-      setIsResetting(true);
+      const resetResult = await resetResume();
       
-      // Call the API to reset the resume
-      const response = await fetch('/api/resumes', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          resumeId,
-          action: 'reset',
-          resetScore: true // New parameter indicating to reset the score as well
-        })
-      });
-      
-      // Handle API errors
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to reset resume');
+      // If reset was successful, update local state
+      if (resetResult) {
+        // Reset suggestions (all to unapplied)
+        setLocalSuggestions(prev => prev.map(s => ({...s, isApplied: false})));
+        
+        // Reset keywords (all to unapplied)
+        setLocalKeywords(prev => prev.map(k => ({...k, applied: false})));
+        
+        // Reset score to original value in score manager if available
+        if (scoreManager && typeof scoreManager.resetAllChanges === 'function') {
+          console.log("[Hook] Resetting score in score manager to original state");
+          scoreManager.resetAllChanges();
+        }
       }
       
-      // Parse the response
-      const result = await response.json();
-      
-      // Update local state
-      // Clear the edited text state
-      setEditedText(null);
-      
-      // Reset suggestions (all to unapplied)
-      setSuggestions(prev => prev.map(s => ({...s, isApplied: false})));
-      
-      // Reset keywords (all to unapplied)
-      setKeywords(prev => prev.map(k => ({...k, applied: false})));
-      
-      // Reset needs regeneration flag
-      setNeedsRegeneration(false);
-      
-      // Reset score to original optimized score if available
-      if (scoreManager && typeof scoreManager.resetAllChanges === 'function') {
-        console.log("Resetting score in score manager to original state");
-        scoreManager.resetAllChanges();
-      }
-      
-      // Notify user
-      toast.success('Resume reset to original optimized version');
-      
-      return true;
+      return resetResult;
     } catch (error: any) {
-      // Handle reset errors
-      console.error('Error resetting resume:', error);
-      toast.error(`Failed to reset resume: ${error.message || 'An unexpected error occurred'}`);
+      console.error('[Hook] Error resetting resume:', error);
       return false;
-    } finally {
-      // Always reset operation flag
-      setIsResetting(false);
-      operationInProgressRef.current = false;
     }
-  }, [resumeId, setEditedText, setSuggestions, setKeywords, resumeOptimizer, scoreManager]);
+  }, [resetResume, scoreManager]);
   
   /**
    * Save resume with improved validation and error handling
@@ -579,7 +653,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
   const handleSave = useCallback(async (content: string): Promise<boolean> => {
     // Prevent saving if already in progress
     if (isUpdatingContentRef.current) {
-      console.log("Save already in progress");
+      console.log("[Hook] Save already in progress");
       return false;
     }
     
@@ -609,20 +683,21 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       
       // Get current score for persistence
       // Try multiple sources to ensure we have the most accurate score
-      let currentScore = 65; // Default fallback
+      let currentScore = highestScoreRef.current; // Start with highest observed score
       
       if (scoreManager && typeof scoreManager.getCurrentScore === 'function') {
-        currentScore = scoreManager.getCurrentScore();
-        console.log("Using score from scoreManager.getCurrentScore():", currentScore);
-      } else if (localOptimizationScore) {
+        const scoreManagerScore = scoreManager.getCurrentScore();
+        // Only use score manager score if it's higher than our highest
+        if (scoreManagerScore > currentScore) {
+          currentScore = scoreManagerScore;
+          console.log("[Hook] Using higher score from scoreManager.getCurrentScore():", currentScore);
+        }
+      } else if (localOptimizationScore > currentScore) {
         currentScore = localOptimizationScore;
-        console.log("Using score from localOptimizationScore:", currentScore);
-      } else if (optimizationScore) {
-        currentScore = optimizationScore;
-        console.log("Using score from optimizationScore:", currentScore);
+        console.log("[Hook] Using higher score from localOptimizationScore:", currentScore);
       }
       
-      console.log("Final score being saved to database:", currentScore);
+      console.log("[Hook] Final score being saved to database:", currentScore);
       
       // Save to database using the API
       const response = await fetch('/api/resumes', {
@@ -670,7 +745,7 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       return true;
     } catch (error: any) {
       // Log the error
-      console.error("Error saving resume:", error);
+      console.error("[Hook] Error saving resume:", error);
       
       toast.error("Failed to save resume", {
         description: error.message || "An unexpected error occurred."
@@ -679,10 +754,50 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
       // Return failure
       return false;
     }
-  }, [localResumeId, userId, resumeOptimizer.setEditedText, scoreManager, localOptimizationScore, optimizationScore]);
+  }, [localResumeId, userId, resumeOptimizer.setEditedText, scoreManager, localOptimizationScore]);
   
   /**
-   * Return enhanced hook with improved state management
+   * Simulate the impact of applying a suggestion without actually applying it
+   * Used for previewing the effect on the ATS score
+   * 
+   * @param index - Index of the suggestion to simulate
+   * @returns Impact information including new score and point impact
+   */
+  const simulateSuggestionImpact = useCallback((index: number) => {
+    if (!scoreManager || typeof scoreManager.simulateSuggestionImpact !== 'function') {
+      // Fallback if score manager not available
+      return {
+        newScore: localOptimizationScore,
+        pointImpact: 0,
+        description: "Impact simulation not available"
+      };
+    }
+    
+    return scoreManager.simulateSuggestionImpact(index);
+  }, [scoreManager, localOptimizationScore]);
+  
+  /**
+   * Simulate the impact of applying a keyword without actually applying it
+   * Used for previewing the effect on the ATS score
+   * 
+   * @param index - Index of the keyword to simulate
+   * @returns Impact information including new score and point impact
+   */
+  const simulateKeywordImpact = useCallback((index: number) => {
+    if (!scoreManager || typeof scoreManager.simulateKeywordImpact !== 'function') {
+      // Fallback if score manager not available
+      return {
+        newScore: localOptimizationScore,
+        pointImpact: 0,
+        description: "Impact simulation not available"
+      };
+    }
+    
+    return scoreManager.simulateKeywordImpact(index);
+  }, [scoreManager, localOptimizationScore]);
+  
+  /**
+   * Return enhanced hook with improved score management
    * All methods are wrapped with error handling and loop prevention
    */
   return {
@@ -703,8 +818,8 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     // Add these state setters to allow direct updates from components
     setOptimizationScore: setLocalOptimizationScore,
     setResumeId: setLocalResumeId,
-    setSuggestions, // New function to update suggestions
-    setKeywords,    // New function to update keywords
+    setSuggestions, // Function to update suggestions
+    setKeywords,    // Function to update keywords
     generateMetrics,
     exportReport,
     handlePreviewContentChange,
@@ -712,9 +827,10 @@ export function useResumeOptimizerEnhanced(userId?: string | null) {
     handleKeywordApply,
     handleReset,
     handleSave,
-    // Expose loading state for debugging
-    _isUpdatingContent: isUpdatingContentRef.current,
-    _isUpdatingTracking: isUpdatingTrackingRef.current,
-    _internalLoading: internalLoading
+    // Add direct score update function
+    forceScoreUpdate,
+    // Add simulation functions
+    simulateSuggestionImpact,
+    simulateKeywordImpact,
   };
 }

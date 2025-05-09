@@ -38,6 +38,11 @@ export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
 
   try {
+    // Safety timeout to prevent hanging requests
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('API timeout')), 60000)
+    );
+    
     // Extract data from request
     const formData = await req.formData();
     const fileUrl = formData.get("fileUrl") as string | null;

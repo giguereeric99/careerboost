@@ -1,28 +1,28 @@
 /**
- * Enhanced ScoreCard Component
- * 
- * This component displays the resume's ATS optimization score with an interactive
- * circular progress indicator, real-time feedback, and detailed performance metrics.
- * Features:
- * - Animated circular progress indicator with color coding
- * - Contextual feedback based on score ranges
- * - Improved progress animation for real-time score updates
- * - Detailed breakdown of score components
- * - Potential score improvement indicator
- * - Enhanced score transition animations
- * - Loading animation while score is being calculated
- * - Score consistency protection to ensure accurate display
- * - Support for legitimately low scores (below 65)
- */
+* Enhanced ScoreCard Component
+* 
+* This component displays the resume's ATS optimization score with an interactive
+* circular progress indicator, real-time feedback, and detailed performance metrics.
+* Features:
+* - Animated circular progress indicator with color coding
+* - Contextual feedback based on score ranges
+* - Improved progress animation for real-time score updates
+* - Detailed breakdown of score components
+* - Potential score improvement indicator
+* - Enhanced score transition animations
+* - Loading animation while score is being calculated
+* - Score consistency protection to ensure accurate display
+* - Support for legitimately low scores (below 65)
+*/
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Sparkles, Info, TrendingUp } from "lucide-react";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+Tooltip,
+TooltipContent,
+TooltipProvider,
+TooltipTrigger,
 } from "@/components/ui/tooltip";
 
 // Import the scoring logic if available
@@ -42,12 +42,12 @@ interface ScoreCardProps {
 }
 
 /**
- * ScoreCard component displays a circular visual representation of the resume score
- * along with contextual feedback and improvement metrics.
- * Enhanced to handle score updates smoothly with animations and show calculation state.
- * Added score consistency protection to ensure accuracy of displayed score.
- * Added support for legitimately low scores (below 65) from the API.
- */
+* ScoreCard component displays a circular visual representation of the resume score
+* along with contextual feedback and improvement metrics.
+* Enhanced to handle score updates smoothly with animations and show calculation state.
+* Added score consistency protection to ensure accuracy of displayed score.
+* Added support for legitimately low scores (below 65) from the API.
+*/
 const ScoreCard: React.FC<ScoreCardProps> = ({
   optimizationScore,
   resumeContent,
@@ -58,21 +58,21 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   initialScore = null,
   showDetails = true,
   isCalculating = false
-}) => {
+  }) => {
   // =========================================================================
   // State Management
   // =========================================================================
-  
+
   // State for animated score display - enhanced for smoother transitions
   const [displayScore, setDisplayScore] = useState(optimizationScore || 65);
   const [previousScore, setPreviousScore] = useState(optimizationScore || 65);
   const [isIncreasing, setIsIncreasing] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
-  
+
   // =========================================================================
   // Animation References
   // =========================================================================
-  
+
   // Ref to track animation in progress
   const animationInProgressRef = useRef(false);
   // Ref to store animation frame ID for cancellation
@@ -87,11 +87,13 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   const hasReceivedApiScoreRef = useRef<boolean>(false);
   // Track score from last breakdown for comparison
   const lastBreakdownScoreRef = useRef<number | null>(null);
-  
+  // Debounce timer for feedback updates
+  const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // =========================================================================
   // Animation Configuration
   // =========================================================================
-  
+
   // Animation duration in milliseconds - faster for better user experience
   const ANIMATION_DURATION = 800; // 0.8 seconds
   // Target frames per second - higher for smoother animation
@@ -100,12 +102,12 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // =========================================================================
   // Score Processing Logic
   // =========================================================================
-  
+
   /**
-   * Process incoming score to ensure consistency and validity
-   * Uses multiple strategies to determine the most accurate score to display
-   * Updated to properly handle legitimately low scores (below default 65)
-   */
+  * Process incoming score to ensure consistency and validity
+  * Uses multiple strategies to determine the most accurate score to display
+  * Updated to properly handle legitimately low scores (below default 65)
+  */
   const processedScore = useMemo(() => {
     // Start with the provided optimization score
     let finalScore = optimizationScore;
@@ -203,16 +205,16 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // =========================================================================
   // Utility Functions
   // =========================================================================
-  
+
   /**
-   * Get appropriate color based on score range
-   * Maps score values to color codes with semantic meaning
-   * Higher scores get more positive colors (green/blue)
-   * Lower scores get warning colors (amber/red)
-   * 
-   * @param score - The score to get a color for (0-100)
-   * @returns Color hex code for the score
-   */
+  * Get appropriate color based on score range
+  * Maps score values to color codes with semantic meaning
+  * Higher scores get more positive colors (green/blue)
+  * Lower scores get warning colors (amber/red)
+  * 
+  * @param score - The score to get a color for (0-100)
+  * @returns Color hex code for the score
+  */
   const getScoreColor = useCallback((score: number): string => {
     if (score >= 85) return "#10b981"; // Green for excellent scores (85-100)
     if (score >= 70) return "#3b82f6"; // Blue for good scores (70-84)
@@ -221,12 +223,12 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   }, []);
 
   /**
-   * Calculate the stroke-dasharray value for SVG progress circle
-   * Maps score (0-100) to circle circumference for accurate visual representation
-   * 
-   * @param score - Score value (0-100)
-   * @returns SVG stroke-dasharray value as string
-   */
+  * Calculate the stroke-dasharray value for SVG progress circle
+  * Maps score (0-100) to circle circumference for accurate visual representation
+  * 
+  * @param score - Score value (0-100)
+  * @returns SVG stroke-dasharray value as string
+  */
   const getCircleProgress = useCallback((score: number): string => {
     // Circumference of a circle with radius 45 is 2 * π * 45 ≈ 282.7
     const circumference = 282.7;
@@ -239,16 +241,16 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // =========================================================================
   // Animation Functions
   // =========================================================================
-  
+
   /**
-   * Animate score changes using requestAnimationFrame for smoother transitions
-   * This implementation provides better performance than setInterval by
-   * synchronizing with the browser's refresh rate
-   * 
-   * @param targetScore - The final score to animate to
-   * @param startScore - The starting score to animate from
-   * @returns Cleanup function to cancel animation if component unmounts
-   */
+  * Animate score changes using requestAnimationFrame for smoother transitions
+  * This implementation provides better performance than setInterval by
+  * synchronizing with the browser's refresh rate
+  * 
+  * @param targetScore - The final score to animate to
+  * @param startScore - The starting score to animate from
+  * @returns Cleanup function to cancel animation if component unmounts
+  */
   const animateScoreChange = useCallback((targetScore: number, startScore: number) => {
     // Cancel any ongoing animation to prevent conflicts
     if (animationFrameRef.current !== null) {
@@ -262,11 +264,11 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
     startTimeRef.current = performance.now();
     
     /**
-     * Animation frame function - called on each frame
-     * Calculates intermediate values for smooth animation
-     * 
-     * @param timestamp - Current timestamp from requestAnimationFrame
-     */
+    * Animation frame function - called on each frame
+    * Calculates intermediate values for smooth animation
+    * 
+    * @param timestamp - Current timestamp from requestAnimationFrame
+    */
     const animate = (timestamp: number) => {
       // Calculate progress ratio (0 to 1) based on elapsed time
       const elapsed = timestamp - startTimeRef.current;
@@ -310,12 +312,12 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // =========================================================================
   // Effects
   // =========================================================================
-  
+
   /**
-   * Handle score changes and animate transitions
-   * Triggers animation when the processedScore changes
-   * Improved to detect and properly animate even small score changes
-   */
+  * Handle score changes and animate transitions
+  * Triggers animation when the processedScore changes
+  * Improved to detect and properly animate even small score changes
+  */
   useEffect(() => {
     // Skip animation if score is being calculated
     if (isCalculating) {
@@ -345,45 +347,64 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   }, [processedScore, previousScore, displayScore, animateScoreChange, isCalculating]);
 
   /**
-   * Set appropriate feedback message based on score range
-   * Updates when display score changes to provide contextual guidance
-   */
+  * Set appropriate feedback message based on score range
+  * Updates when display score changes to provide contextual guidance
+  */
   useEffect(() => {
     // Skip if score is being calculated
     if (isCalculating) {
       return;
     }
     
-    // Round the display score for message selection
-    const roundedScore = Math.round(displayScore);
-    
-    // Select appropriate feedback message based on score range
-    if (roundedScore >= 90) {
-      setFeedbackMessage("Excellent! Your resume is highly optimized for ATS systems.");
-    } else if (roundedScore >= 80) {
-      setFeedbackMessage("Great job! Your resume is well optimized for ATS systems.");
-    } else if (roundedScore >= 70) {
-      setFeedbackMessage("Good progress. Apply more suggestions to improve further.");
-    } else if (roundedScore >= 60) {
-      setFeedbackMessage("Your resume needs additional optimization to stand out.");
-    } else if (roundedScore >= 50) {
-      setFeedbackMessage("Your resume needs significant optimization to pass ATS filters.");
-    } else if (roundedScore >= 30) {
-      setFeedbackMessage("Your resume needs major improvements to be considered by ATS systems.");
-    } else {
-      setFeedbackMessage("Your resume requires a complete overhaul to meet ATS standards.");
+    // Debounce feedback updates to prevent flickering during animation
+    if (feedbackTimeoutRef.current) {
+      clearTimeout(feedbackTimeoutRef.current);
     }
+    
+    // Delay feedback update slightly to match animation
+    feedbackTimeoutRef.current = setTimeout(() => {
+      // Round the display score for message selection
+      const roundedScore = Math.round(displayScore);
+      
+      // Select appropriate feedback message based on score range
+      if (roundedScore >= 90) {
+        setFeedbackMessage("Excellent! Your resume is highly optimized for ATS systems.");
+      } else if (roundedScore >= 80) {
+        setFeedbackMessage("Great job! Your resume is well optimized for ATS systems.");
+      } else if (roundedScore >= 70) {
+        setFeedbackMessage("Good progress. Apply more suggestions to improve further.");
+      } else if (roundedScore >= 60) {
+        setFeedbackMessage("Your resume needs additional optimization to stand out.");
+      } else if (roundedScore >= 50) {
+        setFeedbackMessage("Your resume needs significant optimization to pass ATS filters.");
+      } else if (roundedScore >= 30) {
+        setFeedbackMessage("Your resume needs major improvements to be considered by ATS systems.");
+      } else {
+        setFeedbackMessage("Your resume requires a complete overhaul to meet ATS standards.");
+      }
+    }, 100); // Short delay to sync with animation
+    
+    // Clean up timeout on unmount
+    return () => {
+      if (feedbackTimeoutRef.current) {
+        clearTimeout(feedbackTimeoutRef.current);
+      }
+    };
   }, [displayScore, isCalculating]);
 
   /**
-   * Clean up animations on component unmount
-   * Prevents memory leaks by canceling any ongoing animations
-   */
+  * Clean up animations on component unmount
+  * Prevents memory leaks by canceling any ongoing animations
+  */
   useEffect(() => {
     return () => {
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
         animationInProgressRef.current = false;
+      }
+      
+      if (feedbackTimeoutRef.current) {
+        clearTimeout(feedbackTimeoutRef.current);
       }
     };
   }, []);
@@ -391,16 +412,16 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // =========================================================================
   // Calculated Values
   // =========================================================================
-  
+
   // Get color based on current score
   const scoreColor = getScoreColor(displayScore);
-  
+
   // Round display score for integer presentation
   const displayScoreRounded = Math.round(displayScore);
-  
+
   // Calculate improvement metrics for display
   const improvement = initialScore ? Math.round((processedScore - initialScore) * 10) / 10 : 0;
-  
+
   // Calculate potential remaining improvement
   const remainingPotential = potentialScore && potentialScore > processedScore 
     ? Math.round((potentialScore - processedScore) * 10) / 10 
@@ -409,7 +430,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // =========================================================================
   // Component Rendering
   // =========================================================================
-  
+
   return (
     <Card className="bg-gray-50 border">
       <CardHeader className="pb-2">

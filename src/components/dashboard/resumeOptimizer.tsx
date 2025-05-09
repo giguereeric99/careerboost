@@ -9,7 +9,7 @@
  * - Efficient data handling to minimize API requests
  * - Responsive layout with split view for content and suggestions
  * - Direct data propagation from API to UI without database reload
- * - Enhanced ATS score handling and real-time updates
+ * - Enhanced ATS score handling and real-time updates with proper prioritization
  */
 
 'use client';
@@ -60,7 +60,6 @@ const ResumeOptimizer: React.FC = () => {
     isOptimizing,         // AI optimization in progress
     isApplyingChanges,    // Applying suggestions/keywords in progress
     isResetting,          // Reset operation in progress
-    needsRegeneration,    // Content needs regeneration before download
     isLoading,            // General loading state
     
     // Data states - The actual resume content and related data
@@ -86,7 +85,6 @@ const ResumeOptimizer: React.FC = () => {
     handlePreviewContentChange,   // Handle content changes in preview
     handleApplySuggestion,        // Apply a suggestion
     handleKeywordApply,           // Apply a keyword
-    handleRegenerateResume,       // Regenerate resume with applied changes
     handleReset,                  // Reset to original
     handleSave,                   // Save changes
     exportReport,                 // Export optimization report
@@ -137,6 +135,11 @@ const ResumeOptimizer: React.FC = () => {
   const loadingAttemptsRef = useRef(0);            // Track number of loading attempts
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Safety timeout to prevent infinite loading
   const scoreUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce score updates
+
+  const consecutiveLoadingChangesRef = useRef(0); // Track consecutive loading changes to prevent infinite loops
+  
+  // Track highest observed score to prevent score regression
+  const highestScoreRef = useRef<number>(optimizationScore || 65); 
   
   // Flag to track loading sequence
   const [dataLoadingSequence, setDataLoadingSequence] = useState({
@@ -188,17 +191,26 @@ const ResumeOptimizer: React.FC = () => {
       // Use a timeout to both show the calculation animation and ensure
       // all other components have rendered completely
       setTimeout(() => {
-        // MODIFICATION ICI: Vérifier d'abord le scoreManager
-        // Si scoreManager a déjà un score supérieur à localAtsScore, utiliser ce score
+        // Check scoreManager first - prioritize its score if higher
         if (scoreManager && scoreManager.getCurrentScore && scoreManager.getCurrentScore() > localAtsScore) {
           const scoreManagerScore = scoreManager.getCurrentScore();
           console.log(`Using higher score from scoreManager: ${scoreManagerScore} instead of localAtsScore: ${localAtsScore}`);
           setLocalAtsScore(scoreManagerScore);
+          
+          // Update highest score reference if needed
+          if (scoreManagerScore > highestScoreRef.current) {
+            highestScoreRef.current = scoreManagerScore;
+          }
         }
-        // Sinon, si nous avons un score local valide, utiliser ce score pour mettre à jour le scoreManager
+        // Otherwise use local score if valid to update scoreManager
         else if (localAtsScore > 0 && scoreManager && scoreManager.updateBaseScore) {
           console.log("Updating scoreManager with localAtsScore:", localAtsScore);
           scoreManager.updateBaseScore(localAtsScore);
+          
+          // Update highest score reference if needed
+          if (localAtsScore > highestScoreRef.current) {
+            highestScoreRef.current = localAtsScore;
+          }
         }
         
         // Mark score calculation as complete
@@ -209,23 +221,18 @@ const ResumeOptimizer: React.FC = () => {
   }, [dataLoadingSequence, scoreManager, localAtsScore]);
   
   /**
-   * Synchronize optimizationScore to local state
-   * Ensures we always have the latest score value available
+   * Synchronize optimizationScore to local state with protection against downgrade
+   * Ensures we always have the latest score value available without regression
    */
-  /**
- * Synchronize optimizationScore to local state
- * Ensures we always have the latest score value available
- */
   useEffect(() => {
-    // PROBLÈME ICI: Cette ligne reset à 65 quand optimizationScore est 65
     // Only update if score actually changed and is a valid number
     if (!isNaN(optimizationScore) && optimizationScore > 0 && optimizationScore !== localAtsScore) {
-      // Ajout d'une protection pour éviter de revenir à un score inférieur
-      // après avoir reçu un score supérieur de l'API
+      // Protection against score downgrade: never go from higher score to lower one
+      // This avoids the issue of default 65 score overriding actual scores
       if (localAtsScore > optimizationScore) {
         console.log(`Ignoring downgrade of score from ${localAtsScore} to ${optimizationScore}`);
         
-        // Si le scoreManager existe, forcer sa valeur à notre valeur supérieure
+        // Force scoreManager to use our higher value
         if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
           console.log(`Ensuring scoreManager uses higher score: ${localAtsScore}`);
           scoreManager.updateBaseScore(localAtsScore);
@@ -234,8 +241,14 @@ const ResumeOptimizer: React.FC = () => {
         return;
       }
       
+      // If the new score is higher or we didn't have a score before, update
       console.log(`Updating local ATS score from ${localAtsScore} to ${optimizationScore}`);
       setLocalAtsScore(optimizationScore);
+      
+      // Update highest score reference if needed
+      if (optimizationScore > highestScoreRef.current) {
+        highestScoreRef.current = optimizationScore;
+      }
     }
   }, [optimizationScore, localAtsScore, scoreManager]);
   
@@ -254,12 +267,23 @@ const ResumeOptimizer: React.FC = () => {
         const newScore = scoreManager.currentScore;
         console.log(`Score Manager update: new score ${newScore}`);
         
+        // Protection against score downgrade
+        if (newScore < highestScoreRef.current && !isScoreCalculating) {
+          console.log(`Ignoring score manager downgrade from ${highestScoreRef.current} to ${newScore}`);
+          return;
+        }
+        
         // Update both local state and main state
         setLocalAtsScore(newScore);
         
         // Only update main state if it has actually changed to prevent loops
         if (newScore !== optimizationScore) {
           setOptimizationScore(newScore);
+        }
+        
+        // Update highest score reference if needed
+        if (newScore > highestScoreRef.current) {
+          highestScoreRef.current = newScore;
         }
       }, 100);
     }
@@ -269,7 +293,7 @@ const ResumeOptimizer: React.FC = () => {
         clearTimeout(scoreUpdateTimeoutRef.current);
       }
     };
-  }, [scoreManager?.currentScore, optimizationScore, setOptimizationScore]);
+  }, [scoreManager?.currentScore, optimizationScore, setOptimizationScore, isScoreCalculating]);
 
   // =========================================================================
   // Computed Values & Memoization
@@ -289,11 +313,19 @@ const ResumeOptimizer: React.FC = () => {
   /**
    * Calculate current resume score with breakdown
    * Using useMemo to prevent unnecessary recalculations
-   * Enhanced to use local score state for real-time updates
+   * Enhanced to use local score state for real-time updates with protection
+   * against regression to default values
    */
   const currentScoreData = useMemo(() => {
-    // Always use the most up-to-date score available
-    const currentScore = localAtsScore || optimizationScore || 65;
+    // Use the most reliable score value available, in order of priority:
+    // 1. Highest observed score (protection against regression)
+    // 2. Local ATS score (real-time updates)
+    // 3. Optimization score (from hook)
+    // 4. Default value (65)
+    const baseScore = localAtsScore || optimizationScore || 65;
+    
+    // Compare with highest observed score for regression protection
+    const currentScore = Math.max(baseScore, highestScoreRef.current);
     
     return {
       score: currentScore,
@@ -368,13 +400,21 @@ const ResumeOptimizer: React.FC = () => {
       clearTimeout(loadTimeoutRef.current);
       loadTimeoutRef.current = null;
     }
-
+  
     // If we're in a loading state, set a safety timeout to force exit after max time
     if (isLoadingInProgressRef.current) {
       loadTimeoutRef.current = setTimeout(() => {
         console.log("Safety timeout triggered - forcing loading state to false");
+        // NOUVEAU: Reset ALL loading states and counters
         isLoadingInProgressRef.current = false;
-      }, 10000); // 10 seconds max loading time
+        loadingAttemptsRef.current = 0;
+        setIsUploadInProgress(false);
+        setIsAnalysisDisabled(false);
+        setIsScoreCalculating(false);
+        
+        // Show feedback to user
+        toast.info("Loading process completed");
+      }, 5000); // Reduced from 10 seconds to 5 seconds
     }
     
     // Cleanup on unmount
@@ -384,35 +424,12 @@ const ResumeOptimizer: React.FC = () => {
         loadTimeoutRef.current = null;
       }
     };
-  }, [activeTab]); // Re-run when active tab changes
+  }, [activeTab]); // Keep the same dependency
 
   // =========================================================================
-  // Event Handlers - Optimized with useCallback
+  // Score Management Functions
   // =========================================================================
   
-  /**
-   * Handle text input changes in the textarea
-   * Updates both resumeContent and rawText states
-   */
-  const handleContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newText = e.target.value;
-    setResumeContent(newText);  // For display
-    setRawText(newText);        // For processing
-  }, []);
-
-  /**
-   * Handle template selection
-   * Shows pro dialog if selected template requires upgrade
-   */
-  const handleTemplateSelect = useCallback((templateId: string) => {
-    const template = resumeTemplates.find(t => t.id === templateId);
-    if (template?.isPro) {
-      setShowProDialog(true);  // Show upgrade dialog
-    } else {
-      setSelectedTemplate(templateId);  // Update selected template
-    }
-  }, []);
-
   /**
    * Emergency method to force update the score across all components
    * This method bypasses normal update mechanisms to force a score value
@@ -431,6 +448,11 @@ const ResumeOptimizer: React.FC = () => {
     }
     
     console.log("Force updating score across the system:", scoreValue);
+    
+    // Update highest score reference if needed
+    if (scoreValue > highestScoreRef.current) {
+      highestScoreRef.current = scoreValue;
+    }
     
     // 1. Update local state for immediate UI feedback
     setLocalAtsScore(scoreValue);
@@ -462,12 +484,40 @@ const ResumeOptimizer: React.FC = () => {
         forcedValue: scoreValue,
         localAtsScore: localAtsScore,
         optimizationScore: optimizationScore,
+        highestObservedScore: highestScoreRef.current,
         scoreManagerBaseScore: scoreManager?.getBaseScore?.() || 'N/A',
         scoreManagerCurrentScore: scoreManager?.currentScore || 'N/A',
         loadingSequence: dataLoadingSequence
       });
     }, 100);
   }, [setOptimizationScore, scoreManager, setDataLoadingSequence, localAtsScore, optimizationScore, dataLoadingSequence]);
+
+  // =========================================================================
+  // Event Handlers - Optimized with useCallback
+  // =========================================================================
+  
+  /**
+   * Handle text input changes in the textarea
+   * Updates both resumeContent and rawText states
+   */
+  const handleContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newText = e.target.value;
+    setResumeContent(newText);  // For display
+    setRawText(newText);        // For processing
+  }, []);
+
+  /**
+   * Handle template selection
+   * Shows pro dialog if selected template requires upgrade
+   */
+  const handleTemplateSelect = useCallback((templateId: string) => {
+    const template = resumeTemplates.find(t => t.id === templateId);
+    if (template?.isPro) {
+      setShowProDialog(true);  // Show upgrade dialog
+    } else {
+      setSelectedTemplate(templateId);  // Update selected template
+    }
+  }, []);
 
   /**
    * Handle file upload completion
@@ -512,14 +562,18 @@ const ResumeOptimizer: React.FC = () => {
     suggestionsData?: any[],
     keywordsData?: any[]
   ) => {
-    // Step 1: Re-enable UI elements
+    // Step 1: IMPORTANT - Reset loading state immediately to break potential loops
+    isLoadingInProgressRef.current = false;
+    loadingAttemptsRef.current = 0;
+
+    // Step 2: Re-enable UI elements
     setIsAnalysisDisabled(false);   // Re-enable preview tab
     setIsUploadInProgress(false);   // Mark upload complete
     
-    // Step 2: Update resume state
+    // Step 3: Update resume state
     setHasResume(true);             // User now has a resume
     
-    // Step 3: Handle direct data updates in controlled sequence
+    // Step 4: Handle direct data updates in controlled sequence
     if (optimizedTextContent && optimizedTextContent.length > 0) {
       console.log("Received optimized text directly with length:", optimizedTextContent.length);
       
@@ -564,14 +618,15 @@ const ResumeOptimizer: React.FC = () => {
           if (scoreValue !== undefined && !isNaN(scoreValue)) {
             console.log("Setting final ATS score:", scoreValue);
             
-            // IMPORTANT: Update both local and main score states first
-            forceScoreUpdate(scoreValue)
+            // IMPORTANT: Use our robust score update mechanism
+            forceScoreUpdate(scoreValue);
             
             // Debug log to verify all score values are in sync
             console.log("DEBUG - Scores after update:", {
               scoreValueFromAPI: scoreValue,
               localAtsScore: scoreValue, // Use the value we're setting rather than the state variable
               optimizationScore: scoreValue, // Use the value we're setting rather than the state variable
+              highestObservedScore: highestScoreRef.current,
               scoreManagerBaseScore: scoreManager?.getBaseScore?.() || 'N/A',
               scoreManagerCurrentScore: scoreManager?.currentScore || 'N/A'
             });
@@ -580,6 +635,12 @@ const ResumeOptimizer: React.FC = () => {
           // End the score calculation animation after all updates
           setTimeout(() => {
             setIsScoreCalculating(false);
+            
+            // CRITICAL FIX: Reset loading attempts reference to prevent infinite loops
+            loadingAttemptsRef.current = 0;
+            
+            // CRITICAL FIX: Reset isLoadingInProgressRef to ensure future loads can happen
+            isLoadingInProgressRef.current = false;
             
             // Switch to preview tab now that data is loaded
             setActiveTab("preview");
@@ -594,6 +655,9 @@ const ResumeOptimizer: React.FC = () => {
     console.log("No direct content received, loading from server...");
     
     if (user?.id && loadLatestResume) {
+      // CRITICAL FIX: Reset loading attempts reference to allow a fresh start
+      loadingAttemptsRef.current = 0;
+      
       isLoadingInProgressRef.current = true;
       
       // Add slight delay to ensure database records are available
@@ -609,7 +673,17 @@ const ResumeOptimizer: React.FC = () => {
               if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
                 console.log("Updating score manager with loaded score:", result.atsScore);
                 scoreManager.updateBaseScore(result.atsScore);
+                
+                // Update highest score reference if needed
+                if (result.atsScore > highestScoreRef.current) {
+                  highestScoreRef.current = result.atsScore;
+                }
               }
+            }
+            
+            // CRITICAL FIX: If no result, mark hasResume as false to avoid loops
+            if (!result) {
+              setHasResume(false);
             }
             
             // Switch to preview tab after loading completes
@@ -619,7 +693,11 @@ const ResumeOptimizer: React.FC = () => {
             toast.error("Failed to load resume data", {
               description: "Please try refreshing the page"
             });
+            
+            // CRITICAL FIX: Set hasResume to false on error
+            setHasResume(false);
           } finally {
+            // CRITICAL FIX: Always reset loading state
             isLoadingInProgressRef.current = false;
           }
         };
@@ -627,6 +705,12 @@ const ResumeOptimizer: React.FC = () => {
         loadResumeData();
       }, 1000);
     } else {
+      // CRITICAL FIX: Set hasResume to false if we can't load
+      setHasResume(false);
+      
+      // CRITICAL FIX: Reset loading state if we can't load
+      isLoadingInProgressRef.current = false;
+      
       // Switch to preview even if we can't load data - will show empty state
       console.log("Cannot load resume data - switching to preview tab anyway");
       setActiveTab("preview");
@@ -642,7 +726,8 @@ const ResumeOptimizer: React.FC = () => {
     setKeywords,
     scoreManager,
     setLocalAtsScore,
-    forceScoreUpdate
+    forceScoreUpdate,
+    highestScoreRef
   ]);
 
   /**
@@ -651,12 +736,15 @@ const ResumeOptimizer: React.FC = () => {
    * Enhanced with better score handling
    */
   const handleSubmitText = useCallback(async () => {
+    // Reset loading attempts at start of submission to prevent loops
+    loadingAttemptsRef.current = 0;
+    
     // Validate minimum length
     if (!rawText || rawText.length < 50) {
       toast.error("Please enter at least 50 characters");
       return;
     }
-
+  
     try {
       // Start analysis process
       handleAnalysisStart();
@@ -665,13 +753,13 @@ const ResumeOptimizer: React.FC = () => {
       const formData = new FormData();
       formData.append("rawText", rawText);
       if (user?.id) formData.append("userId", user.id);
-
+  
       // Call optimization API
       const res = await fetch("/api/optimize", {
         method: "POST",
         body: formData,
       });
-
+  
       // Handle API errors
       if (!res.ok) {
         const errData = await res.json();
@@ -695,6 +783,11 @@ const ResumeOptimizer: React.FC = () => {
         if (result.atsScore !== undefined && !isNaN(result.atsScore)) {
           atsScore = result.atsScore;
           console.log("Extracted valid ATS score:", atsScore);
+          
+          // Update highest score reference if needed
+          if (atsScore > highestScoreRef.current) {
+            highestScoreRef.current = atsScore;
+          }
         } else {
           console.warn("Invalid or missing ATS score in API response, using default:", atsScore);
         }
@@ -720,6 +813,8 @@ const ResumeOptimizer: React.FC = () => {
         );
       } else {
         // Simple completion without data if API didn't return expected results
+        // Reset critical loading states before calling handleAnalysisComplete
+        isLoadingInProgressRef.current = false;
         handleAnalysisComplete();
       }
       
@@ -729,11 +824,15 @@ const ResumeOptimizer: React.FC = () => {
       setIsUploadInProgress(false);
       setIsScoreCalculating(false);
       
+      // Critical: Reset loading states on error to prevent loops
+      isLoadingInProgressRef.current = false;
+      loadingAttemptsRef.current = 0;
+      
       toast.error("Optimization failed", {
         description: error.message || "An unexpected error occurred."
       });
     }
-  }, [rawText, user?.id, handleAnalysisStart, handleAnalysisComplete]);
+  }, [rawText, user?.id, handleAnalysisStart, handleAnalysisComplete, highestScoreRef]);
 
   /**
    * Handle explicit loading trigger (button click)
@@ -754,6 +853,15 @@ const ResumeOptimizer: React.FC = () => {
         // Update state based on result
         if (result) {
           setHasResume(true);
+          
+          // If result includes an ATS score, ensure it's properly recorded
+          if (result.atsScore && !isNaN(result.atsScore)) {
+            console.log("Found ATS score in loaded result:", result.atsScore);
+            // Update highest score if needed
+            if (result.atsScore > highestScoreRef.current) {
+              highestScoreRef.current = result.atsScore;
+            }
+          }
         } else {
           setHasResume(false);
         }
@@ -778,48 +886,52 @@ const ResumeOptimizer: React.FC = () => {
       return;
     }
     
+    // IMPORTANT: Reset loading attempts when switching tabs
+    loadingAttemptsRef.current = 0;
+    
     setActiveTab(value);
     
     // Load data when switching to preview tab if no content exists
     if (value === "preview" && user && (!displayContent || !optimizedText)) {
-      // Reset loading attempts for fresh try
-      loadingAttemptsRef.current = 0;
-      
       // Set loading state
       isLoadingInProgressRef.current = true;
       
       // Load immediately
       if (user?.id) {
-        loadLatestResume(user.id).then((result) => {
-          // Update hasResume based on result
-          setHasResume(!!result);
-        }).catch(error => {
-          console.error("Error loading resume:", error);
-        }).finally(() => {
-          // CRITICAL: Always reset loading state
-          isLoadingInProgressRef.current = false;
-        });
+        // IMPORTANT: Add a small timeout to let React update the UI first
+        setTimeout(() => {
+          loadLatestResume(user.id).then((result) => {
+            // Update hasResume based on result
+            setHasResume(!!result);
+            
+            // If result includes an ATS score, ensure it's properly recorded
+            if (result && result.atsScore && !isNaN(result.atsScore)) {
+              console.log("Found ATS score in loaded result:", result.atsScore);
+              
+              // Make sure we update the score across the system
+              forceScoreUpdate(result.atsScore);
+            }
+          }).catch(error => {
+            console.error("Error loading resume:", error);
+            // IMPORTANT: Set hasResume to false on error
+            setHasResume(false);
+          }).finally(() => {
+            // CRITICAL: Always reset loading state
+            isLoadingInProgressRef.current = false;
+          });
+        }, 100);
       } else {
         // Reset loading state if we can't load
         isLoadingInProgressRef.current = false;
       }
     }
-  }, [user, isPreviewTabDisabled, loadLatestResume, displayContent, optimizedText]);
+  }, [user, isPreviewTabDisabled, loadLatestResume, displayContent, optimizedText, forceScoreUpdate]);
 
   /**
    * Handle resume download
    * Creates HTML file with selected template
    */
   const handleDownload = useCallback(() => {
-    // Check if regeneration is needed
-    if (needsRegeneration) {
-      toast({
-        title: "Changes not applied",
-        description: "Please apply your changes before downloading."
-      });
-      return;
-    }
-    
     // Validate content exists
     const contentToDownload = displayContent;
     if (!contentToDownload) {
@@ -867,7 +979,7 @@ const ResumeOptimizer: React.FC = () => {
     URL.revokeObjectURL(url);
     
     toast.success("Resume downloaded successfully");
-  }, [needsRegeneration, displayContent, selectedTemplate]);
+  }, [displayContent, selectedTemplate]);
 
   // =========================================================================
   // Effects - Data Loading & Resource Management
@@ -895,6 +1007,19 @@ const ResumeOptimizer: React.FC = () => {
           if (result) {
             console.log("User has a resume");
             setHasResume(true);
+            
+            // If result includes an ATS score, ensure it's properly recorded
+            if (result.atsScore && !isNaN(result.atsScore)) {
+              console.log("Found ATS score in initial load:", result.atsScore);
+              
+              // Update highest score reference if needed
+              if (result.atsScore > highestScoreRef.current) {
+                highestScoreRef.current = result.atsScore;
+              }
+              
+              // Force update score system-wide
+              forceScoreUpdate(result.atsScore);
+            }
           } else {
             console.log("User has no resume - normal for new users");
             setHasResume(false);
@@ -923,7 +1048,7 @@ const ResumeOptimizer: React.FC = () => {
       // Ensure loading state is reset on unmount
       isLoadingInProgressRef.current = false;
     };
-  }, [user?.id, loadLatestResume]);
+  }, [user?.id, loadLatestResume, forceScoreUpdate]);
 
   /**
    * Cleanup effect for timeouts
@@ -1086,8 +1211,6 @@ const ResumeOptimizer: React.FC = () => {
                         language={optimizedData?.language || "English"}
                         onEditModeChange={setIsEditing}
                         onReset={hasEdits ? () => setShowResetDialog(true) : undefined}
-                        onRegenerateContent={handleRegenerateResume}
-                        needsRegeneration={needsRegeneration}
                       />
                     </div>
 
@@ -1126,7 +1249,6 @@ const ResumeOptimizer: React.FC = () => {
                           applied: Array.isArray(appliedKeywords) && appliedKeywords.includes(k.text)
                         }))}
                         onKeywordApply={handleKeywordApply}
-                        needsRegeneration={needsRegeneration}
                         showImpactDetails={true}
                         currentScore={currentScoreData.score}
                         simulateKeywordImpact={simulateKeywordImpact}
