@@ -18,7 +18,6 @@ import { FileUp, CheckCircle, AlertCircle, Upload, FileText } from "lucide-react
 import { UploadButton } from "@/utils/uploadthing";
 import { toast } from "sonner";
 import { useUser, SignInButton } from "@clerk/nextjs";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /**
  * Props interface for the UploadSection component
@@ -69,7 +68,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   onAnalysisComplete,
 }) => {
   // Local state
-  const [uploadMethod, setUploadMethod] = useState<string>("file");
   const [isDragOver, setIsDragOver] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisCompleted, setAnalysisCompleted] = useState(false);
@@ -283,130 +281,109 @@ const UploadSection: React.FC<UploadSectionProps> = ({
             </p>
           </div>
 
-          {/* ===== UPLOAD METHODS TABS ===== */}
-          <Tabs value={uploadMethod} onValueChange={setUploadMethod} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-4">
-              <TabsTrigger value="file" className="flex items-center gap-2">
-                <Upload size={16} />
-                File Upload
-              </TabsTrigger>
-              <TabsTrigger value="text" className="flex items-center gap-2">
-                <FileText size={16} />
-                Paste Text
-              </TabsTrigger>
-            </TabsList>
-            
-            {/* ===== FILE UPLOAD TAB ===== */}
-            <TabsContent value="file" className="space-y-4">
-              <div className={`flex flex-col items-center justify-center space-y-4 py-6 border-2 border-dashed rounded-lg ${
+          {/* ===== FILE UPLOAD SECTION ===== */}
+          <div className="space-y-4">
+            {/* Full width drag and drop zone with visual feedback */}
+            <div
+              className={`flex flex-col items-center justify-center h-64 space-y-4 py-6 border-2 border-dashed rounded-lg ${
+                isDragOver ? "bg-blue-50 border-blue-400" : "border-gray-300"
+              } ${
                 isAnalysisInProgress() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'
-              } transition-colors`}>
-                {/* File icon */}
-                <div className="rounded-full bg-blue-50 p-3">
-                  <FileUp className="h-6 w-6 text-blue-600" />
-                </div>
+              } transition-colors`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (!isAnalysisInProgress()) {
+                  setIsDragOver(true);
+                }
+              }}
+              onDragLeave={() => {
+                if (!isAnalysisInProgress()) {
+                  setIsDragOver(false);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (!isAnalysisInProgress()) {
+                  setIsDragOver(false);
+                  // Handle dropped files here if needed
+                }
+              }}
+            >
+              {/* File icon */}
+              <div className="rounded-full bg-blue-50 p-3">
+                <FileUp className="h-6 w-6 text-blue-600" />
+              </div>
+              
+              <p className="text-center">
+                {isAnalysisInProgress() 
+                  ? "Analysis in progress..." 
+                  : "Drag & Drop your resume here or use the button below."}
+              </p>
 
-                {/* Drag and drop zone with visual feedback */}
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (!isAnalysisInProgress()) {
-                      setIsDragOver(true);
-                    }
-                  }}
-                  onDragLeave={() => {
-                    if (!isAnalysisInProgress()) {
-                      setIsDragOver(false);
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (!isAnalysisInProgress()) {
-                      setIsDragOver(false);
-                      // Handle dropped files here if needed
-                    }
-                  }}
-                  className={`transition-all w-full text-center border-2 border-dashed rounded-md p-4 ${
-                    isAnalysisInProgress() 
-                      ? 'cursor-not-allowed opacity-50' 
-                      : 'cursor-pointer'
-                  } ${
-                    isDragOver && !isAnalysisInProgress() 
-                      ? "bg-blue-50 border-blue-400" 
-                      : "border-gray-300"
-                  }`}
-                >
-                  {isAnalysisInProgress() 
-                    ? "Analysis in progress..." 
-                    : "Drag & Drop your resume here or use the button below."
-                  }
-                </div>
+              {/* Upload button or sign-in prompt */}
+              <div className="relative w-full flex justify-center items-center">
+                {isSignedIn ? (
+                  <UploadButton
+                    className={`custom-btn ut-button:bg-blue-600 ut-button:text-white ut-button:rounded-md ut-button:px-4 ut-button:py-2 ut-button:hover:hover:bg-blue-700 ${
+                      shouldDisableUpload() ? 'ut-button:opacity-50 ut-button:cursor-not-allowed' : ''
+                    }`}
+                    endpoint="resumeUploader"
+                    disabled={shouldDisableUpload()}
+                    onClientUploadComplete={async (res) => {
+                      // Check if file was uploaded successfully
+                      if (!res?.[0]?.ufsUrl) return;
 
-                {/* Upload button or sign-in prompt */}
-                <div className="relative w-full flex justify-center items-center">
-                  {isSignedIn ? (
-                    <UploadButton
-                      className={`custom-btn ut-button:bg-blue-600 ut-button:text-white ut-button:rounded-md ut-button:px-4 ut-button:py-2 ut-button:hover:hover:bg-blue-700 ${
-                        shouldDisableUpload() ? 'ut-button:opacity-50 ut-button:cursor-not-allowed' : ''
-                      }`}
-                      endpoint="resumeUploader"
-                      disabled={shouldDisableUpload()}
-                      onClientUploadComplete={async (res) => {
-                        // Check if file was uploaded successfully
-                        if (!res?.[0]?.url) return;
+                      const fileUrl = res[0].ufsUrl;
+                      const fileName = res[0].name;
+                      const fileSize = res[0].size;
+                      const fileType = res[0].type;
 
-                        const fileUrl = res[0].url;
-                        const fileName = res[0].name;
-                        const fileSize = res[0].size;
-                        const fileType = res[0].type;
-
-                        // Process the uploaded resume file
-                        await handleResumeOptimization(fileUrl, fileName, fileSize, fileType);
-                      }}
-                      onUploadError={(error) => {
-                        toast.error("Upload error", {
-                          description: error.message,
-                        });
-                      }}
-                    />
-                  ) : (
-                    <SignInButton mode="modal">
-                      <Button className="px-4">You must be signed in to upload</Button>
-                    </SignInButton>
-                  )}
-                </div>
-
-                {/* ===== FILE STATUS DISPLAY ===== */}
-                {uploadedInfo && (
-                  <div className="mt-2 text-sm text-muted-foreground animate-fade-in-up text-center">
-                    {/* File info with status icon */}
-                    <div className="flex items-center justify-center gap-1">
-                      {analysisCompleted ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-amber-500" />
-                      )}
-                      <span className="font-medium">Uploaded file:</span> {uploadedInfo.name}
-                    </div>
-                    {/* File details */}
-                    <div className="text-xs text-gray-500">
-                      ({readableSize(uploadedInfo.size)}, {mimeLabelMap[uploadedInfo.type] || uploadedInfo.type})
-                    </div>
-                    {/* Processing status */}
-                    <div className="text-xs mt-1 text-blue-600">
-                      {isProcessing
-                        ? "Analyzing resume content..."
-                        : analysisCompleted 
-                        ? "Analysis complete! Preparing preview..." 
-                        : "Analysis complete"}
-                    </div>
-                  </div>
+                      // Process the uploaded resume file
+                      await handleResumeOptimization(fileUrl, fileName, fileSize, fileType);
+                    }}
+                    onUploadError={(error) => {
+                      toast.error("Upload error", {
+                        description: error.message,
+                      });
+                    }}
+                  />
+                ) : (
+                  <SignInButton mode="modal">
+                    <Button className="px-4">You must be signed in to upload</Button>
+                  </SignInButton>
                 )}
               </div>
-            </TabsContent>
-            
-            {/* ===== TEXT INPUT TAB ===== */}
-            <TabsContent value="text" className="space-y-4">
+            </div>
+
+            {/* ===== FILE STATUS DISPLAY ===== */}
+            {uploadedInfo && (
+              <div className="mt-2 text-sm text-muted-foreground animate-fade-in-up text-center">
+                {/* File info with status icon */}
+                <div className="flex items-center justify-center gap-1">
+                  {analysisCompleted ? (
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                  )}
+                  <span className="font-medium">Uploaded file:</span> {uploadedInfo.name}
+                </div>
+                {/* File details */}
+                <div className="text-xs text-gray-500">
+                  ({readableSize(uploadedInfo.size)}, {mimeLabelMap[uploadedInfo.type] || uploadedInfo.type})
+                </div>
+                {/* Processing status */}
+                <div className="text-xs mt-1 text-blue-600">
+                  {isProcessing
+                    ? "Analyzing resume content..."
+                    : analysisCompleted 
+                    ? "Analysis complete! Preparing preview..." 
+                    : "Analysis complete"}
+                </div>
+              </div>
+            )}
+
+            {/* ===== TEXT INPUT SECTION ===== */}
+            <div className="space-y-4">
               {/* Text input header with character count */}
               <div className="flex items-center justify-between">
                 <p className="font-medium">Paste your resume content:</p>
@@ -472,8 +449,8 @@ const UploadSection: React.FC<UploadSectionProps> = ({
                   Analysis complete! Preparing preview...
                 </div>
               )}
-            </TabsContent>
-          </Tabs>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>

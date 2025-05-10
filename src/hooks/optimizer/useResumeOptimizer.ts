@@ -1,14 +1,25 @@
 /**
  * useResumeOptimizer Hook
  * 
- * Main hook for the resume optimization workflow. Manages the main state and operations
- * for the resume optimization process including loading, saving, and resetting resumes.
+ * Core hook that manages the entire resume optimization workflow including:
+ * - Loading resume data from the database via services
+ * - Managing optimized content and edited content
+ * - Tracking ATS score, suggestions, and keywords
+ * - Handling editing state and template selection
+ * - Providing save, reset, and update functionality
+ * - Properly handling loading states and user feedback
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { createClientComponentClient } from '@/lib/supabase-client';
-import { getLatestOptimizedResume, updateKeywordStatus, updateSuggestionStatus } from '@/services/resumeService';
+import { 
+  getLatestOptimizedResume, 
+  updateKeywordStatus, 
+  updateSuggestionStatus,
+  saveResumeContent,
+  resetResumeToOriginal,
+  updateResumeTemplate
+} from '@/services/resumeService';
 import { parseOptimizedText, calculateAtsScore } from '@/services/resumeParser';
 import { ResumeData, Suggestion, Keyword } from '@/types/resume';
 
@@ -17,22 +28,24 @@ import { ResumeData, Suggestion, Keyword } from '@/types/resume';
  * @param userId - The user ID for data fetching
  */
 export const useResumeOptimizer = (userId?: string) => {
-  // Initialize Supabase client
-  const supabase = createClientComponentClient();
+  // ===== STATE MANAGEMENT =====
   
-  // Resume data state
+  // Resume content state
   const [resumeData, setResumeData] = useState<any | null>(null);
-  const [optimizedText, setOptimizedText] = useState<string>('');
-  const [editedText, setEditedText] = useState<string>('');
-  const [atsScore, setAtsScore] = useState<number | null>(null);
+  const [originalText, setOriginalText] = useState<string>(''); // Original optimized text from AI
+  const [optimizedText, setOptimizedText] = useState<string>(''); // Current display text (either original or edited)
+  const [editedText, setEditedText] = useState<string>(''); // User edited content in edit mode
   
-  // Optimization results state
+  // Scoring and enhancement data
+  const [originalAtsScore, setOriginalAtsScore] = useState<number | null>(null); // Original AI score
+  const [currentAtsScore, setCurrentAtsScore] = useState<number | null>(null); // Current/edited score
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   
   // UI state
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('basic');
+  const [contentModified, setContentModified] = useState<boolean>(false);
   
   // Loading states
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -42,13 +55,30 @@ export const useResumeOptimizer = (userId?: string) => {
   // Resume status
   const [hasResume, setHasResume] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<string>('upload');
+  
+  // Track initial load attempt to prevent infinite loops
+  const loadAttemptRef = useRef<number>(0);
+  const hasLoadedDataRef = useRef<boolean>(false);
 
   /**
    * Load the latest resume for a user
-   * Uses the resumeService to fetch data from the server
+   * Handles both the initial data loading and subsequent refresh requests
    */
   const loadLatestResume = useCallback(async () => {
-    if (!userId) return null;
+    // Don't attempt loading without a user ID
+    if (!userId) {
+      console.log("No user ID provided, skipping resume load");
+      return null;
+    }
+    
+    // Increment load attempt counter to prevent infinite loops
+    loadAttemptRef.current += 1;
+    
+    // Prevent excessive load attempts
+    if (loadAttemptRef.current > 3) {
+      console.log("Maximum resume load attempts reached");
+      return null;
+    }
     
     try {
       setIsLoading(true);
@@ -56,37 +86,80 @@ export const useResumeOptimizer = (userId?: string) => {
       // Fetch latest resume from service
       const { data: resumeData, error } = await getLatestOptimizedResume(userId);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Error loading resume:", error);
+        throw error;
+      }
       
       if (resumeData) {
+        console.log("Resume loaded successfully:", resumeData.id);
+        
         // Update resume data state
         setResumeData(resumeData);
         setHasResume(true);
+        hasLoadedDataRef.current = true;
         
-        // Set the text based on availability
+        // Store original text from optimized_text for reset functionality
+        setOriginalText(resumeData.optimized_text || '');
+        
+        // Determine which content to display
         if (resumeData.last_saved_text) {
+          // If there are saved edits, show those
+          setOptimizedText(resumeData.last_saved_text);
           setEditedText(resumeData.last_saved_text);
+        } else {
+          // Otherwise show original optimized content
           setOptimizedText(resumeData.optimized_text || '');
-        } else if (resumeData.optimized_text) {
-          setOptimizedText(resumeData.optimized_text);
+          setEditedText(resumeData.optimized_text || '');
         }
         
-        // Set the score
-        setAtsScore(resumeData.last_saved_score_ats || resumeData.ats_score);
+        // Set the original and current scores
+        setOriginalAtsScore(resumeData.ats_score || 65);
+        setCurrentAtsScore(resumeData.last_saved_score_ats !== null ? 
+          resumeData.last_saved_score_ats : 
+          resumeData.ats_score);
         
-        // Set suggestions and keywords
-        setSuggestions(Array.isArray(resumeData.suggestions) ? resumeData.suggestions : []);
-        setKeywords(Array.isArray(resumeData.keywords) ? resumeData.keywords : []);
+        // Prepare suggestions and keywords with proper structure
+        const formattedSuggestions = Array.isArray(resumeData.suggestions) 
+          ? resumeData.suggestions.map((s: any) => ({
+              id: s.id || s.suggestion_id || String(Math.random()),
+              text: s.text || '',
+              type: s.type || 'general',
+              impact: s.impact || '',
+              is_applied: s.is_applied || false
+            }))
+          : [];
+          
+        const formattedKeywords = Array.isArray(resumeData.keywords)
+          ? resumeData.keywords.map((k: any) => ({
+              id: k.id || k.keyword_id || String(Math.random()),
+              text: k.keyword || k.text || '',
+              is_applied: k.is_applied || false
+            }))
+          : [];
+        
+        setSuggestions(formattedSuggestions);
+        setKeywords(formattedKeywords);
+        
+        // Set content as not modified initially
+        setContentModified(false);
+        
+        // Set template if available
+        if (resumeData.selected_template) {
+          setSelectedTemplate(resumeData.selected_template);
+        }
         
         return resumeData;
       } else {
-        // No resume found
+        // No resume found - this is expected for new users
+        console.log("No resume found for user");
         setHasResume(false);
+        hasLoadedDataRef.current = true;
         return null;
       }
     } catch (error) {
       console.error("Error loading resume:", error);
-      toast.error("Failed to load resume");
+      toast.error("Erreur lors du chargement du CV");
       setHasResume(false);
       return null;
     } finally {
@@ -95,82 +168,71 @@ export const useResumeOptimizer = (userId?: string) => {
   }, [userId]);
   
   /**
-   * Save the edited resume content and update score
+   * Save the edited resume content, score, and applied enhancements
+   * Updates the database with all current changes via service
    */
-  const saveResume = useCallback(async () => {
-    if (!userId || !resumeData?.id || !editedText) {
-      toast.error("Cannot save: Missing data");
-      return;
+  const saveResume = useCallback(async (newContent?: string) => {
+    // Use provided content or current edited text
+    const contentToSave = newContent || editedText;
+    
+    if (!userId || !resumeData?.id || !contentToSave) {
+      toast.error("Impossible de sauvegarder: Données manquantes");
+      return false;
     }
     
     try {
       setIsSaving(true);
       
-      // Update the resume in the database
-      const { error } = await supabase
-        .from('resumes')
-        .update({
-          last_saved_text: editedText,
-          last_saved_score_ats: atsScore,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', resumeData.id);
+      // Use resumeService to save content and score
+      const { success, error } = await saveResumeContent(
+        resumeData.id, 
+        contentToSave, 
+        currentAtsScore || 0
+      );
       
-      if (error) throw error;
+      if (!success) throw error;
       
       // Update local state
       setResumeData({
         ...resumeData,
-        last_saved_text: editedText,
-        last_saved_score_ats: atsScore
+        last_saved_text: contentToSave,
+        last_saved_score_ats: currentAtsScore
       });
       
-      // Exit edit mode
-      setIsEditing(false);
+      // Update optimized text to show the saved content
+      setOptimizedText(contentToSave);
       
-      toast.success("Changes saved successfully");
+      // Mark content as no longer modified since we just saved
+      setContentModified(false);
+      
+      toast.success("Modifications sauvegardées avec succès");
+      return true;
     } catch (error) {
       console.error("Error saving resume:", error);
-      toast.error("Failed to save changes");
+      toast.error("Échec de la sauvegarde des modifications");
+      return false;
     } finally {
       setIsSaving(false);
     }
-  }, [userId, resumeData, editedText, atsScore, supabase]);
+  }, [userId, resumeData, editedText, currentAtsScore]);
   
   /**
    * Reset changes to the original optimized version
+   * Clears all edits and applied enhancements via service
    */
   const resetResume = useCallback(async () => {
     if (!userId || !resumeData?.id) {
-      toast.error("Cannot reset: Missing data");
+      toast.error("Impossible de réinitialiser: Données manquantes");
       return;
     }
     
     try {
       setIsResetting(true);
       
-      // Update the resume in the database
-      const { error } = await supabase
-        .from('resumes')
-        .update({
-          last_saved_text: null,
-          last_saved_score_ats: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', resumeData.id);
+      // Use resumeService to reset resume to original version
+      const { success, error } = await resetResumeToOriginal(resumeData.id);
       
-      if (error) throw error;
-      
-      // Reset suggestions and keywords to not applied
-      await supabase
-        .from('resume_suggestions')
-        .update({ is_applied: false })
-        .eq('resume_id', resumeData.id);
-      
-      await supabase
-        .from('resume_keywords')
-        .update({ is_applied: false })
-        .eq('resume_id', resumeData.id);
+      if (!success) throw error;
       
       // Update local state
       setResumeData({
@@ -179,44 +241,66 @@ export const useResumeOptimizer = (userId?: string) => {
         last_saved_score_ats: null
       });
       
-      // Clear edited text
-      setEditedText('');
+      // Reset all content to original
+      setOptimizedText(originalText);
+      setEditedText(originalText);
+      
+      // Reset score to original
+      setCurrentAtsScore(originalAtsScore);
       
       // Reset suggestions and keywords state
       setSuggestions(suggestions.map(s => ({ ...s, is_applied: false })));
       setKeywords(keywords.map(k => ({ ...k, is_applied: false })));
       
-      // Exit edit mode
+      // Reset editing state
       setIsEditing(false);
+      setContentModified(false);
       
-      toast.success("Resume reset to original version");
+      toast.success("CV réinitialisé à la version originale");
     } catch (error) {
       console.error("Error resetting resume:", error);
-      toast.error("Failed to reset resume");
+      toast.error("Échec de la réinitialisation du CV");
     } finally {
       setIsResetting(false);
     }
-  }, [userId, resumeData, supabase, suggestions, keywords]);
+  }, [userId, resumeData, originalText, originalAtsScore, suggestions, keywords]);
   
   /**
-   * Handle content changes in the preview editor
+   * Handle content changes in the editor
+   * Tracks modifications and updates edited content
    */
   const handleContentEdit = useCallback((newContent: string) => {
     setEditedText(newContent);
-  }, []);
+    setContentModified(true);
+    
+    // Re-calculate score based on the new content if needed
+    // This is a simplified approach - a real implementation might
+    // analyze the content more deeply for accurate scoring
+    const currentAppliedSuggestions = suggestions.filter(s => s.is_applied).length;
+    const currentAppliedKeywords = keywords.filter(k => k.is_applied).length;
+    
+    // Simple scoring formula that could be enhanced with real content analysis
+    const baseScore = originalAtsScore || 65;
+    const suggestionsBonus = currentAppliedSuggestions * 2; // Each suggestion worth 2 points
+    const keywordsBonus = currentAppliedKeywords * 1; // Each keyword worth 1 point
+    const newScore = Math.min(100, baseScore + suggestionsBonus + keywordsBonus);
+    
+    setCurrentAtsScore(newScore);
+  }, [suggestions, keywords, originalAtsScore]);
   
   /**
    * Apply or unapply a suggestion
+   * Updates suggestion state and recalculates ATS score
    */
-  const handleApplySuggestion = useCallback(async (suggestionId: string) => {
+  const handleApplySuggestion = useCallback(async (suggestionId: string, applyState?: boolean) => {
     if (!resumeData?.id) return;
     
     // Find the suggestion
     const suggestion = suggestions.find(s => s.id === suggestionId);
     if (!suggestion) return;
     
-    // Toggle the applied state
-    const newIsApplied = !suggestion.is_applied;
+    // Determine new applied state (toggle if not specified)
+    const newIsApplied = applyState !== undefined ? applyState : !suggestion.is_applied;
     
     try {
       // Update suggestion status through service
@@ -233,29 +317,40 @@ export const useResumeOptimizer = (userId?: string) => {
         s.id === suggestionId ? { ...s, is_applied: newIsApplied } : s
       ));
       
-      // Update score (simplified for now)
-      const scoreDelta = newIsApplied ? 2 : -2;
-      setAtsScore(prevScore => prevScore ? prevScore + scoreDelta : 70);
+      // Update score 
+      const scoreDelta = newIsApplied ? 2 : -2; // Each suggestion is worth 2 points
+      setCurrentAtsScore(prevScore => {
+        if (!prevScore) return originalAtsScore || 65;
+        const newScore = prevScore + scoreDelta;
+        return Math.min(100, Math.max(0, newScore)); // Ensure score stays between 0-100
+      });
       
-      toast.success(newIsApplied ? "Suggestion applied" : "Suggestion removed");
+      // Mark content as modified since applying suggestions is a change
+      setContentModified(true);
+      
+      toast.success(newIsApplied ? 
+        "Suggestion appliquée" : 
+        "Suggestion retirée"
+      );
     } catch (error) {
       console.error("Error applying suggestion:", error);
-      toast.error("Failed to apply suggestion");
+      toast.error("Échec de l'application de la suggestion");
     }
-  }, [resumeData?.id, suggestions]);
+  }, [resumeData?.id, suggestions, originalAtsScore]);
   
   /**
    * Apply or unapply a keyword
+   * Updates keyword state and recalculates ATS score
    */
-  const handleKeywordApply = useCallback(async (keywordId: string) => {
+  const handleKeywordApply = useCallback(async (keywordId: string, applyState?: boolean) => {
     if (!resumeData?.id) return;
     
     // Find the keyword
     const keyword = keywords.find(k => k.id === keywordId);
     if (!keyword) return;
     
-    // Toggle the applied state
-    const newIsApplied = !keyword.is_applied;
+    // Determine new applied state (toggle if not specified)
+    const newIsApplied = applyState !== undefined ? applyState : !keyword.is_applied;
     
     try {
       // Update keyword status through service
@@ -272,19 +367,30 @@ export const useResumeOptimizer = (userId?: string) => {
         k.id === keywordId ? { ...k, is_applied: newIsApplied } : k
       ));
       
-      // Update score (simplified for now)
-      const scoreDelta = newIsApplied ? 1 : -1;
-      setAtsScore(prevScore => prevScore ? prevScore + scoreDelta : 70);
+      // Update score
+      const scoreDelta = newIsApplied ? 1 : -1; // Each keyword is worth 1 point
+      setCurrentAtsScore(prevScore => {
+        if (!prevScore) return originalAtsScore || 65;
+        const newScore = prevScore + scoreDelta;
+        return Math.min(100, Math.max(0, newScore)); // Ensure score stays between 0-100
+      });
       
-      toast.success(newIsApplied ? "Keyword applied" : "Keyword removed");
+      // Mark content as modified since applying keywords is a change
+      setContentModified(true);
+      
+      toast.success(newIsApplied ? 
+        "Mot-clé appliqué" : 
+        "Mot-clé retiré"
+      );
     } catch (error) {
       console.error("Error applying keyword:", error);
-      toast.error("Failed to apply keyword");
+      toast.error("Échec de l'application du mot-clé");
     }
-  }, [resumeData?.id, keywords]);
+  }, [resumeData?.id, keywords, originalAtsScore]);
   
   /**
-   * Update resume state with optimized data from API
+   * Update resume state with optimized data from API or upload
+   * Used after initial optimization to populate all components
    */
   const updateResumeWithOptimizedData = useCallback((
     optimizedTextContent: string,
@@ -293,41 +399,89 @@ export const useResumeOptimizer = (userId?: string) => {
     suggestionsData: Suggestion[],
     keywordsData: Keyword[]
   ) => {
-    // Update local state with optimized data
+    // Update content state
+    setOriginalText(optimizedTextContent);
     setOptimizedText(optimizedTextContent);
-    setAtsScore(scoreValue);
+    setEditedText(optimizedTextContent);
+    
+    // Update score state
+    setOriginalAtsScore(scoreValue);
+    setCurrentAtsScore(scoreValue);
+    
+    // Update enhancements state
     setSuggestions(suggestionsData);
     setKeywords(keywordsData);
     
-    // Parse the optimized text to extract structured data
-    const parsedData = parseOptimizedText(optimizedTextContent);
+    // Reset modification tracking
+    setContentModified(false);
     
-    // Calculate ATS score if not provided
-    const calculatedScore = scoreValue || calculateAtsScore(parsedData);
-    
-    // Fetch the resume data if not already available
-    if (!resumeData) {
-      supabase
-        .from('resumes')
-        .select('*')
-        .eq('id', resumeId)
-        .single()
+    // Fetch the complete resume data if not already available
+    if (!resumeData || resumeData.id !== resumeId) {
+      getLatestOptimizedResume(userId || '')
         .then(({ data }) => {
           if (data) {
             setResumeData(data);
             setHasResume(true);
+            
+            // Set template if available
+            if (data.selected_template) {
+              setSelectedTemplate(data.selected_template);
+            }
           }
         })
         .catch(error => console.error("Error fetching resume data:", error));
     }
     
+    // Mark that we now have resume data
+    setHasResume(true);
+    hasLoadedDataRef.current = true;
+    
     // Switch to preview tab
     setActiveTab('preview');
-  }, [resumeData, supabase]);
+  }, [resumeData, userId]);
+  
+  /**
+   * Update template selection and save to database
+   */
+  const updateSelectedTemplate = useCallback(async (templateId: string) => {
+    if (!resumeData?.id) return;
+    
+    try {
+      // Call service to update template
+      const { success, error } = await updateResumeTemplate(resumeData.id, templateId);
+      
+      if (!success) throw error;
+      
+      // Update local state only after successful DB update
+      setSelectedTemplate(templateId);
+      
+      toast.success("Template mis à jour avec succès");
+    } catch (error) {
+      console.error("Error updating template:", error);
+      toast.error("Échec de la mise à jour du template");
+    }
+  }, [resumeData]);
+  
+  /**
+   * Check if there are unsaved changes
+   * Used to warn users before navigating away
+   */
+  const hasUnsavedChanges = useCallback(() => {
+    return contentModified;
+  }, [contentModified]);
+  
+  /**
+   * Get array of applied keywords for templates
+   */
+  const getAppliedKeywords = useCallback(() => {
+    return keywords
+      .filter(keyword => keyword.is_applied)
+      .map(keyword => keyword.text);
+  }, [keywords]);
   
   // Load resume on initial mount if userId is available
   useEffect(() => {
-    if (userId && hasResume === null) {
+    if (userId && hasResume === null && !hasLoadedDataRef.current) {
       loadLatestResume();
     }
   }, [userId, hasResume, loadLatestResume]);
@@ -335,13 +489,16 @@ export const useResumeOptimizer = (userId?: string) => {
   return {
     // State
     resumeData,
-    optimizedText,
-    editedText,
-    atsScore,
+    originalText,          // Original AI-optimized text (for reset)
+    optimizedText,         // Current displayed text (either original or edited)
+    editedText,            // Text being edited in edit mode
+    originalAtsScore,      // Original AI score (for reset)
+    currentAtsScore,       // Current/edited score
     suggestions,
     keywords,
     isEditing,
     selectedTemplate,
+    contentModified,       // Whether there are unsaved changes
     isLoading,
     isSaving,
     isResetting,
@@ -351,7 +508,6 @@ export const useResumeOptimizer = (userId?: string) => {
     // Actions
     setActiveTab,
     setIsEditing,
-    setSelectedTemplate,
     loadLatestResume,
     saveResume,
     resetResume,
@@ -359,12 +515,16 @@ export const useResumeOptimizer = (userId?: string) => {
     handleApplySuggestion,
     handleKeywordApply,
     updateResumeWithOptimizedData,
+    updateSelectedTemplate,
+    getAppliedKeywords,
+    hasUnsavedChanges,
     
-    // Setters for direct updates from API
+    // Direct state setters (use with caution)
     setOptimizedText,
-    setAtsScore,
+    setCurrentAtsScore,
     setSuggestions,
-    setKeywords
+    setKeywords,
+    setContentModified
   };
 };
 

@@ -378,5 +378,96 @@ export function isValidNoResumeState(response: Response, result: any): boolean {
   return response.ok && (!result.data || result.data === null);
 }
 
-// Re-export utility functions from resumeParser
-export { parseOptimizedText, extractKeywords, calculateAtsScore };
+/**
+ * Save resume content and score
+ */
+export async function saveResumeContent(
+  resumeId: string, 
+  content: string, 
+  atsScore: number
+): Promise<{ success: boolean; error: Error | null }> {
+  try {
+    const { error } = await supabase
+      .from('resumes')
+      .update({
+        last_saved_text: content,
+        last_saved_score_ats: atsScore,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', resumeId);
+    
+    if (error) throw error;
+    
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Error saving resume content:", error);
+    return { success: false, error: error as Error };
+  }
+}
+
+/**
+ * Reset resume to original version
+ */
+export async function resetResumeToOriginal(
+  resumeId: string
+): Promise<{ success: boolean; error: Error | null }> {
+  try {
+    // Reset resume fields
+    const { error: resumeError } = await supabase
+      .from('resumes')
+      .update({
+        last_saved_text: null,
+        last_saved_score_ats: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', resumeId);
+    
+    if (resumeError) throw resumeError;
+    
+    // Reset suggestions
+    const { error: suggestionsError } = await supabase
+      .from('resume_suggestions')
+      .update({ is_applied: false })
+      .eq('resume_id', resumeId);
+    
+    if (suggestionsError) throw suggestionsError;
+    
+    // Reset keywords
+    const { error: keywordsError } = await supabase
+      .from('resume_keywords')
+      .update({ is_applied: false })
+      .eq('resume_id', resumeId);
+    
+    if (keywordsError) throw keywordsError;
+    
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Error resetting resume:", error);
+    return { success: false, error: error as Error };
+  }
+}
+
+/**
+ * Update resume template
+ */
+export async function updateResumeTemplate(
+  resumeId: string,
+  templateId: string
+): Promise<{ success: boolean; error: Error | null }> {
+  try {
+    const { error } = await supabase
+      .from('resumes')
+      .update({
+        selected_template: templateId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', resumeId);
+    
+    if (error) throw error;
+    
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Error updating resume template:", error);
+    return { success: false, error: error as Error };
+  }
+}

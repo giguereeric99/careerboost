@@ -13,7 +13,7 @@ import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 
 // Import components
-import UploadSection from '@/components/resumeOptimizer/uploadSection';
+import UploadResume from '@/components/resumeOptimizer/uploadResume';
 import ResumePreview from '@/components/resumeOptimizer/resumePreview';
 import ScoreCard from '@/components/resumeOptimizer/scoreCard';
 import SuggestionsList from '@/components/resumeOptimizer/suggestionsList';
@@ -238,7 +238,7 @@ const ResumeOptimizer: React.FC = () => {
         
         {/* Upload tab */}
         <TabsContent value="upload" className="space-y-4">
-          <UploadSection
+          {/* <UploadSection
             isUploading={isUploading}
             isParsing={isOptimizing}
             selectedFile={selectedFile}
@@ -259,7 +259,8 @@ const ResumeOptimizer: React.FC = () => {
               );
               setShowLoadingState(false);
             }}
-          />
+          /> */}
+          <UploadResume />
         </TabsContent>
         
         {/* Preview tab with optimized loading state handling */}
@@ -283,81 +284,14 @@ const ResumeOptimizer: React.FC = () => {
               <div className="grid md:grid-cols-5 gap-6">
                 {/* Resume preview - takes 3 columns */}
                 <div className="col-span-3">
-                  <ResumePreview
-                    optimizedText={displayContent}
-                    originalOptimizedText={optimizedText}
-                    selectedTemplate={selectedTemplate}
-                    templates={resumeTemplates}
-                    appliedKeywords={appliedKeywordsArray}
-                    suggestions={suggestions.map(s => ({
-                      text: s.text,
-                      improvement: s.improvement,
-                      id: s.id,
-                      isApplied: s.is_applied
-                    }))}
-                    onDownload={handleDownload}
-                    onSave={saveResume}
-                    onTextChange={handleContentEdit}
-                    isOptimizing={isOptimizing}
-                    isApplyingChanges={isSaving}
-                    language={resumeData?.language || "English"}
-                    onEditModeChange={setIsEditing}
-                    onReset={() => setShowResetDialog(true)}
-                  />
+                  div resume preview
                 </div>
 
                 {/* Sidebar with optimization controls - takes 2 columns */}
                 <div className="col-span-2 flex flex-col gap-4">
-                  {/* ATS Score card */}
-                  {/* <ScoreCard 
-                    optimizationScore={atsScore || 0}
-                    resumeContent={displayContent}
-                    suggestionsApplied={suggestions.filter(s => s.is_applied).length}
-                    keywordsApplied={keywords.filter(k => k.is_applied).length}
-                    scoreBreakdown={null}
-                    potentialScore={100}
-                    initialScore={65}
-                    isCalculating={isOptimizing}
-                  /> */}
+         
 
-                  {/* AI Suggestions */}
-                  {/* <SuggestionsList
-                    suggestions={suggestions.map(s => ({
-                      id: s.id,
-                      text: s.text,
-                      improvement: s.improvement,
-                      isApplied: s.is_applied,
-                      impact: s.impact
-                    }))}
-                    isOptimizing={isOptimizing}
-                    onApplySuggestion={handleApplySuggestion}
-                    resumeContent={displayContent}
-                    showImpactDetails={true}
-                    currentScore={atsScore || 0}
-                    simulateSuggestionImpact={() => 2}
-                  /> */}
-                  
-                  {/* Keywords */}
-                  {/* <KeywordList
-                    keywords={keywords.map(k => ({
-                      id: k.id,
-                      text: k.text,
-                      applied: k.is_applied,
-                      category: k.category,
-                      impact: k.impact
-                    }))}
-                    onKeywordApply={handleKeywordApply}
-                    showImpactDetails={true}
-                    currentScore={atsScore || 0}
-                    simulateKeywordImpact={() => 1}
-                  /> */}
-
-                  {/* Template selection gallery */}
-                  {/* <TemplateGallery
-                    templates={resumeTemplates}
-                    selectedTemplate={selectedTemplate}
-                    onTemplateSelect={setSelectedTemplate}
-                  /> */}
+                    <div>sidebar</div>
                 </div>
               </div>
             </>
