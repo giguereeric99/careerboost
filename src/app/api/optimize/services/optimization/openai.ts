@@ -106,14 +106,16 @@ export async function optimizeWithOpenAI(
 
 /**
  * Parse the OpenAI response into a structured optimization result
+ * Enhanced with robust error handling and recovery methods
  * 
  * @param responseText - Raw response from OpenAI
  * @param originalText - Original resume text (for fallback)
  * @returns Parsed optimization result
+ * @throws Error with 'RETRY_UPLOAD' message when parsing completely fails
  */
 function parseOpenAIResponse(responseText: string, originalText: string): OptimizationResult {
   try {
-    // Try direct JSON parsing
+    // Try direct JSON parsing first - the most straightforward approach
     let parsedResult = JSON.parse(responseText);
     
     // Return the parsed result if it has the expected structure
@@ -132,7 +134,7 @@ function parseOpenAIResponse(responseText: string, originalText: string): Optimi
         parsedResult.keywordSuggestions = parsedResult.keywordSuggestions.slice(0, 10);
       }
       
-      // Ensure atsScore is a number between 0-100
+      // Ensure atsScore is a number between a valid range
       if (typeof parsedResult.atsScore !== 'number' || parsedResult.atsScore < 0 || parsedResult.atsScore > 100) {
         parsedResult.atsScore = 65;
       }
@@ -141,29 +143,140 @@ function parseOpenAIResponse(responseText: string, originalText: string): Optimi
     }
   } catch (jsonError) {
     console.error('[OpenAI] Failed to parse JSON response:', jsonError);
+    console.error('[OpenAI] Response preview:', responseText.substring(0, 200) + '...');
     
-    // Try to extract JSON by finding text between curly braces
+    // ---- RECOVERY ATTEMPT 1: Try to extract a valid JSON object ----
     try {
+      // Sometimes the AI includes text before or after the JSON
+      // This regex tries to find a complete JSON object in the response
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const extractedJson = jsonMatch[0];
-        return parseOpenAIResponse(extractedJson, originalText);
+        try {
+          // Parse the extracted JSON and verify it has the required structure
+          const extractedResult = JSON.parse(extractedJson);
+          if (extractedResult && extractedResult.optimizedText) {
+            console.log('[OpenAI] Successfully extracted valid JSON object');
+            // Use our parser again to ensure validation of the extracted result
+            return parseOpenAIResponse(extractedJson, originalText);
+          }
+        } catch (innerError) {
+          console.error('[OpenAI] Failed to parse extracted JSON:', innerError);
+        }
       }
     } catch (extractError) {
       console.error('[OpenAI] Failed to extract JSON from response:', extractError);
     }
+    
+    // ---- RECOVERY ATTEMPT 2: Try to balance mismatched brackets ----
+    try {
+      // Sometimes the JSON is almost valid but has mismatched brackets
+      // balanceJsonString attempts to fix this by adding missing closing brackets
+      const balancedJson = balanceJsonString(responseText);
+      if (balancedJson !== responseText) {
+        console.log('[OpenAI] Attempting to parse balanced JSON');
+        try {
+          const balancedResult = JSON.parse(balancedJson);
+          if (balancedResult && balancedResult.optimizedText) {
+            console.log('[OpenAI] Successfully parsed balanced JSON');
+            // Use our parser again to ensure validation of the balanced result
+            return parseOpenAIResponse(JSON.stringify(balancedResult), originalText);
+          }
+        } catch (balanceError) {
+          console.error('[OpenAI] Failed to parse balanced JSON:', balanceError);
+        }
+      }
+    } catch (balanceAttemptError) {
+      console.error('[OpenAI] Failed balance attempt:', balanceAttemptError);
+    }
+    
+    // ---- RECOVERY ATTEMPT 3: If the response looks like a resume, use it directly ----
+    // Sometimes the AI just returns the optimized text without JSON structure
+    if (responseText.length > 500 && responseText.includes('\n')) {
+      console.warn('[OpenAI] Using raw response as optimized text');
+      return {
+        optimizedText: responseText,
+        suggestions: [],
+        keywordSuggestions: [],
+        atsScore: 65,
+        provider: 'openai'
+      };
+    }
+    
+    // If all recovery attempts failed and original text is too short, 
+    // ask user to retry uploading the file
+    if (!originalText || originalText.length < 100) {
+      console.error('[OpenAI] Original text too short, requesting retry');
+      throw new Error('RETRY_UPLOAD');
+    }
   }
   
-  // If all parsing fails, return a minimal valid structure with the original text
-  console.warn('[OpenAI] Returning fallback result');
+  // If all parsing attempts have failed but we have usable original text,
+  // throw a specific error to indicate the user should try uploading again
+  // We use a 75% probability to give the user a chance to try again for better results
+  if (Math.random() < 0.75) {
+    console.error('[OpenAI] All parsing attempts failed, requesting retry');
+    throw new Error('RETRY_UPLOAD');
+  }
   
+  // As a last resort (25% of cases), return a fallback with the original text
+  // This prevents endless retries if there's a persistent issue
+  console.warn('[OpenAI] Returning fallback result with original text');
   return {
-    optimizedText: responseText.length > 100 ? responseText : originalText,
+    optimizedText: originalText,
     suggestions: [],
     keywordSuggestions: [],
     atsScore: 65,
     provider: 'openai'
   };
+}
+
+/**
+ * Utility function to balance unmatched brackets in malformed JSON
+ * 
+ * This can fix common JSON errors like missing closing brackets
+ * that often occur in AI-generated responses
+ * 
+ * @param input - Potentially malformed JSON string
+ * @returns Balanced JSON string with proper bracket closure
+ */
+function balanceJsonString(input: string): string {
+  try {
+    // Arrays of opening and closing brackets we want to balance
+    const opens = ['{', '['];
+    const closes = ['}', ']'];
+    const pairs: Record<string, string> = { '{': '}', '[': ']' };
+    
+    // Stack to keep track of opening brackets
+    const stack: string[] = [];
+    
+    // Scan through the input string, tracking opening brackets
+    for (const char of input) {
+      if (opens.includes(char)) {
+        // When we see an opening bracket, push it to the stack
+        stack.push(char);
+      } else if (closes.includes(char)) {
+        // When we see a closing bracket, check if it matches the last opening bracket
+        const expected = stack.length > 0 ? pairs[stack[stack.length - 1]] : null;
+        if (expected === char) {
+          // If it matches, pop the opening bracket from the stack
+          stack.pop();
+        }
+      }
+    }
+    
+    // Add missing closing brackets in reverse order
+    let result = input;
+    while (stack.length > 0) {
+      const open = stack.pop()!;
+      result += pairs[open];
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('[OpenAI] Error in balanceJsonString:', error);
+    return input; // Return the input unchanged if an error occurs
+  }
 }
 
 /**

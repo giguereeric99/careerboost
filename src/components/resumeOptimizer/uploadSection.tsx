@@ -8,7 +8,6 @@
  * - Automatic transition to preview after successful optimization
  * - Visual feedback during processing
  * - Direct data transfer to parent component without requiring database reload
- * - Improved ATS score extraction and transmission
  */
 
 'use client';
@@ -25,14 +24,14 @@ import { useUser, SignInButton } from "@clerk/nextjs";
 /**
  * Props interface for the UploadSection component
  * Defines the expected properties for controlling the upload and analysis process
- * Enhanced to include optimizedText, resumeId, and atsScore in onAnalysisComplete
+ * Updated to include optimizedText and resumeId in onAnalysisComplete
  */
 interface UploadSectionProps {
   isUploading: boolean;              // Whether a file is currently being uploaded
   isParsing: boolean;                // Whether resume content is being parsed
   selectedFile: File | null;         // Currently selected file object
   resumeContent: string;             // Content from pasted resume or extracted from file
-  onFileChange: (file: File) => void;  // Handler for file input change
+  onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;  // Handler for file input change
   onContentChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;  // Handler for textarea change
   onContinue: () => void;            // Handler for continue button click
   onFileUpload: (url: string, name: string, size?: number, type?: string) => void;  // Handler for successful file upload
@@ -61,7 +60,7 @@ const mimeLabelMap: Record<string, string> = {
  * UploadSection Component
  * 
  * Provides an interface for users to upload or paste their resume content.
- * Enhanced to extract and pass ATS score directly to parent component, avoiding reload
+ * Enhanced to pass optimized text directly to parent component, avoiding reload
  */
 const UploadSection: React.FC<UploadSectionProps> = ({
   isUploading,
@@ -124,30 +123,16 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   /**
    * Processes API response to extract all necessary data
    * Formats data consistently for parent component
-   * Enhanced to ensure ATS score is properly extracted and passed
    */
   const processApiResponse = (result: any) => {
     if (!result || typeof result !== 'object') {
       throw new Error('Invalid API response format');
     }
-
-    // Log complet de l'objet résultat pour debug
-    console.log("Complete API result object:", result);
     
     // Extract basic data
     const optimizedText = result.optimizedText || result.optimized_text || '';
     const resumeId = result.resumeId || result.resume_id || '';
-    
-    // Extract ATS score with more robust fallbacks and logging
-    let atsScore = 65; // Valeur par défaut
-  
-    if (typeof result.atsScore === 'number') {
-      atsScore = result.atsScore;
-    } else if (typeof result.ats_score === 'number') {
-      atsScore = result.ats_score;
-    }
-  
-    console.log("ATS Score extracted:", atsScore, "Type:", typeof atsScore);
+    const atsScore = result.atsScore || result.ats_score || 65;
     
     // Extract or process suggestions
     let suggestions = result.suggestions || [];
@@ -198,7 +183,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   /**
    * Handles direct text input analysis
    * Processes pasted resume content and automatically transitions to preview
-   * Enhanced to extract and pass ATS score directly to parent component
+   * Enhanced to extract and pass all data directly to parent component
    */
   const handleTextAnalysis = async () => {
     // Validate minimum content length
@@ -229,9 +214,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
       // Parse the response
       const result = await optimizeRes.json();
       
-      // Log the raw API response for debugging
-      console.log("Raw API response:", result);
-      
       // Handle successful optimization
       if (optimizeRes.ok && result?.optimizedText) {
         // Clear loading toast and show success message
@@ -250,21 +232,12 @@ const UploadSection: React.FC<UploadSectionProps> = ({
           keywords 
         } = processApiResponse(result);
         
-        // Log the data being passed to parent component for debugging
-        console.log("Passing data to parent:", {
-          textLength: optimizedText.length,
-          resumeId,
-          atsScore,  // Make sure ATS score is logged
-          suggestionsCount: suggestions.length,
-          keywordsCount: keywords.length
-        });
-        
         // Pass all extracted data to parent component
         if (onAnalysisComplete) {
           onAnalysisComplete(
             optimizedText,
             resumeId,
-            atsScore,  // Ensure ATS score is included
+            atsScore,
             suggestions,
             keywords
           );
@@ -292,7 +265,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   /**
    * Handles the resume optimization process after file upload
    * Extracts all necessary data from API response to avoid additional server calls
-   * Improved to ensure ATS score is properly extracted and passed to parent
    */
   const handleResumeOptimization = async (fileUrl: string, fileName: string, fileSize: number, fileType: string) => {
     // Set upload in progress state for UI feedback
@@ -327,9 +299,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 
       // Parse the API response
       const result = await optimizeRes.json();
-      
-      // Log the raw API response for debugging
-      console.log("Raw API response:", result);
 
       // Handle successful optimization
       if (optimizeRes.ok && result?.optimizedText) {
@@ -363,7 +332,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
         console.log("Passing data to parent:", {
           textLength: optimizedText.length,
           resumeId,
-          atsScore,  // Make sure ATS score is logged
+          atsScore,
           suggestionsCount: suggestions.length,
           keywordsCount: keywords.length
         });
@@ -373,7 +342,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
           onAnalysisComplete(
             optimizedText,
             resumeId,
-            atsScore,  // Ensure ATS score is included
+            atsScore,
             suggestions,
             keywords
           );

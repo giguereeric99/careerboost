@@ -22,7 +22,7 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // Import custom hooks
-import { useResumeOptimizerEnhanced } from '@/hooks/useResumeOptimizerEnhanced';
+import { useResumeOptimizer } from '@/hooks/useResumeOptimizer';
 
 // Import components
 import UploadSection from '@/components/resumeOptimizer/uploadSection';
@@ -103,7 +103,7 @@ const ResumeOptimizer: React.FC = () => {
     setOptimizationScore,         // Set optimization score directly
     setSuggestions,               // Set suggestions directly
     setKeywords,                  // Set keywords directly
-  } = useResumeOptimizerEnhanced(user?.id);
+  } = useResumeOptimizer(user?.id, { user });
   
   // =========================================================================
   // Component State Management
@@ -135,8 +135,10 @@ const ResumeOptimizer: React.FC = () => {
   const loadingAttemptsRef = useRef(0);            // Track number of loading attempts
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Safety timeout to prevent infinite loading
   const scoreUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce score updates
+  const hasRunRef = useRef(false);                 // Track if resume check has already run
 
-  const consecutiveLoadingChangesRef = useRef(0); // Track consecutive loading changes to prevent infinite loops
+  // Track consecutive loading changes to prevent infinite loops
+  const consecutiveLoadingChangesRef = useRef(0); 
   
   // Track highest observed score to prevent score regression
   const highestScoreRef = useRef<number>(optimizationScore || 65); 
@@ -152,23 +154,60 @@ const ResumeOptimizer: React.FC = () => {
   // =========================================================================
   // Effects for Score Handling and Loading Sequence
   // =========================================================================
+
+  // Run once at component mount to ensure resume content is loaded from backup if available
+  useEffect(() => {
+    // Execute only once when component mounts
+    if (user?.id) {
+      // Always remove the problematic flag that blocks loading
+      localStorage.removeItem(`user_${user.id}_no_resume`);
+      
+      // Check if we have saved content in localStorage
+      const savedContent = localStorage.getItem(`resume_content_${user.id}`);
+      const savedId = localStorage.getItem(`resume_id_${user.id}`);
+      
+      if (savedContent && savedId) {
+        // If saved content exists, update states immediately
+        console.log("Content found in localStorage, updating states");
+        setEditedText(savedContent);
+        
+        // Try to load score as well
+        const savedScore = localStorage.getItem(`resume_score_${user.id}`);
+        if (savedScore) {
+          const score = parseInt(savedScore);
+          if (!isNaN(score)) {
+            setOptimizationScore(score);
+            forceScoreUpdate(score);
+          }
+        }
+        
+        // Then still load from server to get the most recent data
+        setTimeout(() => {
+          loadLatestResume(user.id, { silent: true });
+        }, 100);
+      } else {
+        // Otherwise, just load from server
+        loadLatestResume(user.id);
+      }
+    }
+  }, []); // Empty dependency array = single execution
   
   /**
    * Track loading sequence to ensure proper order of component initialization
    * This helps coordinate the loading of data elements and score calculation
    */
   useEffect(() => {
-    // Update text loaded status
+    // Update text loaded status when optimized text is available
     if (optimizedText && !dataLoadingSequence.textLoaded) {
       setDataLoadingSequence(prev => ({ ...prev, textLoaded: true }));
     }
     
-    // Update suggestions loaded status
+    // Update suggestions loaded status when suggestions are available
     if (suggestions.length > 0 && !dataLoadingSequence.suggestionsLoaded) {
       setDataLoadingSequence(prev => ({ ...prev, suggestionsLoaded: true }));
     }
     
-    // Update keywords loaded status
+    // Update keywords loaded status when keywords are available
     if (keywords.length > 0 && !dataLoadingSequence.keywordsLoaded) {
       setDataLoadingSequence(prev => ({ ...prev, keywordsLoaded: true }));
     }
@@ -307,8 +346,29 @@ const ResumeOptimizer: React.FC = () => {
    * This ensures the most processed version is always displayed
    */
   const displayContent = useMemo(() => {
-    return processedHtml || editedText || optimizedText || '';
-  }, [processedHtml, editedText, optimizedText]);
+    console.log(`Calculating displayContent at ${new Date().toISOString()}:`, {
+      hasProcessedHtml: Boolean(processedHtml),
+      hasEditedText: Boolean(editedText),
+      hasOptimizedText: Boolean(optimizedText),
+      processedHtmlLength: processedHtml?.length || 0,
+      editedTextLength: editedText?.length || 0,
+      optimizedTextLength: optimizedText?.length || 0
+    });
+    
+    // Normal content with priority (processedHtml > editedText > optimizedText)
+    const content = processedHtml || editedText || optimizedText;
+    
+    // If no content found and we have a user, check localStorage as last resort
+    if (!content && user?.id) {
+      const emergencyContent = localStorage.getItem(`resume_content_${user.id}`);
+      if (emergencyContent) {
+        console.log("Emergency content retrieval from localStorage");
+        return emergencyContent;
+      }
+    }
+    
+    return content || '';
+  }, [processedHtml, editedText, optimizedText, user?.id]);
 
   /**
    * Calculate current resume score with breakdown
@@ -401,11 +461,11 @@ const ResumeOptimizer: React.FC = () => {
       loadTimeoutRef.current = null;
     }
   
-    // If we're in a loading state, set a safety timeout to force exit after max time
-    if (isLoadingInProgressRef.current) {
+    // If we're in any loading state, set a safety timeout to force exit after max time
+    if (isLoadingInProgressRef.current || isUploading || isParsing || isOptimizing || isLoading) {
       loadTimeoutRef.current = setTimeout(() => {
         console.log("Safety timeout triggered - forcing loading state to false");
-        // NOUVEAU: Reset ALL loading states and counters
+        // Reset ALL loading states and counters
         isLoadingInProgressRef.current = false;
         loadingAttemptsRef.current = 0;
         setIsUploadInProgress(false);
@@ -413,8 +473,17 @@ const ResumeOptimizer: React.FC = () => {
         setIsScoreCalculating(false);
         
         // Show feedback to user
-        toast.info("Loading process completed");
-      }, 5000); // Reduced from 10 seconds to 5 seconds
+        toast.warning("Loading process completed with warnings", {
+          description: "The process was taking longer than expected."
+        });
+        
+        // Force transition to appropriate tab based on content availability
+        if (optimizedText) {
+          setActiveTab("preview");
+        } else {
+          setActiveTab("upload");
+        }
+      }, 45000); // 45 second safety timeout (should be less than the API timeout)
     }
     
     // Cleanup on unmount
@@ -424,7 +493,7 @@ const ResumeOptimizer: React.FC = () => {
         loadTimeoutRef.current = null;
       }
     };
-  }, [activeTab]); // Keep the same dependency
+  }, [activeTab, isUploading, isParsing, isOptimizing, isLoading, optimizedText]);
 
   // =========================================================================
   // Score Management Functions
@@ -548,6 +617,9 @@ const ResumeOptimizer: React.FC = () => {
     
     // Indicate score calculation will be needed
     setIsScoreCalculating(true);
+    
+    // Set loading progress flag
+    isLoadingInProgressRef.current = true;
   }, []);
 
   /**
@@ -562,22 +634,21 @@ const ResumeOptimizer: React.FC = () => {
     suggestionsData?: any[],
     keywordsData?: any[]
   ) => {
-    // Step 1: IMPORTANT - Reset loading state immediately to break potential loops
+    // CRITICAL: Reset ALL loading states immediately
     isLoadingInProgressRef.current = false;
     loadingAttemptsRef.current = 0;
-
-    // Step 2: Re-enable UI elements
-    setIsAnalysisDisabled(false);   // Re-enable preview tab
-    setIsUploadInProgress(false);   // Mark upload complete
+    setIsUploadInProgress(false);
+    setIsAnalysisDisabled(false);
+    setIsScoreCalculating(false);
+  
+    // Step 2: Update resume state
+    setHasResume(!!optimizedTextContent);
     
-    // Step 3: Update resume state
-    setHasResume(true);             // User now has a resume
-    
-    // Step 4: Handle direct data updates in controlled sequence
+    // Step 3: Handle direct data updates in controlled sequence
     if (optimizedTextContent && optimizedTextContent.length > 0) {
       console.log("Received optimized text directly with length:", optimizedTextContent.length);
       
-      // Reset loading sequence - will track components as they load
+      // Reset loading sequence
       setDataLoadingSequence({
         textLoaded: false,
         suggestionsLoaded: false,
@@ -585,7 +656,7 @@ const ResumeOptimizer: React.FC = () => {
         scoreInitialized: false
       });
       
-      // Indicate score calculation in progress for better UX - shows loading animation
+      // Show score calculation animation for better UX
       setIsScoreCalculating(true);
       
       // STAGE 1: Update optimized text and resume ID first
@@ -618,102 +689,84 @@ const ResumeOptimizer: React.FC = () => {
           if (scoreValue !== undefined && !isNaN(scoreValue)) {
             console.log("Setting final ATS score:", scoreValue);
             
-            // IMPORTANT: Use our robust score update mechanism
+            // Use our robust score update mechanism
             forceScoreUpdate(scoreValue);
-            
-            // Debug log to verify all score values are in sync
-            console.log("DEBUG - Scores after update:", {
-              scoreValueFromAPI: scoreValue,
-              localAtsScore: scoreValue, // Use the value we're setting rather than the state variable
-              optimizationScore: scoreValue, // Use the value we're setting rather than the state variable
-              highestObservedScore: highestScoreRef.current,
-              scoreManagerBaseScore: scoreManager?.getBaseScore?.() || 'N/A',
-              scoreManagerCurrentScore: scoreManager?.currentScore || 'N/A'
-            });
           }
           
           // End the score calculation animation after all updates
           setTimeout(() => {
             setIsScoreCalculating(false);
-            
-            // CRITICAL FIX: Reset loading attempts reference to prevent infinite loops
             loadingAttemptsRef.current = 0;
-            
-            // CRITICAL FIX: Reset isLoadingInProgressRef to ensure future loads can happen
             isLoadingInProgressRef.current = false;
             
             // Switch to preview tab now that data is loaded
             setActiveTab("preview");
-          }, 500); // Slight additional delay for the animation effect
-        }, 300); // Delay for score update after keywords and suggestions
-      }, 200); // Delay for suggestions and keywords after text
+          }, 500);
+        }, 300);
+      }, 200);
       
       return;
     }
     
-    // Step 4: If not all data provided directly, load from server
-    console.log("No direct content received, loading from server...");
-    
+    // Step 4: If no direct content provided, load from server or show empty state
     if (user?.id && loadLatestResume) {
-      // CRITICAL FIX: Reset loading attempts reference to allow a fresh start
+      // Reset loading attempts reference to allow a fresh start
       loadingAttemptsRef.current = 0;
       
-      isLoadingInProgressRef.current = true;
-      
-      // Add slight delay to ensure database records are available
-      setTimeout(() => {
-        const loadResumeData = async () => {
-          try {
-            const result = await loadLatestResume(user.id);
-            console.log("Resume data loaded:", result ? "success" : "no data");
-            
-            // If we have a successful load and a score, ensure it's properly set
-            if (result && result.atsScore) {
-              // Update score manager directly with the loaded score
-              if (scoreManager && typeof scoreManager.updateBaseScore === 'function') {
-                console.log("Updating score manager with loaded score:", result.atsScore);
-                scoreManager.updateBaseScore(result.atsScore);
-                
-                // Update highest score reference if needed
-                if (result.atsScore > highestScoreRef.current) {
-                  highestScoreRef.current = result.atsScore;
-                }
-              }
-            }
-            
-            // CRITICAL FIX: If no result, mark hasResume as false to avoid loops
-            if (!result) {
-              setHasResume(false);
-            }
-            
-            // Switch to preview tab after loading completes
-            setActiveTab("preview");
-          } catch (error) {
-            console.error("Error loading resume:", error);
-            toast.error("Failed to load resume data", {
-              description: "Please try refreshing the page"
-            });
-            
-            // CRITICAL FIX: Set hasResume to false on error
-            setHasResume(false);
-          } finally {
-            // CRITICAL FIX: Always reset loading state
-            isLoadingInProgressRef.current = false;
-          }
-        };
+      // Load latest resume with a retry mechanism
+      const attemptLoad = async (retryCount = 0) => {
+        if (retryCount > 2) {
+          console.log("Max retries reached, switching to upload tab");
+          setHasResume(false);
+          setActiveTab("upload");
+          return;
+        }
         
-        loadResumeData();
-      }, 1000);
+        try {
+          isLoadingInProgressRef.current = true;
+          console.log(`Attempting to load resume (attempt ${retryCount + 1})`);
+          
+          const result = await loadLatestResume(user.id);
+          
+          if (result && result.optimizedText) {
+            console.log("Resume loaded successfully");
+            setHasResume(true);
+            
+            // If result includes ATS score, update it
+            if (result.atsScore) {
+              forceScoreUpdate(result.atsScore);
+            }
+            
+            // Switch to preview tab
+            setActiveTab("preview");
+          } else {
+            console.log("No resume data found");
+            setHasResume(false);
+            setActiveTab("upload");
+          }
+        } catch (error) {
+          console.error("Error loading resume:", error);
+          
+          // Retry if we have attempts left
+          if (retryCount < 2) {
+            console.log(`Retrying load (${retryCount + 2}/3)...`);
+            setTimeout(() => attemptLoad(retryCount + 1), 1000);
+          } else {
+            setHasResume(false);
+            setActiveTab("upload");
+          }
+        } finally {
+          isLoadingInProgressRef.current = false;
+        }
+      };
+      
+      // Start the load attempt with a slight delay
+      setTimeout(() => attemptLoad(), 500);
     } else {
-      // CRITICAL FIX: Set hasResume to false if we can't load
+      // Reset states and redirect to upload tab if no user or load function
       setHasResume(false);
-      
-      // CRITICAL FIX: Reset loading state if we can't load
       isLoadingInProgressRef.current = false;
-      
-      // Switch to preview even if we can't load data - will show empty state
-      console.log("Cannot load resume data - switching to preview tab anyway");
-      setActiveTab("preview");
+      setActiveTab("upload");
     }
   }, [
     user?.id, 
@@ -724,10 +777,7 @@ const ResumeOptimizer: React.FC = () => {
     setOptimizationScore,
     setSuggestions,
     setKeywords,
-    scoreManager,
-    setLocalAtsScore,
-    forceScoreUpdate,
-    highestScoreRef
+    forceScoreUpdate
   ]);
 
   /**
@@ -749,16 +799,21 @@ const ResumeOptimizer: React.FC = () => {
       // Start analysis process
       handleAnalysisStart();
       
+      // Create an AbortController for this request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 40000); // 40 seconds client-side timeout
+      
       // Prepare form data for API
       const formData = new FormData();
       formData.append("rawText", rawText);
       if (user?.id) formData.append("userId", user.id);
   
-      // Call optimization API
+      // Call optimization API with timeout protection
       const res = await fetch("/api/optimize", {
         method: "POST",
         body: formData,
-      });
+        signal: controller.signal
+      }).finally(() => clearTimeout(timeoutId));
   
       // Handle API errors
       if (!res.ok) {
@@ -769,7 +824,7 @@ const ResumeOptimizer: React.FC = () => {
       // Parse API response to extract all needed data
       const result = await res.json();
       
-      // Log the complete API response for debugging ATS score
+      // Log the complete API response for debugging
       console.log("Complete API response:", result);
       
       // If we get data from the API, use it directly
@@ -819,6 +874,14 @@ const ResumeOptimizer: React.FC = () => {
       }
       
     } catch (error: any) {
+      // Enhanced error handling for specific error types
+      let errorMessage = error.message || "An unexpected error occurred.";
+      
+      // Check if it's an abort error (timeout)
+      if (error.name === 'AbortError') {
+        errorMessage = "The request timed out. Please try again with a shorter resume or retry later.";
+      }
+      
       // Reset analysis state on error
       setIsAnalysisDisabled(false);
       setIsUploadInProgress(false);
@@ -829,10 +892,13 @@ const ResumeOptimizer: React.FC = () => {
       loadingAttemptsRef.current = 0;
       
       toast.error("Optimization failed", {
-        description: error.message || "An unexpected error occurred."
+        description: errorMessage
       });
+      
+      // Switch back to upload tab on error
+      setActiveTab("upload");
     }
-  }, [rawText, user?.id, handleAnalysisStart, handleAnalysisComplete, highestScoreRef]);
+  }, [rawText, user?.id, handleAnalysisStart, handleAnalysisComplete, highestScoreRef, setActiveTab]);
 
   /**
    * Handle explicit loading trigger (button click)
@@ -861,6 +927,9 @@ const ResumeOptimizer: React.FC = () => {
             if (result.atsScore > highestScoreRef.current) {
               highestScoreRef.current = result.atsScore;
             }
+            
+            // Force score update across the system
+            forceScoreUpdate(result.atsScore);
           }
         } else {
           setHasResume(false);
@@ -873,7 +942,7 @@ const ResumeOptimizer: React.FC = () => {
       // IMPORTANT: Always reset loading state
       isLoadingInProgressRef.current = false;
     }
-  }, [user?.id, loadLatestResume]);
+  }, [user?.id, loadLatestResume, forceScoreUpdate]);
 
   /**
    * Handle tab change with smart data loading
@@ -980,6 +1049,30 @@ const ResumeOptimizer: React.FC = () => {
     
     toast.success("Resume downloaded successfully");
   }, [displayContent, selectedTemplate]);
+  
+  /**
+   * Create a function to add a "Skip Loading" button to LoadingState
+   * This provides users with a way to force-exit loading states if they get stuck
+   */
+  const handleForceExitLoading = useCallback(() => {
+    console.log("User forced exit from loading state");
+    
+    // Reset all loading states
+    isLoadingInProgressRef.current = false;
+    loadingAttemptsRef.current = 0;
+    setIsUploadInProgress(false);
+    setIsAnalysisDisabled(false);
+    setIsScoreCalculating(false);
+    
+    // If we have content, go to preview tab, otherwise go to upload tab
+    if (optimizedText) {
+      setActiveTab("preview");
+    } else {
+      setActiveTab("upload");
+    }
+    
+    toast.info("Loading process canceled");
+  }, [optimizedText]);
 
   // =========================================================================
   // Effects - Data Loading & Resource Management
@@ -990,83 +1083,97 @@ const ResumeOptimizer: React.FC = () => {
    * Only runs once per user ID change
    */
   useEffect(() => {
-    let isMounted = true;
-    
+    // Function to check if user has a resume
     const checkResume = async () => {
-      // Skip if already loading or no user
-      if (!user?.id || isLoadingInProgressRef.current) return;
+      // Skip if already loading, no user, or if we've already checked
+      if (!user?.id || isLoadingInProgressRef.current || hasRunRef.current) return;
+      
+      // Mark that we're now checking
+      hasRunRef.current = true;
       
       try {
+        console.log("Checking if user has resume...");
         isLoadingInProgressRef.current = true;
         
-        console.log("Checking if user has resume...");
         const result = await loadLatestResume(user.id);
         
-        // Update state based on result if component is still mounted
-        if (isMounted) {
-          if (result) {
-            console.log("User has a resume");
-            setHasResume(true);
+        if (result) {
+          console.log("User has a resume");
+          setHasResume(true);
+          
+          // If result includes an ATS score, ensure it's properly recorded
+          if (result.atsScore && !isNaN(result.atsScore)) {
+            console.log("Found ATS score in initial load:", result.atsScore);
             
-            // If result includes an ATS score, ensure it's properly recorded
-            if (result.atsScore && !isNaN(result.atsScore)) {
-              console.log("Found ATS score in initial load:", result.atsScore);
-              
-              // Update highest score reference if needed
-              if (result.atsScore > highestScoreRef.current) {
-                highestScoreRef.current = result.atsScore;
-              }
-              
-              // Force update score system-wide
-              forceScoreUpdate(result.atsScore);
+            // Update highest score reference if needed
+            if (result.atsScore > highestScoreRef.current) {
+              highestScoreRef.current = result.atsScore;
             }
-          } else {
-            console.log("User has no resume - normal for new users");
-            setHasResume(false);
-            // No error toast for new users
+            
+            // Force update score system-wide
+            forceScoreUpdate(result.atsScore);
           }
+        } else {
+          console.log("User has no resume - normal for new users");
+          setHasResume(false);
+          
+          // IMPORTANT: Set a flag in local storage to prevent future unnecessary checks
+          // for this session, as we now know the user has no resumes
+          localStorage.setItem(`user_${user.id}_no_resume`, 'true');
         }
       } catch (error) {
         console.error("Error checking for resume:", error);
-        if (isMounted) {
-          setHasResume(false);
-        }
+        setHasResume(false);
+        
+        // Also set the flag on error to prevent continuous retries
+        localStorage.setItem(`user_${user.id}_no_resume`, 'true');
       } finally {
         // CRITICAL: Always reset loading state
-        if (isMounted) {
-          isLoadingInProgressRef.current = false;
-        }
+        isLoadingInProgressRef.current = false;
       }
     };
     
-    checkResume();
+    // When the user changes, do a check if we haven't already determined they have no resume
+    if (user?.id) {
+      // Check if we already know this user has no resumes from a previous check
+      const userHasNoResume = localStorage.getItem(`user_${user.id}_no_resume`) === 'true';
+      
+      if (userHasNoResume) {
+        // If we already know they have no resumes, set the state directly
+        console.log("Already know user has no resumes, skipping check");
+        setHasResume(false);
+        hasRunRef.current = true; // Mark as checked
+      } else {
+        // Otherwise, check if they have resumes
+        checkResume();
+      }
+    }
     
     // Cleanup function
     return () => {
-      isMounted = false;
-      
-      // Ensure loading state is reset on unmount
+      // Reset loading state on unmount
       isLoadingInProgressRef.current = false;
     };
   }, [user?.id, loadLatestResume, forceScoreUpdate]);
-
+  
   /**
-   * Cleanup effect for timeouts
-   * Ensures timeouts are cleared on unmount to prevent memory leaks
+   * Additional helper hook to run once after component mount
+   * This prevents the initial check from running multiple times in development
    */
   useEffect(() => {
+    // We need to use localStorage because React 18 strict mode runs effects twice in development
+    const isFirstLoad = localStorage.getItem('resume_optimizer_initialized') !== 'true';
+    
+    if (isFirstLoad) {
+      // Mark that we've initialized the component
+      localStorage.setItem('resume_optimizer_initialized', 'true');
+    }
+    
+    // Clean up function
     return () => {
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-      }
-      
-      if (loadTimeoutRef.current) {
-        clearTimeout(loadTimeoutRef.current);
-      }
-      
-      if (scoreUpdateTimeoutRef.current) {
-        clearTimeout(scoreUpdateTimeoutRef.current);
-      }
+      // On component unmount, we can reset the initialization flag to ensure
+      // the check runs again on next mount
+      localStorage.removeItem('resume_optimizer_initialized');
     };
   }, []);
 
@@ -1107,6 +1214,28 @@ const ResumeOptimizer: React.FC = () => {
     </div>
   ), [user, handleLoadResume]);
 
+  /**
+   * Enhanced LoadingState component with escape hatch
+   * Renders the loading state with an option to force exit loading
+   */
+  const renderLoadingStateWithEscape = useCallback(() => (
+    <div className="flex flex-col items-center justify-center">
+      <LoadingState />
+      <div className="mt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleForceExitLoading}
+        >
+          Skip Loading
+        </Button>
+        <p className="text-xs text-gray-500 mt-1">
+          If loading takes too long, you can skip and try again
+        </p>
+      </div>
+    </div>
+  ), [handleForceExitLoading]);
+
   // =========================================================================
   // Main Component Render
   // =========================================================================
@@ -1119,6 +1248,12 @@ const ResumeOptimizer: React.FC = () => {
         onOpenChange={setShowResetDialog}
         onConfirm={handleReset}
         isResetting={isResetting}
+      />
+
+      {/* Pro Upgrade Dialog - shown when selecting premium templates */}
+      <ProUpgradeDialog
+        open={showProDialog}
+        onOpenChange={setShowProDialog}
       />
 
       {/* Header section */}
@@ -1172,12 +1307,12 @@ const ResumeOptimizer: React.FC = () => {
         <TabsContent value="preview" className="space-y-6">
           {/* 
            * Enhanced loading state logic:
-           * 1. Show loading spinner when actual loading occurs and no content yet
+           * 1. Show loading spinner with escape hatch when loading occurs and no content yet
            * 2. Show empty state when loading is complete but no content exists
            * 3. Show content when it becomes available
            */}
           {(isLoadingInProgressRef.current && !displayContent) || isLoading ? (
-            <LoadingState />
+            renderLoadingStateWithEscape()
           ) : (
             <>
               {!displayContent ? (
@@ -1277,12 +1412,6 @@ const ResumeOptimizer: React.FC = () => {
           )}
         </TabsContent>
       </Tabs>
-
-      {/* Pro subscription dialog - shown when selecting premium templates */}
-      <ProUpgradeDialog
-        open={showProDialog}
-        onOpenChange={setShowProDialog}
-      />
     </div>
   );
 };

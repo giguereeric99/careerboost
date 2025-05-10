@@ -417,36 +417,6 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         </div>
       )}
       
-      {/* Regeneration Banner - Only show when changes need regeneration and not in edit mode */}
-      {needsRegeneration && !editMode && onRegenerateContent && (
-        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4 flex items-center justify-between">
-          <div className="flex items-center">
-            <AlertCircle className="h-5 w-5 text-amber-500 mr-2" />
-            <div>
-              <p className="text-sm font-medium text-amber-800">Pending Changes</p>
-              <p className="text-xs text-amber-700">Apply your changes to generate an optimized resume with selected suggestions and keywords.</p>
-            </div>
-          </div>
-          <Button 
-            onClick={handleRegenerateContent}
-            disabled={isApplyingChanges}
-            size="sm"
-            className="bg-amber-600 hover:bg-amber-700 text-white"
-          >
-            {isApplyingChanges ? (
-              <>
-                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                Processing...
-              </>
-            ) : (
-              <>
-                <RotateCcw className="h-3 w-3 mr-2" /> Apply Changes
-              </>
-            )}
-          </Button>
-        </div>
-      )}
-      
       {/* Content Area */}
       {editMode ? (
         <div className="space-y-4">

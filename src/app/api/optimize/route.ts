@@ -19,6 +19,8 @@
  * - Improved error handling with consistent response format
  * - Better file handling with proper cleanup
  * - Added support for resetting last_saved_text on new uploads
+ * - Fixed timeout handling to prevent unhandled rejections
+ * - Added handling for RETRY_UPLOAD errors from OpenAI parsing
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -31,18 +33,19 @@ import { getSupabaseUuid } from './services/userMapping';
 import { cleanupTempFile } from './services/fileHandler';
 import { OptimizationResult } from './types';
 
+// API timeout duration in milliseconds (60 seconds)
+const API_TIMEOUT = 60000;
+
 /**
  * POST handler for resume optimization
  */
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
+  // Create an AbortController to handle timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
   try {
-    // Safety timeout to prevent hanging requests
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('API timeout')), 60000)
-    );
-    
     // Extract data from request
     const formData = await req.formData();
     const fileUrl = formData.get("fileUrl") as string | null;
@@ -51,15 +54,17 @@ export async function POST(req: NextRequest) {
     const fileName = formData.get("fileName") as string | null;
     const fileType = formData.get("fileType") as string | null;
     
-    // NEW: Check if we should reset last_saved_text
+    // Check if we should reset last_saved_text
     const resetLastSavedText = formData.get("resetLastSavedText") === "true";
 
     // Validate input
     if (!userId) {
+      clearTimeout(timeoutId);
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
     }
 
     if (!fileUrl && !rawText) {
+      clearTimeout(timeoutId);
       return NextResponse.json({ 
         error: "Missing required fields: either fileUrl or rawText is required for optimization" 
       }, { status: 400 });
@@ -77,6 +82,7 @@ export async function POST(req: NextRequest) {
       const extractionResult = await extractTextFromFile(fileUrl);
       
       if (extractionResult.error) {
+        clearTimeout(timeoutId);
         return NextResponse.json({ 
           error: `Failed to extract text: ${extractionResult.error.message}` 
         }, { status: 500 });
@@ -95,6 +101,7 @@ export async function POST(req: NextRequest) {
 
     // Validate text length
     if (resumeText.length < 50) {
+      clearTimeout(timeoutId);
       return NextResponse.json({ 
         error: "Text is too short to process (minimum 50 characters required)" 
       }, { status: 400 });
@@ -108,9 +115,42 @@ export async function POST(req: NextRequest) {
     let optimizationResult: OptimizationResult;
     
     try {
-      optimizationResult = await optimizeResume(resumeText, language);
+      // Pass the signal from AbortController to any fetch operations inside optimizeResume
+      optimizationResult = await optimizeResume(resumeText, language, controller.signal);
       console.log(`Optimization successful using ${optimizationResult.provider}`);
     } catch (error: any) {
+      // Check if this is a RETRY_UPLOAD error from OpenAI parsing
+      if (error.message === 'RETRY_UPLOAD') {
+        console.error("OpenAI response parsing failed, requesting file re-upload");
+        clearTimeout(timeoutId);
+        
+        // Clean up temporary file
+        if (tempFilePath) {
+          cleanupTempFile(tempFilePath);
+        }
+        
+        return NextResponse.json({ 
+          success: false,
+          error: "RETRY_UPLOAD",
+          message: "An error occurred while analyzing your resume. Please try uploading the file again."
+        }, { status: 422 }); // 422 Unprocessable Entity
+      }
+      
+      // Check if this is an abort error from our timeout
+      if (error.name === 'AbortError') {
+        console.error("Optimization request timed out after", API_TIMEOUT, "ms");
+        clearTimeout(timeoutId);
+        
+        // Clean up temporary file
+        if (tempFilePath) {
+          cleanupTempFile(tempFilePath);
+        }
+        
+        return NextResponse.json({ 
+          error: "Optimization request timed out. Please try again with a smaller file or less text." 
+        }, { status: 504 });
+      }
+      
       console.error("All optimization attempts failed, using fallback:", error);
       
       // Generate a fallback optimization if all services fail
@@ -138,8 +178,8 @@ export async function POST(req: NextRequest) {
             supabase_user_id: supabaseUserId,
             original_text: resumeText,
             optimized_text: optimizationResult.optimizedText,
-            // NEW: Explicitly set last_saved_text to null for new uploads
-            last_saved_text: null,
+            // Explicitly set last_saved_text to null for new uploads
+            last_saved_text: resetLastSavedText ? null : undefined,
             language: language,
             ats_score: optimizationResult.atsScore || 65,
             file_url: fileUrl || null,
@@ -197,6 +237,9 @@ export async function POST(req: NextRequest) {
       cleanupTempFile(tempFilePath);
     }
 
+    // Clear the timeout since we're done
+    clearTimeout(timeoutId);
+
     // Return successful response
     return NextResponse.json({
       success: true,
@@ -214,11 +257,30 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
+    // Clear the timeout
+    clearTimeout(timeoutId);
+    
     console.error("Unexpected error:", error);
     
     // Clean up temporary file in case of error
     if (tempFilePath) {
       cleanupTempFile(tempFilePath);
+    }
+    
+    // Check if this is a RETRY_UPLOAD error
+    if (error.message === 'RETRY_UPLOAD') {
+      return NextResponse.json({ 
+        success: false,
+        error: "RETRY_UPLOAD",
+        message: "An error occurred while analyzing your resume. Please try uploading the file again."
+      }, { status: 422 }); // 422 Unprocessable Entity
+    }
+    
+    // Check if this is an abort error from our timeout
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ 
+        error: "Request timed out. Please try again with a smaller file or less text." 
+      }, { status: 504 });
     }
     
     // Return error response
