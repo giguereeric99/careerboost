@@ -51,26 +51,12 @@ import {
 import { SectionNode } from '@/services/tipTapExtensions';
 
 // Import the suggestion and keyword types
-import { Suggestion } from '@/types/resume';
-
-/**
- * Interface for TipTapResumeEditor component props
- */
-interface TipTapResumeEditorProps {
-  content: string;                      // HTML content to edit
-  onChange: (html: string) => void;     // Callback when content changes
-  appliedKeywords?: string[];           // Keywords that can be applied to the resume
-  onApplyKeyword?: (keyword: string) => void; // Callback when keyword is applied
-  suggestions?: Suggestion[];           // AI suggestions for improving the resume
-  onApplySuggestion?: (suggestion: Suggestion) => void; // Callback when suggestion is applied
-  readOnly?: boolean;                   // Whether the editor is in read-only mode
-  placeholder?: string;                 // Placeholder text when empty
-  language?: string;                    // Language of the resume content
-  resumeId?: string;                    // ID of the resume being edited
-  onApplyChanges?: () => Promise<boolean>; // Callback for Apply Changes button
-  canApplyChanges?: boolean;            // Whether the user can apply changes
-  sectionType?: string;                 // Type of section being edited
-}
+import { 
+  TipTapResumeEditorProps,
+  IsActiveFunction,
+  EditorAttributes,
+  Suggestion
+} from '@/types/resume';
 
 /**
  * Enhanced TipTapResumeEditor Component
@@ -137,11 +123,19 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
 
   /**
    * Helper function to check if a formatting option is active
+   * Properly typed to handle both string and object parameters
    */
-  const isActive = (type: string, options = {}) => {
+  const isActive = useCallback((typeOrAttrs: string | EditorAttributes, options = {}) => {
     if (!editor) return false;
-    return editor.isActive(type, options);
-  };
+    
+    // Handle both forms of isActive calls
+    if (typeof typeOrAttrs === 'string') {
+      return editor.isActive(typeOrAttrs, options);
+    } else {
+      // When passing an object like { textAlign: 'left' }
+      return (editor.isActive as IsActiveFunction)(typeOrAttrs);
+    }
+  }, [editor]);
 
   /**
    * Insert keyword at cursor position

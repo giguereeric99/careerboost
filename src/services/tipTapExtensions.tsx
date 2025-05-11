@@ -8,7 +8,7 @@
  * Removed draggable functionality for a more rigid structure.
  */
 
-import { Extension } from '@tiptap/core';
+import { Extension, RawCommands } from '@tiptap/core';
 
 /**
  * Custom extension for preserving section IDs on headings and paragraphs
@@ -73,12 +73,12 @@ export const FontSize = Extension.create({
 
   addCommands() {
     return {
-      setFontSize: (fontSize: string) => ({ chain }) => {
+      setFontSize: (fontSize: string) => ({ chain }: { chain: any }) => {
         return chain()
           .setMark('textStyle', { fontSize })
           .run();
       },
-    }
+    } as Partial<RawCommands>;
   },
 });
 

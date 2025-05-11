@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Eye } from 'lucide-react';
-import CustomResumePreviewModal from './CustomResumePreviewModal';
+import CustomResumePreviewModal from './customResumePreviewModal';
 import { ResumeTemplateType } from '@/types/resumeTemplateTypes';
 import { getTemplateById } from '@/constants/resumeTemplates';
 

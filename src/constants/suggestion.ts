@@ -1,4 +1,4 @@
-import { SuggestionType } from './types/suggestions';
+import { SuggestionType } from '../types/suggestions';
 
 // AI suggestion types
 export const suggestionTypes: SuggestionType[] = [

@@ -624,14 +624,4 @@ export class ResumeScoreService {
     // Return the new current score
     return this.currentScore;
   }
-
-  /**
-   * Get the current base score
-   * This method allows external components to access the base score value
-   * 
-   * @returns The current base score
-   */
-  public getBaseScore(): number {
-    return this.baseScore;
-  }
 }

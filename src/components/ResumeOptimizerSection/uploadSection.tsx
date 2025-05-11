@@ -386,7 +386,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
             <div className="space-y-4">
               {/* Text input header with character count */}
               <div className="flex items-center justify-between">
-                <p className="font-medium">Paste your resume content:</p>
+                <p className="font-medium">Or paste your resume content:</p>
                 {resumeContent && (
                   <span className="text-xs text-muted-foreground">
                     {resumeContent.length} characters

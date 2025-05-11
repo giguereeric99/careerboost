@@ -19,6 +19,7 @@ import {
 
 /**
  * Interface for uploaded file information
+ * Tracks metadata about the processed file
  */
 interface UploadedFileInfo {
   name: string;
@@ -29,8 +30,13 @@ interface UploadedFileInfo {
 
 /**
  * Hook props - allows parent to receive optimization data
+ * and react to state changes in the upload workflow
  */
 interface UseUploadSectionProps {
+  /**
+   * Callback triggered when optimization is complete
+   * Provides all relevant data to the parent component
+   */
   onOptimizationComplete?: (
     optimizedText: string,
     resumeId: string,
@@ -40,50 +46,68 @@ interface UseUploadSectionProps {
   ) => void;
   
   /**
-   * Called when analysis/optimization starts
+   * Callback triggered when analysis/optimization starts
+   * Allows parent to react to the beginning of the process
    */
   onAnalysisStart?: () => void;
 }
 
 /**
  * Custom hook for managing the upload section functionality
+ * Provides a complete API for handling resume uploads and optimization
+ * 
+ * @param props - Configuration options and callbacks
+ * @returns Object containing state and functions for upload management
  */
 export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: UseUploadSectionProps = {}) => {
-  // Get user info
+  // Get authenticated user info from Clerk
   const { user } = useUser();
   
-  // File state
+  // File state management
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadedFileInfo, setUploadedFileInfo] = useState<UploadedFileInfo | null>(null);
   
-  // Text input state
+  // Text input state for direct pasting
   const [resumeContent, setResumeContent] = useState<string>('');
   
-  // Processing state
+  // Processing state flags
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [analysisCompleted, setAnalysisCompleted] = useState<boolean>(false);
   
   /**
-   * Handle file selection
+   * Handle file selection from input or drop event
+   * Updates the selected file state
+   * 
+   * @param file - The file object from the browser
    */
   const handleFileChange = useCallback((file: File) => {
     setSelectedFile(file);
   }, []);
 
   /**
-   * Handle text input changes
+   * Handle text input changes in the paste area
+   * Updates the resume content state
+   * 
+   * @param e - Change event from textarea
    */
   const handleContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setResumeContent(e.target.value);
   }, []);
 
   /**
-   * Upload file to storage and optimize
+   * Store uploaded file info and prepare for processing
+   * This function is called after a file is successfully uploaded
+   * 
+   * @param url - The URL of the uploaded file
+   * @param name - The original filename
+   * @param size - The file size in bytes
+   * @param type - The MIME type of the file
+   * @returns Object containing file information
    */
   const handleFileUpload = useCallback(async (url: string, name: string, size: number, type: string) => {
-    // Store uploaded file info
+    // Store uploaded file metadata for reference
     setUploadedFileInfo({
       name,
       size,
@@ -91,29 +115,38 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
       url
     });
     
-    // Create a File object for the selected file
+    // Create a File object reference for the selected file
     const file = new File([''], name, { type });
     setSelectedFile(file);
     
-    // Return the file info
+    // Return the file information for further processing
     return { url, name, size, type };
   }, []);
 
   /**
-   * Process uploaded file and optimize it
+   * Process uploaded file and submit it for optimization
+   * Handles the entire workflow from uploaded file to optimization results
+   * 
+   * @param fileUrl - The URL of the file to process
+   * @param fileName - The name of the file
+   * @param fileSize - The size of the file in bytes
+   * @param fileType - The MIME type of the file
+   * @returns Object containing optimization results or null on failure
    */
   const processUploadedFile = useCallback(async (fileUrl: string, fileName: string, fileSize: number, fileType: string) => {
+    // Validate inputs and check if already processing
     if (!fileUrl || isOptimizing) return null;
     
-    // Start optimization process
+    // Update processing state
     setIsOptimizing(true);
     setAnalysisCompleted(false);
     
-    // Notify parent that analysis is starting
+    // Notify parent component that analysis is starting
     if (onAnalysisStart) {
       onAnalysisStart();
     }
     
+    // Show loading toast for user feedback
     const loadingToastId = toast.loading("Analyzing uploaded resume...");
     
     try {
@@ -125,34 +158,35 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
       formData.append("userId", user?.id || "");
       formData.append("resetLastSavedText", "true");
       
-      // Call optimization API
+      // Send request to optimization API endpoint
       const response = await fetch("/api/optimize", {
         method: "POST",
         body: formData,
       });
       
-      // Parse the response
+      // Parse the response JSON
       const result = await response.json();
       
-      // Handle API error
+      // Handle API error responses
       if (!response.ok) {
         throw new Error(result?.error || "Optimization failed");
       }
       
       // Process successful response
       if (result?.optimizedText) {
+        // Update UI with success notification
         toast.dismiss(loadingToastId);
         toast.success("Resume uploaded and optimized");
         
-        // Mark analysis as completed
+        // Update state to reflect completed analysis
         setAnalysisCompleted(true);
         
-        // Extract and normalize data
+        // Extract and normalize data from response
         const optimizedText = result.optimizedText || '';
         const resumeId = result.resumeId || '';
         const atsScore = result.atsScore || 65;
         
-        // Format suggestions
+        // Format suggestions with consistent structure
         const suggestions = Array.isArray(result.suggestions) 
           ? result.suggestions.map((s: any) => ({
               id: s.id || String(Math.random()),
@@ -164,7 +198,7 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
             }))
           : [];
         
-        // Format keywords
+        // Format keywords with consistent structure
         const keywords = result.keywords 
           ? result.keywords 
           : (result.keywordSuggestions 
@@ -175,7 +209,7 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
                 })) 
               : []);
         
-        // Call the callback with processed data
+        // Notify parent component of successful optimization
         if (onOptimizationComplete) {
           onOptimizationComplete(
             optimizedText,
@@ -186,6 +220,7 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
           );
         }
         
+        // Return optimization results
         return {
           optimizedText,
           resumeId,
@@ -194,24 +229,30 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
           keywords
         };
       } else {
+        // Handle unexpected API response format
         throw new Error("Invalid response from optimization API");
       }
     } catch (err: any) {
+      // Handle and display errors
       toast.dismiss(loadingToastId);
       toast.error("Upload analysis error", {
         description: err.message,
       });
       return null;
     } finally {
+      // Reset processing state regardless of outcome
       setIsOptimizing(false);
     }
   }, [isOptimizing, user?.id, onAnalysisStart, onOptimizationComplete]);
 
   /**
-   * Handle the optimization of pasted text content
+   * Process text input for optimization
+   * Handles the workflow for optimizing directly pasted resume content
+   * 
+   * @returns Object containing optimization results or null on failure
    */
   const handleTextAnalysis = useCallback(async () => {
-    // Validate content
+    // Validate input content length and check if already processing
     if (!resumeContent || resumeContent.length < 50 || isOptimizing) {
       if (resumeContent.length < 50) {
         toast.error("Please enter at least 50 characters");
@@ -219,15 +260,16 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
       return;
     }
     
-    // Notify parent that analysis is starting
+    // Notify parent component that analysis is starting
     if (onAnalysisStart) {
       onAnalysisStart();
     }
     
-    // Start optimization process
+    // Update processing state
     setIsOptimizing(true);
     setAnalysisCompleted(false);
     
+    // Show loading toast for user feedback
     const loadingToastId = toast.loading("Analyzing resume content...");
     
     try {
@@ -237,34 +279,35 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
       if (user?.id) formData.append("userId", user.id);
       formData.append("resetLastSavedText", "true");
       
-      // Call optimization API
+      // Send request to optimization API endpoint
       const response = await fetch("/api/optimize", {
         method: "POST",
         body: formData,
       });
       
-      // Parse the response
+      // Parse the response JSON
       const result = await response.json();
       
-      // Handle API error
+      // Handle API error responses
       if (!response.ok) {
         throw new Error(result?.error || "Analysis failed");
       }
       
       // Process successful response
       if (result?.optimizedText) {
+        // Update UI with success notification
         toast.dismiss(loadingToastId);
         toast.success("Resume content analyzed successfully");
         
-        // Mark analysis as completed
+        // Update state to reflect completed analysis
         setAnalysisCompleted(true);
         
-        // Extract and normalize data
+        // Extract and normalize data from response
         const optimizedText = result.optimizedText || '';
         const resumeId = result.resumeId || '';
         const atsScore = result.atsScore || 65;
         
-        // Format suggestions
+        // Format suggestions with consistent structure
         const suggestions = Array.isArray(result.suggestions) 
           ? result.suggestions.map((s: any) => ({
               id: s.id || String(Math.random()),
@@ -276,7 +319,7 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
             }))
           : [];
         
-        // Format keywords
+        // Format keywords with consistent structure
         const keywords = result.keywords 
           ? result.keywords 
           : (result.keywordSuggestions 
@@ -287,7 +330,7 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
                 })) 
               : []);
         
-        // Call the callback with processed data
+        // Notify parent component of successful optimization
         if (onOptimizationComplete) {
           onOptimizationComplete(
             optimizedText,
@@ -298,6 +341,7 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
           );
         }
         
+        // Return optimization results
         return {
           optimizedText,
           resumeId,
@@ -306,21 +350,25 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
           keywords
         };
       } else {
+        // Handle unexpected API response format
         throw new Error("Invalid response from optimization API");
       }
     } catch (err: any) {
+      // Handle and display errors
       toast.dismiss(loadingToastId);
       toast.error("Content analysis error", {
         description: err.message,
       });
       return null;
     } finally {
+      // Reset processing state regardless of outcome
       setIsOptimizing(false);
     }
   }, [resumeContent, isOptimizing, user?.id, onAnalysisStart, onOptimizationComplete]);
 
+  // Return all state values and functions for use by components
   return {
-    // State
+    // State values
     selectedFile,
     uploadedFileInfo,
     resumeContent,
@@ -329,7 +377,7 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
     isDragOver,
     analysisCompleted,
     
-    // Actions
+    // Actions and updaters
     setSelectedFile,
     setIsUploading,
     setIsDragOver,

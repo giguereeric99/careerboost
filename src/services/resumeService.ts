@@ -17,6 +17,9 @@ import { ResumeData, Suggestion } from "@/types/resume";
 import { toast } from "sonner";
 import { parseOptimizedText, extractKeywords, calculateAtsScore } from "./resumeParser";
 
+// Re-export these functions so they can be imported from resumeService
+export { parseOptimizedText, extractKeywords, calculateAtsScore };
+
 /**
  * Uploads a resume file to Supabase storage
  * Handles file naming, upload process, and user feedback
@@ -380,6 +383,12 @@ export function isValidNoResumeState(response: Response, result: any): boolean {
 
 /**
  * Save resume content and score
+ * Updates the resume content and score in the database
+ * 
+ * @param resumeId - The ID of the resume to update
+ * @param content - The new content to save
+ * @param atsScore - The new ATS score
+ * @returns Success status and any error
  */
 export async function saveResumeContent(
   resumeId: string, 
@@ -387,6 +396,7 @@ export async function saveResumeContent(
   atsScore: number
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
+    // Update the resume content and score
     const { error } = await supabase
       .from('resumes')
       .update({
@@ -396,10 +406,12 @@ export async function saveResumeContent(
       })
       .eq('id', resumeId);
     
+    // Handle update errors
     if (error) throw error;
     
     return { success: true, error: null };
   } catch (error) {
+    // Log error for debugging and return error object
     console.error("Error saving resume content:", error);
     return { success: false, error: error as Error };
   }
@@ -407,12 +419,16 @@ export async function saveResumeContent(
 
 /**
  * Reset resume to original version
+ * Removes all applied changes and reverts to the original optimized version
+ * 
+ * @param resumeId - The ID of the resume to reset
+ * @returns Success status and any error
  */
 export async function resetResumeToOriginal(
   resumeId: string
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
-    // Reset resume fields
+    // Reset resume fields to original state
     const { error: resumeError } = await supabase
       .from('resumes')
       .update({
@@ -422,26 +438,30 @@ export async function resetResumeToOriginal(
       })
       .eq('id', resumeId);
     
+    // Handle resume update errors
     if (resumeError) throw resumeError;
     
-    // Reset suggestions
+    // Reset all suggestions to not applied
     const { error: suggestionsError } = await supabase
       .from('resume_suggestions')
       .update({ is_applied: false })
       .eq('resume_id', resumeId);
     
+    // Handle suggestions update errors
     if (suggestionsError) throw suggestionsError;
     
-    // Reset keywords
+    // Reset all keywords to not applied
     const { error: keywordsError } = await supabase
       .from('resume_keywords')
       .update({ is_applied: false })
       .eq('resume_id', resumeId);
     
+    // Handle keywords update errors
     if (keywordsError) throw keywordsError;
     
     return { success: true, error: null };
   } catch (error) {
+    // Log error for debugging and return error object
     console.error("Error resetting resume:", error);
     return { success: false, error: error as Error };
   }
@@ -449,12 +469,18 @@ export async function resetResumeToOriginal(
 
 /**
  * Update resume template
+ * Sets the selected template for a resume
+ * 
+ * @param resumeId - The ID of the resume
+ * @param templateId - The ID of the template to apply
+ * @returns Success status and any error
  */
 export async function updateResumeTemplate(
   resumeId: string,
   templateId: string
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
+    // Update the resume with the selected template
     const { error } = await supabase
       .from('resumes')
       .update({
@@ -463,10 +489,12 @@ export async function updateResumeTemplate(
       })
       .eq('id', resumeId);
     
+    // Handle update errors
     if (error) throw error;
     
     return { success: true, error: null };
   } catch (error) {
+    // Log error for debugging and return error object
     console.error("Error updating resume template:", error);
     return { success: false, error: error as Error };
   }

@@ -25,8 +25,8 @@ export type Resume = {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Function to create a server-side Supabase client with cookies for auth
-export const createServerSupabaseClient = () => {
-  const cookieStore = cookies();
+export const createServerSupabaseClient = async () => {
+  const cookieStore = await cookies();
   
   return createServerClient(
     supabaseUrl,

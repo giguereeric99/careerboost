@@ -162,20 +162,24 @@ export async function reoptimizeResume({
     .eq('resume_id', resumeId)
     .in('id', appliedSuggestions);
   
+  // Ensure data is not null for type safety
+  const safeKeywordsData = keywordsData || [];
+  const safeSuggestionsData = suggestionsData || [];
+  
   // Prepare optimization options
   const options: OptimizationOptions = {
     language: resume.language || 'English',
     // Include applied keywords and suggestions in the instructions
     customInstructions: [
       `Apply these keywords: ${appliedKeywords.join(', ')}`,
-      ...suggestionsData.map(s => `Apply this suggestion: ${s.text}`)
+      ...safeSuggestionsData.map(s => `Apply this suggestion: ${s.text}`)
     ]
   };
   
   // Choose which text to reoptimize - if only keywords were applied,
   // we can use the existing optimized text rather than starting from scratch
   const textToReoptimize = 
-    suggestionsData.length > 0 ? resume.original_text : resume.optimized_text;
+    safeSuggestionsData.length > 0 ? resume.original_text : resume.optimized_text;
   
   // Determine which provider to use
   // Try to use the same provider that generated the original optimization

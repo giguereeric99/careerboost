@@ -71,7 +71,7 @@ export async function optimizeWithClaude(
     console.log(`[Claude] Optimizing resume with ${config.model}`);
     
     // Execute with retry logic
-    const responseText = await withRetry(
+    const responseText = await withRetry<string>(
       async () => {
         const response = await client.messages.create({
           model: config.model,
@@ -83,8 +83,23 @@ export async function optimizeWithClaude(
           ]
         });
         
-        // Extract the text content from the response
-        return response.content[0].text;
+        // Extract the text content from the response safely with type assertion
+        const contentBlock = response.content[0];
+        
+        // Handle different types of content blocks safely
+        // Explicit type checking to handle different response formats
+        if ('type' in contentBlock && contentBlock.type === 'text') {
+          return contentBlock.text as string;
+        } 
+        // Handle potential legacy or different API formats
+        else if ('text' in contentBlock) {
+          return String(contentBlock.text);
+        }
+        // Fallback to stringifying the content
+        else {
+          console.warn('[Claude] Unexpected content format:', contentBlock);
+          return JSON.stringify(contentBlock);
+        }
       },
       config.retries
     );

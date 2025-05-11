@@ -8,6 +8,8 @@
 import { STANDARD_SECTIONS } from '@/constants/sections';
 import DOMPurify from 'dompurify';
 
+import { Section } from '@/types/resume';
+
 /**
  * Standard section names in English - will always be displayed in English
  * Maps section IDs to display names
@@ -82,15 +84,6 @@ export const SECTION_PLACEHOLDERS: Record<string, string> = {
   'resume-references': '• Reference Name, Position, Company\n• Email, Phone\n\nOR\n\nReferences available upon request',
   'resume-additional': 'Additional relevant information such as workshops, conferences, or other qualifications.'
 };
-
-/**
- * Section interface for resume content sections
- */
-export interface Section {
-  id: string;      // Section identifier
-  title: string;   // Display title
-  content: string; // HTML content
-}
 
 /**
  * Get standardized section name from ID
@@ -259,9 +252,9 @@ export function normalizeHtmlContent(html: string, sanitizeFn?: (html: string) =
  */
 export function parseHtmlIntoSections(
   html: string, 
-  getSectionNameFn: (id: string) => string,
-  sectionNames: Record<string, string>,
-  sectionOrder: string[]
+  getSectionNameFn: (id: string) => string = getSectionName,
+  sectionNames: Record<string, string> = SECTION_NAMES,
+  sectionOrder: string[] = SECTION_ORDER
 ): Section[] {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
@@ -273,20 +266,24 @@ export function parseHtmlIntoSections(
   if (sectionElements.length > 0) {
     console.log(`Found ${sectionElements.length} sections with <section> tags`);
     
-    sectionElements.forEach(section => {
+    sectionElements.forEach((section, index) => {
       // Get section ID or generate one
       const rawId = section.id || `section-${Math.random().toString(36).substring(2, 9)}`;
       // Normalize the ID to ensure it matches our standard format
       const id = normalizeSecttionId(rawId);
       
       // Get the title from heading element or section id
-      const headingEl = section.querySelector('h1, h2, h3, h4, h5, h6');
       const title = getSectionNameFn(id);
       
+      // Create the section with all required properties
       parsedSections.push({
         id,
         title,
-        content: section.innerHTML
+        content: section.innerHTML,
+        type: guessTypeFromTitle(title),
+        order: index,
+        visible: true,
+        isEmpty: isSectionEmpty(section.innerHTML, title)
       });
     });
   } else {
@@ -329,10 +326,14 @@ export function parseHtmlIntoSections(
         }
         
         if (sectionContent) {
-          parsedSections.push({ 
+          parsedSections.push({
             id, 
             title: standardTitle, 
-            content: sectionContent 
+            content: sectionContent,
+            type: guessTypeFromTitle(standardTitle),
+            order: index,
+            visible: true,
+            isEmpty: isSectionEmpty(sectionContent, standardTitle)
           });
         }
       });
@@ -344,10 +345,14 @@ export function parseHtmlIntoSections(
         console.log(`Found ${paragraphs.length} paragraphs, attempting to group into sections`);
         
         // Try to group the paragraphs into logical sections
-        let currentSection = {
+        let currentSection: Section = {
           id: 'resume-header',
           title: sectionNames['resume-header'],
-          content: ''
+          content: '',
+          type: 'header',
+          order: 0,
+          visible: true,
+          isEmpty: true
         };
         
         let sectionIndex = 0;
@@ -367,6 +372,7 @@ export function parseHtmlIntoSections(
           if ((wordCount < 5 && text.length < 50 && !text.includes('.')) || matchedSectionName) {
             // Save previous section if it has content
             if (currentSection.content) {
+              currentSection.isEmpty = isSectionEmpty(currentSection.content, currentSection.title);
               parsedSections.push({ ...currentSection });
             }
             
@@ -382,10 +388,17 @@ export function parseHtmlIntoSections(
               }
             }
             
+            const normalizedId = normalizeSecttionId(newSectionId);
+            const sectionTitle = getSectionNameFn(newSectionId);
+            
             currentSection = {
-              id: normalizeSecttionId(newSectionId),
-              title: getSectionNameFn(newSectionId),
-              content: paragraph.outerHTML
+              id: normalizedId,
+              title: sectionTitle,
+              content: paragraph.outerHTML,
+              type: guessTypeFromTitle(sectionTitle),
+              order: sectionIndex,
+              visible: true,
+              isEmpty: isSectionEmpty(paragraph.outerHTML, sectionTitle)
             };
           } else {
             // Add to current section content
@@ -395,16 +408,23 @@ export function parseHtmlIntoSections(
         
         // Add the last section
         if (currentSection.content) {
+          currentSection.isEmpty = isSectionEmpty(currentSection.content, currentSection.title);
           parsedSections.push(currentSection);
         }
       } else {
         // Approach 4: Just create a single section with all content
         console.log('No clear section structure found, creating a single section');
         
+        const sectionTitle = sectionNames['resume-summary'];
+        
         parsedSections.push({
           id: 'resume-summary',
-          title: sectionNames['resume-summary'],
-          content: doc.body.innerHTML
+          title: sectionTitle,
+          content: doc.body.innerHTML,
+          type: 'summary',
+          order: 0,
+          visible: true,
+          isEmpty: isSectionEmpty(doc.body.innerHTML, sectionTitle)
         });
       }
     }
@@ -412,10 +432,16 @@ export function parseHtmlIntoSections(
   
   // If no sections were found, create a default one
   if (parsedSections.length === 0) {
+    const sectionTitle = sectionNames['resume-summary'];
+    
     parsedSections.push({
       id: 'resume-summary',
-      title: sectionNames['resume-summary'],
-      content: html
+      title: sectionTitle,
+      content: html,
+      type: 'summary',
+      order: 0,
+      visible: true,
+      isEmpty: isSectionEmpty(html, sectionTitle)
     });
   }
   
@@ -440,6 +466,60 @@ export function parseHtmlIntoSections(
 }
 
 /**
+ * Tries to determine the section type based on its title
+ * Useful for automatic categorization of sections
+ * 
+ * @param title - Section title to analyze
+ * @returns Best guess at section type
+ */
+export function guessTypeFromTitle(title: string): string {
+  const lowerTitle = title.toLowerCase();
+  
+  if (lowerTitle.includes('experience') || lowerTitle.includes('emploi') || lowerTitle.includes('work')) 
+    return 'experience';
+  if (lowerTitle.includes('education') || lowerTitle.includes('formation') || lowerTitle.includes('study')) 
+    return 'education';
+  if (lowerTitle.includes('skill') || lowerTitle.includes('compétence') || lowerTitle.includes('expertise')) 
+    return 'skills';
+  if (lowerTitle.includes('summary') || lowerTitle.includes('résumé') || lowerTitle.includes('profile')) 
+    return 'summary';
+  if (lowerTitle.includes('contact') || lowerTitle.includes('personal') || lowerTitle.includes('information')) 
+    return 'header';
+  if (lowerTitle.includes('language') || lowerTitle.includes('langue'))
+    return 'languages';
+  if (lowerTitle.includes('certification') || lowerTitle.includes('diploma'))
+    return 'certifications';
+  if (lowerTitle.includes('project') || lowerTitle.includes('portfolio'))
+    return 'projects';
+  if (lowerTitle.includes('award') || lowerTitle.includes('achievement'))
+    return 'awards';
+  if (lowerTitle.includes('volunteer') || lowerTitle.includes('community'))
+    return 'volunteering';
+  if (lowerTitle.includes('reference') || lowerTitle.includes('recommendation'))
+    return 'references';
+  
+  // Default to general if no specific type can be determined
+  return 'general';
+}
+
+/**
+ * Initialize all sections with proper required properties
+ * Ensures all sections have the required properties even if parsed from minimal data
+ * 
+ * @param sections - Array of potentially incomplete sections
+ * @returns Complete sections with all required properties
+ */
+export function initializeAllSections(sections: Section[]): Section[] {
+  return sections.map((section, index) => ({
+    ...section,
+    type: section.type || guessTypeFromTitle(section.title),
+    order: section.order !== undefined ? section.order : index,
+    visible: section.visible !== undefined ? section.visible : true,
+    isEmpty: section.isEmpty !== undefined ? section.isEmpty : isSectionEmpty(section.content, section.title)
+  }));
+}
+
+/**
  * Ensure all standard sections are represented
  * Fills in missing sections with empty content
  * 
@@ -451,18 +531,25 @@ export function ensureAllStandardSections(sections: Section[]): Section[] {
   const existingSections = new Map(sections.map(section => [section.id, section]));
   
   // Create the complete list with all standard sections
-  const completeSections = STANDARD_SECTIONS.map(({ id }) => {
+  const completeSections = STANDARD_SECTIONS.map(({ id }, index) => {
     const existingSection = existingSections.get(id);
     
     if (existingSection) {
       // Use existing section if found
       return existingSection;
     } else {
-      // Create a new empty section
+      // Create a new empty section with all required properties
+      const sectionTitle = getSectionName(id);
+      const content = `<h2>${sectionTitle}</h2><p></p>`;
+      
       return {
         id,
-        title: getSectionName(id),
-        content: `<h2>${getSectionName(id)}</h2><p></p>`
+        title: sectionTitle,
+        content,
+        type: guessTypeFromTitle(sectionTitle),
+        order: index,
+        visible: true,
+        isEmpty: true
       };
     }
   });

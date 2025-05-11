@@ -2,7 +2,7 @@ import { createUploadthing, type FileRouter } from "uploadthing/server";
 
 const f = createUploadthing();
 
-export const ourFileRouter = {
+export const OurFileRouter = {
   resumeUploader: f({
     // Types MIME autorisés
     "application/pdf": { maxFileSize: "4MB" },

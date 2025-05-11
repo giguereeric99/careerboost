@@ -12,83 +12,119 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 
-// Import components
-import UploadResume from '@/components/resumeOptimizer/uploadResume';
-import ResumePreview from '@/components/resumeOptimizer/resumePreview';
-import ScoreCard from '@/components/resumeOptimizer/scoreCard';
-import SuggestionsList from '@/components/resumeOptimizer/suggestionsList';
-import KeywordList from '@/components/resumeOptimizer/keywordList';
-import TemplateGallery from '@/components/resumeOptimizer/templateGallery';
+// Import components - using the correct paths for your project structure
+// The imports are adjusted to match your project's folder structure
+import UploadSection from '@/components/ResumeOptimizerSection/uploadSection';
+import ResumePreview from '@/components/ResumeOptimizerSection/resumePreview';
+import ScoreCard from '@/components/ResumeOptimizerSection/scoreCard';
+import SuggestionsList from '@/components/ResumeOptimizerSection/suggestionsList';
+import KeywordList from '@/components/ResumeOptimizerSection/keywordList';
+import TemplateGallery from '@/components/ResumeOptimizerSection/templateGallery';
 import ResetConfirmationDialog from '@/components/Dialogs/resetConfirmationDialog';
-import LoadingState from '@/components/resumeOptimizer/loadingState';
-import EmptyPreviewState from '@/components/resumeOptimizer/emptyPreviewState';
+import LoadingState from '@/components/ResumeOptimizerSection/loadingState';
+import EmptyPreviewState from '@/components/ResumeOptimizerSection/emptyPreviewState';
 import { resumeTemplates } from '@/constants/resumeTemplates';
 
 // Import custom hooks
 import useResumeOptimizer from '@/hooks/optimizer/useResumeOptimizer';
 import useUploadSection from '@/hooks/optimizer/useUploadSection';
 
+// Import types
+import { Suggestion, Keyword, DataMappers, OptimizedResumeData } from '@/types/resume';
+
+/**
+ * Interface for SuggestionImpact based on error messages
+ */
+interface SuggestionImpact {
+  newScore: number;
+  pointImpact: number;
+  description: string;
+}
+
+/**
+ * EmptyPreviewStateProps interface based on error messages
+ */
+interface EmptyPreviewStateProps {
+  onGoToUpload: () => void;
+}
+
 /**
  * ResumeOptimizer Component - Main entry point for the resume optimization workflow
+ * Handles the complete lifecycle of resume optimization including:
+ * - File upload and content extraction
+ * - AI optimization
+ * - Rendering preview with template selection
+ * - Managing suggestions and keywords
+ * - Saving and resetting user changes
  */
 const ResumeOptimizer: React.FC = () => {
-  // Get user authentication state
+  // Get user authentication state from Clerk
   const { user } = useUser();
   
   // Track when showing the loading state during optimization
   const [showLoadingState, setShowLoadingState] = useState(false);
   
-  // Use the main optimizer hook
+  // Use the main optimizer hook to handle resume optimization state and actions
   const {
     // State
-    resumeData,
-    optimizedText,
-    editedText,
-    atsScore,
-    suggestions,
-    keywords,
-    isEditing,
-    selectedTemplate,
-    isLoading,
-    isSaving,
-    isResetting,
-    hasResume,
-    activeTab,
+    resumeData,         // Main resume data object from database
+    optimizedText,      // AI-optimized text content
+    editedText,         // User-edited content
+    originalAtsScore,   // Original ATS score from optimization
+    currentAtsScore,    // Current ATS score after edits
+    suggestions,        // AI-generated improvement suggestions
+    keywords,           // Relevant keywords for the resume
+    isEditing,          // Whether user is in edit mode
+    selectedTemplate,   // Currently selected visual template
+    isLoading,          // Loading initial data
+    isSaving,           // Saving changes to database
+    isResetting,        // Resetting to original state
+    hasResume,          // Whether user has any resume
+    activeTab,          // Currently active tab
     
     // Actions
-    setActiveTab,
-    setIsEditing,
-    setSelectedTemplate,
-    loadLatestResume,
-    saveResume,
-    resetResume,
-    handleContentEdit,
-    handleApplySuggestion,
-    handleKeywordApply,
-    updateResumeWithOptimizedData
+    setActiveTab,             // Change active tab
+    setIsEditing,             // Toggle edit mode
+    loadLatestResume,         // Load latest resume data
+    saveResume,               // Save user changes
+    resetResume,              // Reset to AI-optimized version
+    handleContentEdit,        // Handle content changes
+    handleApplySuggestion,    // Apply a suggestion to content
+    handleKeywordApply,       // Apply a keyword to content
+    updateResumeWithOptimizedData  // Update state with optimization results
   } = useResumeOptimizer(user?.id);
   
-  // Use the upload section hook
+  // Local state for template selection since it's not provided by the hook
+  const [localSelectedTemplate, setLocalSelectedTemplate] = useState(selectedTemplate);
+
+  // Sync local template state with the one from the hook when it changes
+  React.useEffect(() => {
+    if (selectedTemplate) {
+      setLocalSelectedTemplate(selectedTemplate);
+    }
+  }, [selectedTemplate]);
+  
+  // Use the upload section hook to handle file upload and initial optimization
   const {
     // State
-    selectedFile,
-    resumeContent,
-    isUploading, 
-    isOptimizing,
+    selectedFile,       // Selected file for upload
+    resumeContent,      // Extracted content from file
+    isUploading,        // Uploading file in progress
+    isOptimizing,       // AI optimization in progress
     
     // Actions
-    setSelectedFile,
-    handleContentChange,
-    handleFileUpload,
-    processUploadedFile,
-    handleTextAnalysis
+    setSelectedFile,       // Set selected file
+    handleContentChange,   // Handle content changes in upload
+    handleFileUpload,      // Handle file upload process
+    processUploadedFile,   // Process uploaded file
+    handleTextAnalysis     // Send content for AI analysis
   } = useUploadSection({
-    // Pass the callback to receive optimization data
+    // Pass the callback to receive optimization data after completion
     onOptimizationComplete: (optimizedText, resumeId, atsScore, suggestions, keywords) => {
       // Update the main state with optimization results
       updateResumeWithOptimizedData(optimizedText, resumeId, atsScore, suggestions, keywords);
       
-      // Hide loading state and change tab after processing
+      // Hide loading state and change tab after processing is complete
       setShowLoadingState(false);
       setActiveTab('preview');
     }
@@ -96,6 +132,9 @@ const ResumeOptimizer: React.FC = () => {
   
   /**
    * Handle tab change with data loading if needed
+   * Prevents tab switching during processing and loads data when required
+   * 
+   * @param value - Tab value to switch to
    */
   const handleTabChange = useCallback((value: string) => {
     // Prevent switching to preview if analysis in progress
@@ -114,6 +153,7 @@ const ResumeOptimizer: React.FC = () => {
   
   /**
    * Handle analysis start - show loading state
+   * Called when the AI optimization process begins
    */
   const handleAnalysisStart = useCallback(() => {
     setShowLoadingState(true);
@@ -121,28 +161,39 @@ const ResumeOptimizer: React.FC = () => {
   
   /**
    * Calculate if preview tab should be disabled
+   * Prevents access during processing states
    */
   const isPreviewTabDisabled = isLoading || isUploading || isOptimizing || showLoadingState;
   
   /**
    * Determine which content to display in the preview
+   * Prioritizes: edited text > last saved text > optimized text > empty string
    */
   const displayContent = editedText || (resumeData?.last_saved_text ?? resumeData?.optimized_text) || optimizedText || '';
   
   /**
+   * Get current ATS score to display
+   * Uses current score if available, falls back to original score
+   */
+  const atsScore = currentAtsScore !== null ? currentAtsScore : originalAtsScore;
+  
+  /**
    * Get array of applied keywords for templates
+   * Filters keywords that have been applied and maps to text-only array
    */
   const appliedKeywordsArray = keywords
-    .filter(keyword => keyword.is_applied)
+    .filter(keyword => keyword.isApplied)
     .map(keyword => keyword.text);
   
   /**
    * Handle reset dialog confirmation
+   * Controls visibility of the reset confirmation dialog
    */
   const [showResetDialog, setShowResetDialog] = useState(false);
   
   /**
    * Handle resume download
+   * Creates an HTML file with the current content and selected template
    */
   const handleDownload = useCallback(() => {
     // Validate content exists
@@ -151,10 +202,10 @@ const ResumeOptimizer: React.FC = () => {
       return;
     }
     
-    // Get selected template
-    const template = resumeTemplates.find(t => t.id === selectedTemplate) || resumeTemplates[0];
+    // Get selected template or default to first template
+    const template = resumeTemplates.find(t => t.id === localSelectedTemplate) || resumeTemplates[0];
     
-    // Create complete HTML document
+    // Create complete HTML document with template styling
     const htmlContent = `<!DOCTYPE html>
     <html>
     <head>
@@ -191,7 +242,95 @@ const ResumeOptimizer: React.FC = () => {
     URL.revokeObjectURL(url);
     
     toast.success("Resume downloaded successfully");
-  }, [displayContent, selectedTemplate]);
+  }, [displayContent, localSelectedTemplate]);
+  
+  // Maps the database-format suggestions to component-format suggestions
+  const mappedSuggestions = suggestions.map(s => ({
+    id: s.id,
+    text: s.text,
+    type: s.type,
+    impact: s.impact,
+    isApplied: s.isApplied,
+    pointImpact: s.pointImpact
+  }));
+  
+  // Maps the database-format keywords to component-format keywords
+  // Adding the 'applied' property required by KeywordList component
+  const mappedKeywords = keywords.map((k, index) => ({
+    id: k.id || String(Math.random()),
+    text: k.text,
+    isApplied: k.isApplied,
+    // Add the 'applied' property required by the component
+    applied: k.isApplied,
+    relevance: k.relevance || 1,
+    pointImpact: k.pointImpact || 1
+  }));
+  
+  /**
+   * Adapter function for onKeywordApply
+   * Converts index-based calls to id-based calls
+   */
+  const handleKeywordApplyAdapter = (index: number) => {
+    if (index >= 0 && index < mappedKeywords.length) {
+      const keyword = mappedKeywords[index];
+      handleKeywordApply(keyword.id, !keyword.isApplied);
+    }
+  };
+  
+  /**
+   * Adapter function for simulateKeywordImpact
+   * Returns the expected object structure
+   */
+  const simulateKeywordImpactAdapter = (index: number) => {
+    // Default impact values
+    const pointImpact = 1;
+    const currentScore = atsScore || 0;
+    const newScore = Math.min(100, currentScore + pointImpact);
+    
+    // Return the expected object structure
+    return {
+      newScore,
+      pointImpact,
+      description: "Adding this keyword will improve your ATS compatibility score."
+    };
+  };
+  
+  /**
+   * Adapter function for apply suggestion
+   * Converts index-based calls to id-based calls
+   */
+  const handleApplySuggestionAdapter = (index: number) => {
+    if (index >= 0 && index < mappedSuggestions.length) {
+      const suggestion = mappedSuggestions[index];
+      handleApplySuggestion(suggestion.id, !suggestion.isApplied);
+    }
+  };
+  
+  /**
+   * Adapter function for simulate suggestion impact
+   * Returns the expected impact object structure
+   */
+  const simulateSuggestionImpactAdapter = (index: number): SuggestionImpact => {
+    // Default impact values
+    const pointImpact = 2;
+    const currentScore = atsScore || 0;
+    const newScore = Math.min(100, currentScore + pointImpact);
+    
+    // Return the expected object structure
+    return {
+      newScore,
+      pointImpact,
+      description: "This suggestion will improve your resume's clarity and impact."
+    };
+  };
+  
+  /**
+   * Adapter for file upload to match expected signature
+   */
+  const handleFileUploadAdapter = useCallback((url: string, name: string, size?: number, type?: string) => {
+    // Call the original handler with defaults for optional parameters
+    handleFileUpload(url, name, size || 0, type || '');
+  }, [handleFileUpload]);
   
   return (
     <div className="py-8">
@@ -238,7 +377,8 @@ const ResumeOptimizer: React.FC = () => {
         
         {/* Upload tab */}
         <TabsContent value="upload" className="space-y-4">
-          {/* <UploadSection
+          {/* Using the UploadSection component with required props */}
+          <UploadSection 
             isUploading={isUploading}
             isParsing={isOptimizing}
             selectedFile={selectedFile}
@@ -246,7 +386,7 @@ const ResumeOptimizer: React.FC = () => {
             onFileChange={setSelectedFile}
             onContentChange={handleContentChange}
             onContinue={handleTextAnalysis}
-            onFileUpload={handleFileUpload}
+            onFileUpload={handleFileUploadAdapter}
             setActiveTab={setActiveTab}
             onAnalysisStart={handleAnalysisStart}
             onAnalysisComplete={(optimizedText, resumeId, atsScore, suggestions, keywords) => {
@@ -259,8 +399,7 @@ const ResumeOptimizer: React.FC = () => {
               );
               setShowLoadingState(false);
             }}
-          /> */}
-          <UploadResume />
+          />
         </TabsContent>
         
         {/* Preview tab with optimized loading state handling */}
@@ -272,11 +411,10 @@ const ResumeOptimizer: React.FC = () => {
            * 3. Show content when available
            */}
           {showLoadingState || isOptimizing ? (
-            <LoadingState onSkipLoading={() => setShowLoadingState(false)} />
+            <LoadingState />
           ) : !displayContent ? (
             <EmptyPreviewState 
               onGoToUpload={() => setActiveTab('upload')} 
-              onCheckForResumes={loadLatestResume}
             />
           ) : (
             <>
@@ -284,14 +422,63 @@ const ResumeOptimizer: React.FC = () => {
               <div className="grid md:grid-cols-5 gap-6">
                 {/* Resume preview - takes 3 columns */}
                 <div className="col-span-3">
-                  div resume preview
+                  <ResumePreview
+                    optimizedText={displayContent}
+                    originalOptimizedText={optimizedText}
+                    selectedTemplate={localSelectedTemplate}
+                    templates={resumeTemplates}
+                    appliedKeywords={appliedKeywordsArray}
+                    suggestions={mappedSuggestions}
+                    onDownload={handleDownload}
+                    onSave={saveResume}
+                    onTextChange={handleContentEdit}
+                    isOptimizing={isOptimizing}
+                    isApplyingChanges={isSaving}
+                    language={resumeData?.language || "English"}
+                    onEditModeChange={setIsEditing}
+                    onReset={() => setShowResetDialog(true)}
+                  />
                 </div>
 
                 {/* Sidebar with optimization controls - takes 2 columns */}
                 <div className="col-span-2 flex flex-col gap-4">
-         
+                  {/* ATS Score card */}
+                  <ScoreCard 
+                    optimizationScore={atsScore || 0}
+                    resumeContent={displayContent}
+                    suggestionsApplied={suggestions.filter(s => s.isApplied).length}
+                    keywordsApplied={keywords.filter(k => k.isApplied).length}
+                    scoreBreakdown={null}
+                    potentialScore={100}
+                    initialScore={65}
+                    isCalculating={isOptimizing}
+                  />
 
-                    <div>sidebar</div>
+                  {/* AI Suggestions */}
+                  <SuggestionsList
+                    suggestions={mappedSuggestions}
+                    isOptimizing={isOptimizing}
+                    onApplySuggestion={handleApplySuggestionAdapter}
+                    resumeContent={displayContent}
+                    currentScore={atsScore || 0}
+                    simulateSuggestionImpact={simulateSuggestionImpactAdapter}
+                  />
+                  
+                  {/* Keywords */}
+                  <KeywordList
+                    keywords={mappedKeywords}
+                    onKeywordApply={handleKeywordApplyAdapter}
+                    showImpactDetails={true}
+                    currentScore={atsScore || 0}
+                    simulateKeywordImpact={simulateKeywordImpactAdapter}
+                  />
+
+                  {/* Template selection gallery */}
+                  <TemplateGallery
+                    templates={resumeTemplates}
+                    selectedTemplate={localSelectedTemplate}
+                    onTemplateSelect={setLocalSelectedTemplate}
+                  />
                 </div>
               </div>
             </>

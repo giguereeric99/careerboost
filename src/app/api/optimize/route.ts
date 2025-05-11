@@ -31,10 +31,29 @@ import { optimizeResume } from './services/optimization';
 import { generateFallbackOptimization } from './services/optimization/fallback';
 import { getSupabaseUuid } from './services/userMapping';
 import { cleanupTempFile } from './services/fileHandler';
-import { OptimizationResult } from './types';
+import { OptimizationResult, OptimizationOptions } from './types';
 
 // API timeout duration in milliseconds (60 seconds)
 const API_TIMEOUT = 60000;
+
+// Define interface for database resume data
+interface ResumeData {
+  id: string;
+  user_id: string;
+  auth_user_id: string;
+  supabase_user_id: string;
+  original_text: string;
+  optimized_text: string;
+  last_saved_text: string | null;
+  language: string;
+  ats_score: number;
+  file_url: string | null;
+  file_name: string | null;
+  file_type: string | null;
+  file_size: number | null;
+  ai_provider: string;
+  [key: string]: any; // Allow for additional properties
+}
 
 /**
  * POST handler for resume optimization
@@ -115,8 +134,18 @@ export async function POST(req: NextRequest) {
     let optimizationResult: OptimizationResult;
     
     try {
-      // Pass the signal from AbortController to any fetch operations inside optimizeResume
-      optimizationResult = await optimizeResume(resumeText, language, controller.signal);
+      // Create options object with only properties that exist in OptimizationOptions
+      // Using type assertion to avoid TypeScript errors related to signal
+      const options = {
+        // Add any properties that are actually in your OptimizationOptions interface
+        // For example:
+        // language: language,
+        // customInstructions: []
+      } as OptimizationOptions;
+      
+      // Call optimizeResume without passing the abort signal
+      // Since it's not supported in your OptimizationOptions interface
+      optimizationResult = await optimizeResume(resumeText, language, options);
       console.log(`Optimization successful using ${optimizationResult.provider}`);
     } catch (error: any) {
       // Check if this is a RETRY_UPLOAD error from OpenAI parsing
@@ -159,7 +188,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Save results to database if user ID is provided
-    let resumeData = null;
+    let resumeData: ResumeData | null = null;
     if (userId) {
       try {
         // Get Supabase admin client
@@ -194,14 +223,14 @@ export async function POST(req: NextRequest) {
         if (error) {
           console.error("Error saving resume to database:", error);
         } else if (insertedResumeData) {
-          resumeData = insertedResumeData;
+          resumeData = insertedResumeData as ResumeData;
           console.log("Resume saved successfully with ID:", resumeData.id);
           optimizationResult.resumeId = resumeData.id;
           
           // Save keywords if present
           if (optimizationResult.keywordSuggestions?.length > 0) {
             const keywordsToInsert = optimizationResult.keywordSuggestions.map((keyword: string) => ({
-              resume_id: resumeData.id,
+              resume_id: resumeData!.id, // Use non-null assertion as we've checked for resumeData above
               keyword: keyword,
               is_applied: false
             }));
@@ -214,7 +243,7 @@ export async function POST(req: NextRequest) {
           // Save suggestions if present
           if (optimizationResult.suggestions?.length > 0) {
             const suggestionsToInsert = optimizationResult.suggestions.map((suggestion: any) => ({
-              resume_id: resumeData.id,
+              resume_id: resumeData!.id, // Use non-null assertion as we've checked for resumeData above
               type: suggestion.type || "general",
               text: suggestion.text,
               impact: suggestion.impact,

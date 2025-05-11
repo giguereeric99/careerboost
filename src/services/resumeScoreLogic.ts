@@ -54,7 +54,7 @@ export enum ImpactLevel {
 /**
  * Maps impact words in suggestion descriptions to numerical values
  */
-const IMPACT_KEYWORDS = {
+const IMPACT_KEYWORDS: Record<string, number> = {
   'critical': 10,
   'crucial': 9,
   'essential': 9,
@@ -77,7 +77,7 @@ const IMPACT_KEYWORDS = {
  * Weight factors for different suggestion types
  * These determine how much each suggestion type impacts the overall score
  */
-const SUGGESTION_TYPE_WEIGHTS = {
+const SUGGESTION_TYPE_WEIGHTS: Record<string, number> = {
   'structure': 0.8,   // Structure suggestions have high impact
   'content': 0.7,     // Content suggestions have medium-high impact
   'skills': 0.9,      // Skills suggestions have very high impact
@@ -90,7 +90,7 @@ const SUGGESTION_TYPE_WEIGHTS = {
 /**
  * Weight factors for different keyword categories
  */
-const KEYWORD_CATEGORY_WEIGHTS = {
+const KEYWORD_CATEGORY_WEIGHTS: Record<string, number> = {
   'technical': 0.9,         // Technical skills have highest impact
   'industry-specific': 0.8, // Industry terms have high impact
   'soft-skill': 0.6,        // Soft skills have medium impact
@@ -102,7 +102,7 @@ const KEYWORD_CATEGORY_WEIGHTS = {
  * Sections with their importance weight for ATS scoring
  * Different sections have different impacts on the overall ATS score
  */
-export const SECTION_WEIGHTS = {
+export const SECTION_WEIGHTS: Record<string, number> = {
   'resume-experience': 0.30,    // Experience is typically most important
   'resume-skills': 0.25,        // Skills are highly relevant
   'resume-education': 0.15,     // Education is important but less than experience
@@ -192,7 +192,7 @@ export function analyzeKeywordImpact(
   }
   
   // Calculate impact based on category and existence
-  const categoryWeight = KEYWORD_CATEGORY_WEIGHTS[category] || 0.5;
+  const categoryWeight = KEYWORD_CATEGORY_WEIGHTS[category as keyof typeof KEYWORD_CATEGORY_WEIGHTS] || 0.5;
   const existingPenalty = keywordExists ? 0.3 : 0.0; // Lower impact if already exists
   
   const impact = Math.min(1.0, Math.max(0.1, categoryWeight - existingPenalty));
@@ -227,7 +227,9 @@ export function calculateSuggestionPointImpact(suggestion: Suggestion): number {
   const basePoints = (impactScore / 10) * 3;
   
   // Get weight based on suggestion type
-  const typeWeight = SUGGESTION_TYPE_WEIGHTS[suggestion.type] || 0.6;
+  const typeWeight = (suggestion.type in SUGGESTION_TYPE_WEIGHTS)
+  ? SUGGESTION_TYPE_WEIGHTS[suggestion.type as keyof typeof SUGGESTION_TYPE_WEIGHTS]
+  : 0.6;
   
   // Calculate final points with diminishing returns formula
   return Math.round((basePoints * typeWeight * 10)) / 10;

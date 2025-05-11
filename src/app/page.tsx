@@ -3,7 +3,7 @@ import HeroSection from "@/components/Home/heroSection";
 import PricingSection from "@/components/Home/pricingSection";
 import { Button } from "@/components/ui/button";
 import FeaturesSection from "@/components/Home/featuresSection";
-import ResumeOptimizer from "@/components/dashboard/resumeOptimizer";
+import ResumeOptimizer from "@/components/Dashboard/resumeOptimizer";
 import JobsSection from "@/components/Home/jobsSection";
 import InterviewSection from "@/components/Home/interviewSection";
 

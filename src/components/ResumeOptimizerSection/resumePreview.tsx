@@ -30,9 +30,10 @@ import { getTemplateById } from '@/constants/resumeTemplates';
 import { STANDARD_SECTIONS } from '@/constants/sections';
 import DOMPurify from 'dompurify';
 import { toast } from "sonner";
+import { Section } from '@/types/resume';
 
 // Import TipTap editor
-import TipTapResumeEditor from '@/components/ResumeOptimizer/tipTapResumeEditor';
+import TipTapResumeEditor from '@/components/ResumeOptimizerSection/tipTapResumeEditor';
 
 // Import helper components
 import { 
@@ -73,17 +74,6 @@ interface ResumePreviewProps {
   onReset?: () => void;                 // Optional callback for reset button
   onRegenerateContent?: () => void;     // Optional callback for regenerating content with applied changes
   needsRegeneration?: boolean;          // Whether the content needs regeneration after applying changes
-}
-
-/**
- * Section interface for resume content sections
- */
-interface Section {
-  id: string;        // Standard section identifier
-  title: string;     // Displayed title
-  content: string;   // HTML content
-  visible: boolean;  // Whether section should be displayed in edit mode
-  isEmpty: boolean;  // Whether section has meaningful content
 }
 
 /**
@@ -173,7 +163,9 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       title: title,
       content: content,
       visible: true, // Show all sections in edit mode
-      isEmpty: true  // Empty by default
+      isEmpty: true,  // Empty by default
+      type: "empty",
+      order: 0  
     };
   }, []);
   
@@ -251,10 +243,12 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       // Fallback to simple section
       setSections([{
         id: 'resume-summary',
-        title: SECTION_NAMES['resume-summary'],
-        content: optimizedText || '',
+        title: 'Professional Summary',
+        content: optimizedText || '<p>No content available</p>',
         visible: true,
-        isEmpty: !optimizedText
+        isEmpty: !optimizedText,
+        type: 'summary',
+        order: 0
       }]);
       setHasLoadedInitialContent(true);
     }

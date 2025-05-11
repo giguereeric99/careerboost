@@ -22,7 +22,7 @@ const AnalysisDialog: React.FC<AnalysisDialogProps> = ({
 }) => {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="sm:max-w-[425px] bg-white" hideCloseButton={true}>
+      <DialogContent className="sm:max-w-[425px] bg-white">
         <DialogHeader>
           <DialogTitle>
             {isAnalyzing ? "Analyzing Your Resume" : "Analysis Complete!"}

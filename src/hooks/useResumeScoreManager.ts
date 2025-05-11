@@ -22,14 +22,6 @@ import {
   ImpactLevel,
   getImpactLevel
 } from '@/services/resumeScoreLogic';
-import { 
-  generateOptimizationMetrics,
-  saveOptimizationState,
-  loadOptimizationState,
-  exportFormats,
-  downloadOptimizationReport,
-  OptimizationMetrics
-} from '@/services/resumeMetricsExporter';
 
 /**
  * Props for the score manager hook
@@ -55,7 +47,6 @@ interface ResumeScoreManagerResult {
   suggestions: Suggestion[];        // Current suggestions with state
   keywords: Keyword[];              // Current keywords with state
   isApplyingChanges: boolean;       // Whether changes are being applied
-  metrics: OptimizationMetrics | null; // Optimization metrics for reporting
   
   // Actions
   applySuggestion: (index: number) => void; // Apply/unapply a suggestion
@@ -78,7 +69,6 @@ interface ResumeScoreManagerResult {
   };
   
   // Export and reporting
-  exportReport: (format: 'json' | 'csv' | 'markdown') => void;
   getSuggestionImpact: (suggestion: Suggestion, index: number) => { 
     points: number; 
     level: ImpactLevel;
@@ -118,7 +108,6 @@ export function useResumeScoreManager({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [isApplyingChanges, setIsApplyingChanges] = useState<boolean>(false);
-  const [metrics, setMetrics] = useState<OptimizationMetrics | null>(null);
   
   // =========================================================================
   // Refs for Performance Optimization and State Tracking
@@ -148,55 +137,6 @@ export function useResumeScoreManager({
   // API score override tracking - Used to prioritize API-provided scores
   const directScoreUpdateRef = useRef<number | null>(null);
   const apiScoreRef = useRef<number | null>(null);
-  
-  // =========================================================================
-  // Metrics Generation - Defined early to avoid circular dependencies
-  // =========================================================================
-  
-  /**
-   * Generate metrics with error handling
-   * Calculates and updates optimization metrics for reporting and analytics
-   * 
-   * @returns The newly generated metrics or null if generation fails
-   */
-  const generateMetrics = useCallback(() => {
-    // Validate required dependencies and service
-    if (!generateOptimizationMetrics || !scoreServiceRef.current) return null;
-
-    try {
-      // Get current data from service for consistent metrics calculation
-      const service = scoreServiceRef.current;
-      const initialScoreVal = service.getBaseScore();
-      const currentScoreVal = service.getCurrentScore();
-      const appliedSugs = service.getAppliedSuggestions();
-      const appliedKeys = service.getAppliedKeywords();
-
-      // Generate metrics using the metrics exporter service
-      const newMetrics = generateOptimizationMetrics(
-        initialScoreVal,
-        currentScoreVal,
-        appliedSugs,
-        appliedKeys,
-        startTimeRef.current
-      );
-
-      // Log metrics for debugging
-      console.log("Generated optimization metrics:", {
-        initialScore: initialScoreVal,
-        currentScore: currentScoreVal,
-        improvement: currentScoreVal - initialScoreVal,
-        appliedSuggestions: appliedSugs.length,
-        appliedKeywords: appliedKeys.length
-      });
-
-      // Update metrics state with new data
-      setMetrics(newMetrics);
-      return newMetrics;
-    } catch (error) {
-      console.error("Error generating metrics:", error);
-      return null;
-    }
-  }, []);
   
   // =========================================================================
   // Score Change Notification
@@ -502,16 +442,7 @@ export function useResumeScoreManager({
       console.log("Service not initialized yet, updating state directly");
       notifyScoreChange(score);
     }
-    
-    // Generate new metrics with the updated score
-    pendingScoreUpdatesRef.current = true;
-    setTimeout(() => {
-      if (pendingScoreUpdatesRef.current) {
-        generateMetrics();
-        pendingScoreUpdatesRef.current = false;
-      }
-    }, 50);
-  }, [resumeContent, initialSuggestions, initialKeywords, notifyScoreChange, generateMetrics]);
+  }, [resumeContent, initialSuggestions, initialKeywords, notifyScoreChange]);
   
   /**
    * Get the current base score
@@ -556,11 +487,8 @@ export function useResumeScoreManager({
       // Update breakdown to ensure UI consistency
       const breakdown = scoreServiceRef.current.getScoreBreakdown();
       setScoreBreakdown(breakdown);
-      
-      // Generate new metrics with the updated score
-      generateMetrics();
     }
-  }, [generateMetrics]);
+  }, []);
   
   // =========================================================================
   // Core Score Manipulation Functions
@@ -601,20 +529,10 @@ export function useResumeScoreManager({
         }
         return updated;
       });
-      
-      // Regenerate metrics after change with debouncing
-      // This prevents excessive metric calculations for rapid changes
-      pendingScoreUpdatesRef.current = true;
-      setTimeout(() => {
-        if (pendingScoreUpdatesRef.current) {
-          generateMetrics();
-          pendingScoreUpdatesRef.current = false;
-        }
-      }, 50);
     } catch (error) {
       console.error("Error applying suggestion:", error);
     }
-  }, [notifyScoreChange, generateMetrics]);
+  }, [notifyScoreChange]);
   
   /**
    * Apply or unapply a keyword
@@ -651,20 +569,10 @@ export function useResumeScoreManager({
         }
         return updated;
       });
-      
-      // Regenerate metrics after change with debouncing
-      // This prevents excessive metric calculations for rapid changes
-      pendingScoreUpdatesRef.current = true;
-      setTimeout(() => {
-        if (pendingScoreUpdatesRef.current) {
-          generateMetrics();
-          pendingScoreUpdatesRef.current = false;
-        }
-      }, 50);
     } catch (error) {
       console.error("Error applying keyword:", error);
     }
-  }, [notifyScoreChange, generateMetrics]);
+  }, [notifyScoreChange]);
   
   /**
    * Update resume content
@@ -697,20 +605,10 @@ export function useResumeScoreManager({
       
       // Update reference to track content changes for later comparisons
       prevResumeContentRef.current = newContent;
-      
-      // Regenerate metrics after a slightly longer delay
-      // Content changes can be more intensive, so use a longer timeout
-      pendingScoreUpdatesRef.current = true;
-      setTimeout(() => {
-        if (pendingScoreUpdatesRef.current) {
-          generateMetrics();
-          pendingScoreUpdatesRef.current = false;
-        }
-      }, 100);
     } catch (error) {
       console.error("Error updating content:", error);
     }
-  }, [notifyScoreChange, generateMetrics]);
+  }, [notifyScoreChange]);
   
   /**
    * Reset all changes
@@ -739,19 +637,10 @@ export function useResumeScoreManager({
       // Mark all suggestions and keywords as unapplied
       setSuggestions(prev => prev.map(s => ({ ...s, isApplied: false })));
       setKeywords(prev => prev.map(k => ({ ...k, applied: false })));
-      
-      // Regenerate metrics after change
-      pendingScoreUpdatesRef.current = true;
-      setTimeout(() => {
-        if (pendingScoreUpdatesRef.current) {
-          generateMetrics();
-          pendingScoreUpdatesRef.current = false;
-        }
-      }, 50);
     } catch (error) {
       console.error("Error resetting changes:", error);
     }
-  }, [notifyScoreChange, generateMetrics]);
+  }, [notifyScoreChange]);
   
   /**
    * Apply all suggestions and keywords
@@ -788,22 +677,13 @@ export function useResumeScoreManager({
       // Mark all suggestions and keywords as applied
       setSuggestions(prev => prev.map(s => ({ ...s, isApplied: true })));
       setKeywords(prev => prev.map(k => ({ ...k, applied: true })));
-      
-      // Regenerate metrics after change
-      pendingScoreUpdatesRef.current = true;
-      setTimeout(() => {
-        if (pendingScoreUpdatesRef.current) {
-          generateMetrics();
-          pendingScoreUpdatesRef.current = false;
-        }
-      }, 50);
     } catch (error) {
       console.error("Error applying all changes:", error);
     } finally {
       // Reset applying changes flag regardless of outcome
       setIsApplyingChanges(false);
     }
-  }, [notifyScoreChange, generateMetrics]);
+  }, [notifyScoreChange]);
   
   // =========================================================================
   // Impact Simulation Functions
@@ -856,61 +736,6 @@ export function useResumeScoreManager({
       return { newScore: currentScore, pointImpact: 0, description: "Error calculating impact" };
     }
   }, [currentScore]);
-  
-  // =========================================================================
-  // Reporting and Export Functions
-  // =========================================================================
-  
-  /**
-   * Export optimization report
-   * Generates and downloads a report in the specified format
-   * 
-   * @param format - Format to export: 'json', 'csv', or 'markdown'
-   */
-  const exportReport = useCallback((format: 'json' | 'csv' | 'markdown' = 'markdown') => {
-    try {
-      // Validate required functions and data
-      if (!metrics || !downloadOptimizationReport || !exportFormats) {
-        console.error("Missing required data or functions for export");
-        return;
-      }
-
-      // Determine export format and content type
-      let content: string;
-      let mimeType: string;
-      let extension: string;
-
-      // Configure export parameters based on requested format
-      switch (format) {
-        case 'json':
-          content = exportFormats.toJSON(metrics);
-          mimeType = 'application/json';
-          extension = 'json';
-          break;
-        case 'csv':
-          content = exportFormats.toCSV(metrics);
-          mimeType = 'text/csv';
-          extension = 'csv';
-          break;
-        case 'markdown':
-        default:
-          content = exportFormats.toMarkdown(metrics);
-          mimeType = 'text/markdown';
-          extension = 'md';
-          break;
-      }
-
-      // Generate unique filename with timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `resume-optimization-${timestamp}.${extension}`;
-
-      // Trigger download
-      downloadOptimizationReport(content, filename, mimeType);
-      console.log(`Exported report as ${filename}`);
-    } catch (error) {
-      console.error("Error exporting report:", error);
-    }
-  }, [metrics]);
   
   // =========================================================================
   // Impact Detail Functions for UI
@@ -1013,29 +838,28 @@ export function useResumeScoreManager({
    * @returns Boolean indicating success
    */
   const saveState = useCallback(() => {
-    // Skip if missing required data or functions
-    if (!scoreBreakdown || !saveOptimizationState) {
-      console.warn("Cannot save state: missing required data or functions");
-      return false;
-    }
-    
     try {
       console.log("Saving optimization state");
       
-      // Create state object with current values from all relevant state
-      // This data structure matches what loadOptimizationState expects
-      const state = {
-        resumeId,
-        initialScore,
-        currentScore,
-        appliedSuggestions: suggestions.filter(s => s.isApplied),
-        appliedKeywords: keywords.filter(k => k.applied),
-        scoreBreakdown,
-        lastUpdated: new Date().toISOString()
-      };
+      // Simple implementation without external dependencies
+      if (resumeId) {
+        // Save state in localStorage as fallback
+        const state = {
+          resumeId,
+          initialScore,
+          currentScore,
+          appliedSuggestions: suggestions.filter(s => s.isApplied),
+          appliedKeywords: keywords.filter(k => k.applied),
+          scoreBreakdown,
+          lastUpdated: new Date().toISOString()
+        };
+        
+        // Save to localStorage as fallback
+        localStorage.setItem(`resume_score_state_${resumeId}`, JSON.stringify(state));
+        return true;
+      }
       
-      // Save state and return result
-      return saveOptimizationState(state);
+      return false;
     } catch (error) {
       console.error("Error saving optimization state:", error);
       return false;
@@ -1070,7 +894,6 @@ export function useResumeScoreManager({
     suggestions,
     keywords,
     isApplyingChanges,
-    metrics,
     
     // Actions for modifying resume and score
     applySuggestion,
@@ -1078,14 +901,13 @@ export function useResumeScoreManager({
     updateContent,
     resetAllChanges,
     applyAllChanges,
-    forceUpdateScore,  // New direct score update function
+    forceUpdateScore,  // Direct score update function
     
     // Impact simulation for previews
     simulateSuggestionImpact,
     simulateKeywordImpact,
     
     // Export and reporting utilities
-    exportReport,
     getSuggestionImpact,
     getKeywordImpact,
     saveState

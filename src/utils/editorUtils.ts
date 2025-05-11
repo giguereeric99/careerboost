@@ -86,7 +86,7 @@ export const applySuggestion = (
         const pos = editor.state.doc.resolve(
           editor.state.doc.nodeSize - 2
         );
-        editor.chain().setTextSelection(pos).run();
+        editor.chain().setTextSelection(pos.pos).run();
         editor.chain().focus().insertContent(`<span class="editor-suggestion">${suggestion.text}</span>`).run();
       } else {
         // Just insert at current position
