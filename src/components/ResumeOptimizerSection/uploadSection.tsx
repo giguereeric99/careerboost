@@ -403,25 +403,28 @@ const UploadSection: React.FC<UploadSectionProps> = ({
                 disabled={isAnalysisInProgress()}
               />
               
-              {/* Analyze text button */}
-              <Button 
-                variant={resumeContent.length < 50 ? "outline" : "default"}
-                onClick={handleTextAnalysis}
-                disabled={isProcessing || resumeContent.length < 50}
-                className="w-full"
-              >
-                {isProcessing ? (
-                  <div className="flex items-center gap-2">
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                    </svg>
-                    Analyzing...
-                  </div>
-                ) : (
-                  "Analyze & Preview"
-                )}
-              </Button>
+              {/* Analyze text button (only show for pasted content) */}
+              {resumeContent && resumeContent.length >= 50 && !uploadedInfo && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleTextAnalysis}
+                  disabled={isProcessing}
+                  className="w-full"
+                >
+                  {isProcessing ? (
+                    <div className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                      </svg>
+                      Analyzing...
+                    </div>
+                  ) : (
+                    "Analyze & Preview"
+                  )}
+                </Button>
+              )}
               
               {/* Text requirement hint */}
               {resumeContent.length > 0 && resumeContent.length < 50 && (
