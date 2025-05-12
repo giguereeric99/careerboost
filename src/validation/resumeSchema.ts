@@ -96,6 +96,16 @@ export const optimizeRequestSchema = z.object({
 });
 
 /**
+ * UploadResult validation schema, pour valider les résultats renvoyés par UploadThing
+ */
+export const uploadResultSchema = z.object({
+  url: z.string().url("URL de fichier invalide"),
+  name: z.string().min(1, "Nom de fichier requis"),
+  size: z.number().min(1, "Taille de fichier invalide"),
+  type: z.string().min(1, "Type de fichier requis")
+});
+
+/**
  * Schema for API request to update keywords
  */
 export const updateKeywordsRequestSchema = z.object({

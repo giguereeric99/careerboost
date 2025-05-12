@@ -97,14 +97,25 @@ export async function POST(req: NextRequest) {
     let fileSize: number | null = null;
 
     if (fileUrl) {
-      // Extract text from uploaded file
-      const extractionResult = await extractTextFromFile(fileUrl);
+      // Extract text from uploaded file - FIXED: Now passing fileType to properly handle DOCX files
+      const extractionResult = await extractTextFromFile(fileUrl, fileType);
       
       if (extractionResult.error) {
         clearTimeout(timeoutId);
+        console.error("Extraction error details:", extractionResult.error);
+        
+        // Create user-friendly error message based on file type
+        let userMessage = extractionResult.error.message;
+        
+        if (fileType?.includes("openxmlformats") || fileType?.includes("docx")) {
+          userMessage = "We encountered an issue processing this DOCX file. Please try uploading as PDF or copy-paste the content directly.";
+        } else if (fileType?.includes("pdf")) {
+          userMessage = "This PDF couldn't be processed correctly. Please ensure it contains selectable text or try copy-pasting the content.";
+        }
+        
         return NextResponse.json({ 
-          error: `Failed to extract text: ${extractionResult.error.message}` 
-        }, { status: 500 });
+          error: userMessage 
+        }, { status: 422 }); // Using 422 Unprocessable Entity instead of 500 for better semantics
       }
       
       resumeText = extractionResult.text;

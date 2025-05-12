@@ -3,17 +3,17 @@
  * 
  * Main component that manages the resume optimization workflow.
  * Uses custom hooks for separation of concerns between uploading and editing.
+ * Centralized UI state management for loading views and toasts.
  */
 
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 
 // Import components - using the correct paths for your project structure
-// The imports are adjusted to match your project's folder structure
 import UploadSection from '@/components/ResumeOptimizerSection/uploadSection';
 import ResumePreview from '@/components/ResumeOptimizerSection/resumePreview';
 import ScoreCard from '@/components/ResumeOptimizerSection/scoreCard';
@@ -30,7 +30,7 @@ import useResumeOptimizer from '@/hooks/optimizer/useResumeOptimizer';
 import useUploadSection from '@/hooks/optimizer/useUploadSection';
 
 // Import types
-import { Suggestion, Keyword, DataMappers, OptimizedResumeData } from '@/types/resume';
+import { Suggestion, Keyword, OptimizedResumeData } from '@/types/resume';
 
 /**
  * Interface for SuggestionImpact based on error messages
@@ -61,8 +61,11 @@ const ResumeOptimizer: React.FC = () => {
   // Get user authentication state from Clerk
   const { user } = useUser();
   
-  // Track when showing the loading state during optimization
-  const [showLoadingState, setShowLoadingState] = useState(false);
+  // Ref to track previous loading state for tab navigation and UI updates
+  const previousIsLoading = useRef(false);
+  
+  // State to track if welcome toast has been shown
+  const welcomeToastShownRef = useRef(false);
   
   // Use the main optimizer hook to handle resume optimization state and actions
   const {
@@ -76,7 +79,7 @@ const ResumeOptimizer: React.FC = () => {
     keywords,           // Relevant keywords for the resume
     isEditing,          // Whether user is in edit mode
     selectedTemplate,   // Currently selected visual template
-    isLoading,          // Loading initial data
+    isLoading,          // Loading initial data - IMPORTANT: Used to show LoadingState during initial load
     isSaving,           // Saving changes to database
     isResetting,        // Resetting to original state
     hasResume,          // Whether user has any resume
@@ -91,18 +94,9 @@ const ResumeOptimizer: React.FC = () => {
     handleContentEdit,        // Handle content changes
     handleApplySuggestion,    // Apply a suggestion to content
     handleKeywordApply,       // Apply a keyword to content
-    updateResumeWithOptimizedData  // Update state with optimization results
+    updateResumeWithOptimizedData,  // Update state with optimization results
+    updateSelectedTemplate     // Update template selection
   } = useResumeOptimizer(user?.id);
-  
-  // Local state for template selection since it's not provided by the hook
-  const [localSelectedTemplate, setLocalSelectedTemplate] = useState(selectedTemplate);
-
-  // Sync local template state with the one from the hook when it changes
-  React.useEffect(() => {
-    if (selectedTemplate) {
-      setLocalSelectedTemplate(selectedTemplate);
-    }
-  }, [selectedTemplate]);
   
   // Use the upload section hook to handle file upload and initial optimization
   const {
@@ -122,13 +116,61 @@ const ResumeOptimizer: React.FC = () => {
     // Pass the callback to receive optimization data after completion
     onOptimizationComplete: (optimizedText, resumeId, atsScore, suggestions, keywords) => {
       // Update the main state with optimization results
-      updateResumeWithOptimizedData(optimizedText, resumeId, atsScore, suggestions, keywords);
+      updateResumeWithOptimizedData(
+        optimizedText || '',
+        resumeId || '',
+        atsScore || 65,
+        suggestions || [],
+        keywords || []
+      );
       
-      // Hide loading state and change tab after processing is complete
-      setShowLoadingState(false);
+      // Change tab after processing is complete
       setActiveTab('preview');
+      
+      // Show success toast
+      toast.success("Resume optimized successfully!", {
+        description: "Your resume has been analyzed and improved by our AI.",
+        duration: 5000,
+      });
     }
   });
+  
+  /**
+   * Centralized function to handle UI updates after loading
+   * Handles tab navigation, loading state, and welcome toasts in one place
+   */
+  const handleLoadingStateChange = useCallback(() => {
+    // Check if loading just finished (was loading before, not loading now)
+    const loadingJustFinished = !isLoading && previousIsLoading.current;
+    
+    // Update previous loading state for next render
+    previousIsLoading.current = isLoading;
+    
+    // If loading didn't just finish, nothing to do
+    if (!loadingJustFinished) return;
+    
+    // Automatic tab navigation based on resume data
+    if (hasResume && (optimizedText || resumeData?.optimized_text)) {
+      // If we have resume data, switch to preview tab
+      setActiveTab('preview');
+      console.log('Auto-switching to preview tab after loading');
+
+      toast.success("Last resume loaded successfully!", {
+        description: "You can continue optimizing your resume or upload a new one.",
+        duration: 5000,
+      });
+      
+    } else {
+      // If no resume data, stay on upload tab
+      setActiveTab('upload');
+      console.log('Staying on upload tab - no resume found');
+      
+      toast.info("Welcome to CareerBoost!", {
+        description: "Upload your resume to get started with AI optimization.",
+        duration: 7000,
+      });
+    }
+  }, [isLoading, hasResume, optimizedText, resumeData, setActiveTab]);
   
   /**
    * Handle tab change with data loading if needed
@@ -148,6 +190,7 @@ const ResumeOptimizer: React.FC = () => {
     // When switching to preview tab, load the latest resume data if needed
     if (value === 'preview' && user?.id && !optimizedText) {
       loadLatestResume();
+      console.log('Loading latest resume data');
     }
   }, [user?.id, isUploading, isOptimizing, isLoading, loadLatestResume, optimizedText, setActiveTab]);
   
@@ -155,6 +198,7 @@ const ResumeOptimizer: React.FC = () => {
    * Handle analysis start - show loading state
    * Called when the AI optimization process begins
    */
+  const [showLoadingState, setShowLoadingState] = React.useState(false);
   const handleAnalysisStart = useCallback(() => {
     setShowLoadingState(true);
   }, []);
@@ -189,7 +233,7 @@ const ResumeOptimizer: React.FC = () => {
    * Handle reset dialog confirmation
    * Controls visibility of the reset confirmation dialog
    */
-  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [showResetDialog, setShowResetDialog] = React.useState(false);
   
   /**
    * Handle resume download
@@ -203,7 +247,7 @@ const ResumeOptimizer: React.FC = () => {
     }
     
     // Get selected template or default to first template
-    const template = resumeTemplates.find(t => t.id === localSelectedTemplate) || resumeTemplates[0];
+    const template = resumeTemplates.find(t => t.id === selectedTemplate) || resumeTemplates[0];
     
     // Create complete HTML document with template styling
     const htmlContent = `<!DOCTYPE html>
@@ -242,7 +286,7 @@ const ResumeOptimizer: React.FC = () => {
     URL.revokeObjectURL(url);
     
     toast.success("Resume downloaded successfully");
-  }, [displayContent, localSelectedTemplate]);
+  }, [displayContent, selectedTemplate]);
   
   // Maps the database-format suggestions to component-format suggestions
   const mappedSuggestions = suggestions.map(s => ({
@@ -331,7 +375,30 @@ const ResumeOptimizer: React.FC = () => {
     // Call the original handler with defaults for optional parameters
     handleFileUpload(url, name, size || 0, type || '');
   }, [handleFileUpload]);
+
+  // Check for previous toast shown in session storage
+  useEffect(() => {
+    try {
+      const lastToastTime = sessionStorage.getItem('welcomeToastTime');
+      if (lastToastTime) {
+        const lastTime = parseInt(lastToastTime, 10);
+        const currentTime = Date.now();
+        
+        // If a toast was shown in the last 15 minutes, mark it as already displayed
+        if (currentTime - lastTime < 15 * 60 * 1000) { // 15 minutes in ms
+          welcomeToastShownRef.current = true;
+        }
+      }
+    } catch (e) {
+      // Ignore session storage errors
+    }
+  }, []);
   
+  // Effect to handle loading state changes
+  useEffect(() => {
+    handleLoadingStateChange();
+  }, [handleLoadingStateChange]);
+
   return (
     <div className="py-8">
       {/* Reset Confirmation Dialog */}
@@ -399,6 +466,7 @@ const ResumeOptimizer: React.FC = () => {
               );
               setShowLoadingState(false);
             }}
+            checkingForExistingResumes={isLoading} // Pass isLoading to the checkingForExistingResumes prop
           />
         </TabsContent>
         
@@ -406,11 +474,12 @@ const ResumeOptimizer: React.FC = () => {
         <TabsContent value="preview" className="space-y-6">
           {/* 
            * Display appropriate content based on state:
-           * 1. Show loading spinner during analysis
-           * 2. Show empty state when no content exists
-           * 3. Show content when available
+           * 1. Show loading spinner during initial data load
+           * 2. Show loading spinner during analysis
+           * 3. Show empty state when no content exists
+           * 4. Show content when available
            */}
-          {showLoadingState || isOptimizing ? (
+          {isLoading || showLoadingState || isOptimizing ? (
             <LoadingState />
           ) : !displayContent ? (
             <EmptyPreviewState 
@@ -425,7 +494,7 @@ const ResumeOptimizer: React.FC = () => {
                   <ResumePreview
                     optimizedText={displayContent}
                     originalOptimizedText={optimizedText}
-                    selectedTemplate={localSelectedTemplate}
+                    selectedTemplate={selectedTemplate}
                     templates={resumeTemplates}
                     appliedKeywords={appliedKeywordsArray}
                     suggestions={mappedSuggestions}
@@ -476,8 +545,8 @@ const ResumeOptimizer: React.FC = () => {
                   {/* Template selection gallery */}
                   <TemplateGallery
                     templates={resumeTemplates}
-                    selectedTemplate={localSelectedTemplate}
-                    onTemplateSelect={setLocalSelectedTemplate}
+                    selectedTemplate={selectedTemplate}
+                    onTemplateSelect={updateSelectedTemplate}
                   />
                 </div>
               </div>

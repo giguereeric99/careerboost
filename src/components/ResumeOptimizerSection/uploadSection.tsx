@@ -6,18 +6,26 @@
  * - File upload via drag & drop or UploadThing
  * - Text input for pasting resume content
  * - Direct data transfer to parent component without database reload
+ * - Validation using existing Zod schemas for all upload methods
+ * - Improved error handling for different file formats
+ * - Loading state visualization during analysis
+ * - Auto-switching to preview tab after analysis
  */
 
 'use client';
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileUp, CheckCircle, AlertCircle, Upload, FileText } from "lucide-react";
-import { UploadButton } from "@/utils/uploadthing";
+import { UploadButton, useUploadThing } from "@/utils/uploadthing";
 import { toast } from "sonner";
 import { useUser, SignInButton } from "@clerk/nextjs";
+import { z } from "zod";
+import { optimizeRequestSchema } from "@/validation/resumeSchema"; // Import of existing schema
+import LoadingAnalyzeState from "@/components/ResumeOptimizerSection/loadingAnalyzeState";
+import LoadingState from "@/components/ResumeOptimizerSection/loadingState";
 
 /**
  * Props interface for the UploadSection component
@@ -40,6 +48,7 @@ interface UploadSectionProps {
     suggestions?: any[],
     keywords?: any[]
   ) => void;  // Called when analysis completes
+  checkingForExistingResumes?: boolean; // Whether checking for existing resumes
 }
 
 /**
@@ -50,6 +59,24 @@ const mimeLabelMap: Record<string, string> = {
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
   "text/plain": ".txt",
 };
+
+/**
+ * List of allowed file MIME types
+ */
+const ALLOWED_FILE_TYPES = Object.keys(mimeLabelMap);
+
+/**
+ * File validation schema, adapted for the specific needs of file uploads
+ */
+const fileValidationSchema = z.object({
+  type: z.enum(ALLOWED_FILE_TYPES as [string, ...string[]], {
+    message: "Unsupported file format. Please use PDF, DOCX or TXT."
+  }),
+  size: z.number()
+    .max(4 * 1024 * 1024, "File size must be less than 4MB")
+    .min(1, "File cannot be empty"),
+  name: z.string().min(1, "File name is required")
+});
 
 /**
  * UploadSection Component
@@ -66,18 +93,39 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   setActiveTab,
   onAnalysisStart,
   onAnalysisComplete,
+  checkingForExistingResumes = false,
 }) => {
   // Local state
   const [isDragOver, setIsDragOver] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisCompleted, setAnalysisCompleted] = useState(false);
+  const [showAnalyzeState, setShowAnalyzeState] = useState(false);
   const [uploadedInfo, setUploadedInfo] = useState<{ name: string; size: number; type: string } | null>(null);
+  
+  // Initialize UploadThing hook for drag and drop file uploads
+  const { startUpload, isUploading: isUploadingFile } = useUploadThing("resumeUploader");
   
   // File input reference
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Get user authentication status
   const { isSignedIn, user } = useUser();
+
+  /**
+   * Effect for tab navigation after analysis completes
+   * This ensures we switch to the preview tab after analysis is done
+   */
+  useEffect(() => {
+    if (analysisCompleted && setActiveTab) {
+      // Use a small timeout to ensure all data is processed before tab switch
+      const timerId = setTimeout(() => {
+        setActiveTab("optimize");
+        setShowAnalyzeState(false);
+      }, 500);
+      
+      return () => clearTimeout(timerId);
+    }
+  }, [analysisCompleted, setActiveTab]);
 
   /**
    * Convert bytes to readable format
@@ -88,14 +136,91 @@ const UploadSection: React.FC<UploadSectionProps> = ({
    * Check if analysis is currently in progress
    */
   const isAnalysisInProgress = () => {
-    return isParsing || isProcessing || isUploading;
+    return isParsing || isProcessing || isUploading || isUploadingFile;
   };
 
   /**
    * Determine if upload buttons should be disabled
    */
   const shouldDisableUpload = () => {
-    return isUploading || isParsing || isProcessing || !!uploadedInfo;
+    return isUploading || isParsing || isProcessing || isUploadingFile || !!uploadedInfo;
+  };
+
+  /**
+   * Validate file with Zod schema
+   */
+  const validateFile = (file: File): { success: boolean; message?: string } => {
+    try {
+      fileValidationSchema.parse(file);
+      return { success: true };
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const message = error.errors[0]?.message || "Invalid file";
+        return { success: false, message };
+      }
+      return { success: false, message: "File validation failed" };
+    }
+  };
+
+  /**
+   * Validate resume content using a simpler approach
+   */
+  const validateResumeContent = (content: string): { success: boolean; message?: string } => {
+    try {
+      // Basic validation - just check minimum length
+      if (!content || content.length < 50) {
+        return {
+          success: false,
+          message: `Please enter at least 50 characters. Current: ${content?.length || 0} characters.`
+        };
+      }
+
+      // If we get here, validation passes
+      return { success: true };
+    } catch (error) {
+      console.error("Content validation error:", error);
+      return { 
+        success: false, 
+        message: "Content validation failed. Please check your input." 
+      };
+    }
+  };
+
+  /**
+   * Get file-specific help tips when errors occur
+   */
+  const getFileTypeErrorHelp = (fileType: string, errorMessage: string): string => {
+    // Check if error message contains specific keywords that might indicate known issues
+    const errorLower = errorMessage.toLowerCase();
+    
+    // If it's a DOCX file and there's an error
+    if (fileType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      if (errorLower.includes("parse") || errorLower.includes("format") || errorLower.includes("500")) {
+        return "DOCX file processing failed. Try saving your document as PDF or copy-paste its content into the text area below.";
+      }
+    }
+    
+    // If it's a PDF file and there's an error
+    if (fileType === "application/pdf") {
+      if (errorLower.includes("extract") || errorLower.includes("content") || errorLower.includes("500")) {
+        return "PDF content extraction failed. Make sure your PDF is not protected and that text can be selected. You can also try to copy-paste the content directly.";
+      }
+    }
+    
+    return "Please try another file or copy-paste your resume content into the text area below.";
+  };
+
+  /**
+   * Starts the analysis process and shows the loading state
+   */
+  const startAnalysis = () => {
+    // Notify parent that analysis is starting
+    if (onAnalysisStart) {
+      onAnalysisStart();
+    }
+    
+    // Show loading analysis state
+    setShowAnalyzeState(true);
   };
 
   /**
@@ -106,10 +231,8 @@ const UploadSection: React.FC<UploadSectionProps> = ({
     setIsProcessing(true);
     setAnalysisCompleted(false);
     
-    // Notify parent that analysis is starting
-    if (onAnalysisStart) {
-      onAnalysisStart();
-    }
+    // Start analysis and show loading state
+    startAnalysis();
     
     // Show loading toast for user feedback
     const loadingToastId = toast.loading("Analyzing uploaded resume...");
@@ -128,6 +251,18 @@ const UploadSection: React.FC<UploadSectionProps> = ({
         method: "POST",
         body: formData,
       });
+
+      // Log detailed error info for debugging
+      if (!optimizeRes.ok) {
+        console.error("API Error Status:", optimizeRes.status);
+        console.error("API Error Status Text:", optimizeRes.statusText);
+        
+        // For 500 errors, provide more detailed feedback based on file type
+        if (optimizeRes.status === 500) {
+          const specificHelp = getFileTypeErrorHelp(fileType, "500 Internal Server Error");
+          throw new Error(`The server encountered an error processing your file. ${specificHelp}`);
+        }
+      }
 
       // Parse the API response
       const result = await optimizeRes.json();
@@ -171,16 +306,29 @@ const UploadSection: React.FC<UploadSectionProps> = ({
             keywords
           );
         }
+        
+        // Tab navigation is now handled by the useEffect
       } else {
-        // Handle API error response
-        throw new Error(result?.error || "Optimization failed");
+        // Handle specific error messages from the API
+        const errorMsg = result?.error || "Optimization failed";
+        const specificHelp = getFileTypeErrorHelp(fileType, errorMsg);
+        throw new Error(`${errorMsg}. ${specificHelp}`);
       }
     } catch (err: any) {
       // Handle optimization errors with user feedback
       toast.dismiss(loadingToastId);
+      
+      // Enhanced error message with file-specific help
+      const errorMessage = err.message || "An error occurred during processing";
+      const specificHelp = getFileTypeErrorHelp(fileType, errorMessage);
+      
       toast.error("Upload analysis error", {
-        description: err.message,
+        description: errorMessage.includes(specificHelp) ? errorMessage : `${errorMessage}. ${specificHelp}`,
+        duration: 6000, // Show error longer to give user time to read
       });
+      
+      // Hide loading analyze state on error
+      setShowAnalyzeState(false);
     } finally {
       // Always reset processing states
       setIsProcessing(false);
@@ -199,10 +347,17 @@ const UploadSection: React.FC<UploadSectionProps> = ({
       return;
     }
     
-    // Notify parent that analysis is starting
-    if (onAnalysisStart) {
-      onAnalysisStart();
+    // Validate content with simple validation
+    const validation = validateResumeContent(resumeContent);
+    if (!validation.success) {
+      toast.error("Invalid content", {
+        description: validation.message
+      });
+      return;
     }
+    
+    // Start analysis and show loading state
+    startAnalysis();
     
     // Update processing state for UI feedback
     setIsProcessing(true);
@@ -220,6 +375,12 @@ const UploadSection: React.FC<UploadSectionProps> = ({
         method: "POST",
         body: formData,
       });
+      
+      // Detailed error logging
+      if (!optimizeRes.ok) {
+        console.error("API Error Status:", optimizeRes.status);
+        console.error("API Error Status Text:", optimizeRes.statusText);
+      }
       
       // Parse the response
       const result = await optimizeRes.json();
@@ -253,6 +414,8 @@ const UploadSection: React.FC<UploadSectionProps> = ({
             keywords
           );
         }
+        
+        // Tab navigation is now handled by the useEffect
       } else {
         // Handle API error response
         throw new Error(result?.error || "Analysis failed");
@@ -262,13 +425,111 @@ const UploadSection: React.FC<UploadSectionProps> = ({
       toast.dismiss(loadingToastId);
       toast.error("Content analysis error", {
         description: err.message,
+        duration: 6000, // Show error longer to give user time to read
       });
+      
+      // Hide loading analyze state on error
+      setShowAnalyzeState(false);
     } finally {
       // Always reset processing state
       setIsProcessing(false);
     }
   };
 
+  /**
+   * Handle file dropped via drag and drop
+   */
+  const handleFileDrop = async (file: File) => {
+    // Validate file
+    const validation = validateFile(file);
+    if (!validation.success) {
+      toast.error("Invalid file", {
+        description: validation.message
+      });
+      return;
+    }
+    
+    // Update parent component with selected file
+    if (onFileChange) {
+      onFileChange(file);
+    }
+    
+    // Show loading toast
+    const loadingToastId = toast.loading("Uploading dropped file...");
+    
+    try {
+      // Use UploadThing to upload the file
+      const uploadResult = await startUpload([file]);
+      
+      // Check if upload was successful
+      if (!uploadResult?.[0]) {
+        throw new Error("File upload failed");
+      }
+      
+      // Clear loading toast
+      toast.dismiss(loadingToastId);
+      
+      // Get the file URL from the upload result
+      const fileUrl = uploadResult[0].ufsUrl;
+      
+      // Process the uploaded resume with optimization
+      await handleResumeOptimization(
+        fileUrl, 
+        file.name, 
+        file.size, 
+        file.type
+      );
+    } catch (err: any) {
+      // Handle upload errors
+      toast.dismiss(loadingToastId);
+      toast.error("File upload error", {
+        description: err.message || "Failed to upload file",
+        duration: 6000, // Show error longer to give user time to read
+      });
+    }
+  };
+
+  /**
+   * Handle file uploaded via button
+   */
+  const handleButtonUpload = async (uploadResults: any) => {
+    // Check if file was uploaded successfully
+    if (!uploadResults?.[0]) return;
+
+    try {
+      const fileUrl = uploadResults[0].ufsUrl;
+      const fileName = uploadResults[0].name;
+      const fileSize = uploadResults[0].size;
+      const fileType = uploadResults[0].type;
+
+      // Log file details for debugging
+      console.log("Processing uploaded file:", { 
+        fileName, 
+        fileType, 
+        fileSize: readableSize(fileSize)
+      });
+
+      // Process the uploaded resume file
+      await handleResumeOptimization(fileUrl, fileName, fileSize, fileType);
+    } catch (err: any) {
+      toast.error("Upload processing error", {
+        description: err.message || "Failed to process uploaded file",
+        duration: 6000, // Show error longer to give user time to read
+      });
+    }
+  };
+
+  // If checking for existing resumes, show the LoadingState component
+  if (checkingForExistingResumes) {
+    return <LoadingState />;
+  }
+
+  // If showing analyze state, render the LoadingAnalyzeState component
+  if (showAnalyzeState) {
+    return <LoadingAnalyzeState />;
+  }
+
+  // Otherwise render the upload interface
   return (
     <Card>
       <CardContent className="pt-6">
@@ -292,7 +553,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
               } transition-colors`}
               onDragOver={(e) => {
                 e.preventDefault();
-                if (!isAnalysisInProgress()) {
+                if (!isAnalysisInProgress() && !shouldDisableUpload()) {
                   setIsDragOver(true);
                 }
               }}
@@ -303,9 +564,17 @@ const UploadSection: React.FC<UploadSectionProps> = ({
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                if (!isAnalysisInProgress()) {
-                  setIsDragOver(false);
-                  // Handle dropped files here if needed
+                setIsDragOver(false);
+                
+                // Return early if processing or upload is disabled
+                if (isAnalysisInProgress() || shouldDisableUpload()) {
+                  return;
+                }
+                
+                // Check if files were dropped
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  const file = e.dataTransfer.files[0];
+                  handleFileDrop(file);
                 }
               }}
             >
@@ -329,21 +598,11 @@ const UploadSection: React.FC<UploadSectionProps> = ({
                     }`}
                     endpoint="resumeUploader"
                     disabled={shouldDisableUpload()}
-                    onClientUploadComplete={async (res) => {
-                      // Check if file was uploaded successfully
-                      if (!res?.[0]?.ufsUrl) return;
-
-                      const fileUrl = res[0].ufsUrl;
-                      const fileName = res[0].name;
-                      const fileSize = res[0].size;
-                      const fileType = res[0].type;
-
-                      // Process the uploaded resume file
-                      await handleResumeOptimization(fileUrl, fileName, fileSize, fileType);
-                    }}
+                    onClientUploadComplete={handleButtonUpload}
                     onUploadError={(error) => {
                       toast.error("Upload error", {
                         description: error.message,
+                        duration: 6000,
                       });
                     }}
                   />

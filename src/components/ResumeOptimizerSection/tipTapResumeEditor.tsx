@@ -15,10 +15,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Heading from '@tiptap/extension-heading';
-import Paragraph from '@tiptap/extension-paragraph';
-import Document from '@tiptap/extension-document';
-import Text from '@tiptap/extension-text';
 import TextAlign from '@tiptap/extension-text-align';
 import { Button } from "@/components/ui/button";
 import { 
@@ -84,17 +80,15 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [hasAppliedChanges, setHasAppliedChanges] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
-  // Configure and initialize the TipTap editor
+  // Configure and initialize the TipTap editor with immediatelyRender set to false to fix SSR issues
+  // Fix: Remove duplicated extensions and only use StarterKit + custom extensions
   const editor = useEditor({
     extensions: [
+      // StarterKit already includes Document, Paragraph, Text, and basic Heading
       StarterKit,
-      Document,
-      Paragraph,
-      Text,
-      Heading.configure({
-        levels: [1, 2, 3],
-      }),
+      // Add TextAlign as it's not included in StarterKit
       TextAlign.configure({
         types: ['heading', 'paragraph'],
       }),
@@ -110,8 +104,15 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
       
       // Call parent onChange handler
       onChange(html);
-    }
+    },
+    // Fix for SSR hydration issues
+    immediatelyRender: false
   });
+
+  // Set mounted state after component mounts
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Update editor content when prop changes and we haven't edited locally
   useEffect(() => {
@@ -238,6 +239,19 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
     keywordsTitle: "Keywords",
     suggestionsTitle: "Suggestions"
   };
+
+  // If not mounted yet (during SSR), render a placeholder
+  if (!isMounted) {
+    return (
+      <div className="tiptap-editor border rounded-lg overflow-hidden">
+        <div className="p-4">
+          <div className="prose prose-sm max-w-none min-h-[250px] focus:outline-none">
+            <div dangerouslySetInnerHTML={{ __html: content }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Render editor toolbar and content
   return (

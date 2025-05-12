@@ -8,6 +8,7 @@
  * - Handling editing state and template selection
  * - Providing save, reset, and update functionality
  * - Properly handling loading states and user feedback
+ * - Showing welcome toasts for new and returning users
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
@@ -69,6 +70,11 @@ export const useResumeOptimizer = (userId?: string) => {
   // Track initial load attempt to prevent infinite loops
   const loadAttemptRef = useRef<number>(0);
   const hasLoadedDataRef = useRef<boolean>(false);
+  
+  // Toast management to prevent duplicates
+  const [toastShown, setToastShown] = useState<boolean>(false);
+  const welcomeToastDisplayedRef = useRef<boolean>(false);
+  const previousLoadingState = useRef<boolean>(true); // Start as true to prevent immediate toast
 
   /**
    * Convert API data to our standardized format
@@ -142,6 +148,7 @@ export const useResumeOptimizer = (userId?: string) => {
     }
     
     try {
+      // Set loading state to true to show loading UI
       setIsLoading(true);
       
       // Fetch latest resume from service
@@ -204,6 +211,7 @@ export const useResumeOptimizer = (userId?: string) => {
         console.log("No resume found for user");
         setHasResume(false);
         hasLoadedDataRef.current = true;
+        
         return null;
       }
     } catch (error) {
@@ -212,6 +220,7 @@ export const useResumeOptimizer = (userId?: string) => {
       setHasResume(false);
       return null;
     } finally {
+      // Always reset loading state when finished, regardless of outcome
       setIsLoading(false);
     }
   }, [userId]);
@@ -522,6 +531,12 @@ export const useResumeOptimizer = (userId?: string) => {
     
     // Switch to preview tab
     setActiveTab('preview');
+    
+    // Show optimization success toast
+    toast.success("Resume optimized successfully!", {
+      description: "Your resume has been analyzed and improved by our AI.",
+      duration: 5000,
+    });
   }, [resumeData, userId]);
   
   /**
@@ -598,6 +613,39 @@ export const useResumeOptimizer = (userId?: string) => {
     return Math.round((appliedItems / totalItems) * 100);
   }, [suggestions, keywords]);
   
+  // Check for session storage welcome toast on mount
+  useEffect(() => {
+    // Check if a toast was shown recently
+    try {
+      const lastToastTime = sessionStorage.getItem('welcomeToastTime');
+      
+      if (lastToastTime) {
+        const lastTime = parseInt(lastToastTime, 10);
+        const currentTime = Date.now();
+        
+        // If a toast was shown in the last 15 minutes, 
+        // mark it as already displayed
+        if (currentTime - lastTime < 15 * 60 * 1000) { // 15 minutes in ms
+          welcomeToastDisplayedRef.current = true;
+          setToastShown(true);
+        }
+      }
+    } catch (e) {
+      // Ignore session storage errors
+    }
+    
+    return () => {
+      // On unmount, save the toast time if a toast has been displayed
+      if (welcomeToastDisplayedRef.current) {
+        try {
+          sessionStorage.setItem('welcomeToastTime', Date.now().toString());
+        } catch (e) {
+          // Ignore session storage errors
+        }
+      }
+    };
+  }, []);
+  
   // Load resume on initial mount if userId is available
   useEffect(() => {
     if (userId && hasResume === null && !hasLoadedDataRef.current) {
@@ -605,6 +653,47 @@ export const useResumeOptimizer = (userId?: string) => {
     }
   }, [userId, hasResume, loadLatestResume]);
   
+  // Improved effect for welcome toasts that handles loading transitions correctly
+  useEffect(() => {
+    // Skip if toast has already been shown in this component instance
+    if (toastShown) {
+      return;
+    }
+    
+    // The key logic: Only show toast when loading transitions from true to false
+    const wasLoading = previousLoadingState.current;
+    previousLoadingState.current = isLoading;
+    
+    // If we weren't loading before and we're still not loading now, skip
+    // Or if we're still loading, skip
+    if ((!wasLoading && !isLoading) || isLoading) {
+      return;
+    }
+    
+    // At this point, we know:
+    // 1. Toast has not been shown yet in this session/component
+    // 2. We just finished loading (transition from loading=true to loading=false)
+    // 3. We know whether the user has a resume or not
+    
+    // Skip if we still don't know resume status
+    if (hasResume === null) {
+      return;
+    }
+    
+    // Mark toast as shown
+    setToastShown(true);
+    welcomeToastDisplayedRef.current = true;
+    
+    // Save toast time to session storage
+    try {
+      sessionStorage.setItem('welcomeToastTime', Date.now().toString());
+    } catch (e) {
+      // Ignore session storage errors
+    }
+    
+  }, [hasResume, isLoading, toastShown]);
+  
+  // Return the hook interface with all state values and functions
   return {
     // State
     resumeData,

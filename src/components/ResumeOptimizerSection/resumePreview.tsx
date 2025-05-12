@@ -4,10 +4,11 @@
  * This component displays a preview of the optimized resume and allows editing.
  * Features:
  * - Toggle between view and edit modes
+ * - Real-time preview of edits without saving
  * - Section-based editing with TipTap rich text editor
  * - Support for multiple templates
  * - Download functionality
- * - Reset to original version
+ * - Reset to original version (only shown when changes exist)
  * - Real-time updates when applying suggestions and keywords
  */
 
@@ -103,6 +104,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   const [sections, setSections] = useState<Section[]>([]);
   const [contentModified, setContentModified] = useState(false);
   const [hasLoadedInitialContent, setHasLoadedInitialContent] = useState(false);
+  const [previewContent, setPreviewContent] = useState<string>(''); // State for real-time preview
+  
+  // Track if content has ever been modified to determine if Reset button should show
+  const [hasBeenModified, setHasBeenModified] = useState(false);
   
   // Get selected template
   const template = useMemo(() => (
@@ -199,6 +204,98 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       }
     });
   }, [createEmptySection]);
+  
+  /**
+   * Determine if a reset should be available
+   * Reset is available if content has been modified OR is different from original
+   */
+  const shouldShowReset = useMemo(() => {
+    // Only show Reset if:
+    // 1. The onReset callback exists
+    // 2. Either the content is currently modified OR 
+    // 3. The content was modified at some point and differs from original
+    
+    if (!onReset) return false;
+    
+    // If content is currently modified, show reset button
+    if (contentModified) return true;
+    
+    // If content has been modified before and current content differs from original
+    const currentContent = previewContent || optimizedText;
+    const originalContent = originalOptimizedText || '';
+    
+    if (hasBeenModified && currentContent !== originalContent) {
+      return true;
+    }
+    
+    return false;
+  }, [onReset, contentModified, hasBeenModified, previewContent, optimizedText, originalOptimizedText]);
+  
+  /**
+   * Combine non-empty sections into complete HTML
+   * Only includes sections that have meaningful content
+   */
+  const combineAllSections = useCallback(() => {
+    return sections
+      .filter(section => !section.isEmpty) // Only include non-empty sections
+      .map(section => 
+        `<section id="${section.id}" class="section-title">${section.content}</section>`
+      )
+      .join('\n');
+  }, [sections]);
+
+  /**
+   * Handle internal reset action
+   * Reset content to original version without saving to database
+   */
+  const handleLocalReset = useCallback(() => {
+    if (!originalOptimizedText) return;
+    
+    // Reset preview content to original
+    setPreviewContent(originalOptimizedText);
+    
+    // Parse original content to reset sections
+    try {
+      const normalizedContent = processContent(originalOptimizedText);
+      const parsedSections = parseHtmlIntoSections(
+        normalizedContent,
+        getSectionName,
+        SECTION_NAMES,
+        SECTION_ORDER
+      );
+      
+      // Initialize all standard sections with original content
+      const allSections = initializeAllSections(parsedSections);
+      setSections(allSections);
+      
+      // Reset modification state
+      setContentModified(false);
+      
+      // Keep hasBeenModified true to indicate there was a history of changes
+      
+      // Notify parent of content change back to original
+      onTextChange(originalOptimizedText);
+      
+      toast.success("Content reset to original version");
+    } catch (error) {
+      console.error("Error resetting content:", error);
+      toast.error("Failed to reset content");
+    }
+  }, [originalOptimizedText, processContent, initializeAllSections, onTextChange]);
+  
+  /**
+   * Handle reset button click
+   * Calls parent reset function and also resets local state
+   */
+  const handleReset = useCallback(() => {
+    // First reset local content
+    handleLocalReset();
+    
+    // Then call parent reset function if provided
+    if (onReset) {
+      onReset();
+    }
+  }, [handleLocalReset, onReset]);
 
   /**
    * Parse the resume HTML into sections when optimizedText changes
@@ -233,10 +330,16 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       // Initialize all standard sections, filling in content from parsed sections
       const allSections = initializeAllSections(parsedSections);
       
-      // Set all sections and reset modification state
+      // Set all sections and reset modification state for initial load
       setSections(allSections);
-      setContentModified(false);
+      // We don't reset contentModified here to preserve the state across mode changes
+      
       setHasLoadedInitialContent(true);
+      
+      // Set initial preview content only if it doesn't exist already
+      if (!previewContent) {
+        setPreviewContent(normalizedContent);
+      }
       
     } catch (error) {
       console.error("Error parsing optimized text into sections:", error);
@@ -251,8 +354,11 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         order: 0
       }]);
       setHasLoadedInitialContent(true);
+      if (!previewContent) {
+        setPreviewContent(optimizedText || '');
+      }
     }
-  }, [optimizedText, editMode, hasLoadedInitialContent, processContent, createEmptySection, initializeAllSections]);
+  }, [optimizedText, editMode, hasLoadedInitialContent, processContent, createEmptySection, initializeAllSections, previewContent]);
 
   /**
    * Notify parent component when edit mode changes
@@ -265,6 +371,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
   /**
    * Handle section content update
+   * Updates section content and also updates preview in real-time
    */
   const handleSectionUpdate = useCallback((sectionId: string, newContent: string) => {
     setSections(prevSections => {
@@ -281,23 +388,29 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         }
         return section;
       });
+      
+      // Mark content as modified
       setContentModified(true);
+      setHasBeenModified(true);
+      
+      // Update the preview content immediately for real-time preview
+      setTimeout(() => {
+        const combinedSections = updatedSections
+          .filter(section => !section.isEmpty)
+          .map(section => 
+            `<section id="${section.id}" class="section-title">${section.content}</section>`
+          )
+          .join('\n');
+        
+        setPreviewContent(combinedSections);
+        
+        // Notify parent of changes (but don't save to database yet)
+        onTextChange(combinedSections);
+      }, 0);
+      
       return updatedSections;
     });
-  }, []);
-
-  /**
-   * Combine non-empty sections into complete HTML
-   * Only includes sections that have meaningful content
-   */
-  const combineAllSections = useCallback(() => {
-    return sections
-      .filter(section => !section.isEmpty) // Only include non-empty sections
-      .map(section => 
-        `<section id="${section.id}" class="section-title">${section.content}</section>`
-      )
-      .join('\n');
-  }, [sections]);
+  }, [onTextChange]);
 
   /**
    * Handle save button click
@@ -316,6 +429,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         toast.error("Content too short", {
           description: "Resume content must be at least 50 characters."
         });
+        setIsSaving(false);
         return;
       }
       
@@ -324,13 +438,20 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       
       if (saveResult) {
         setContentModified(false);
+        // Keep hasBeenModified as true since changes have been made and saved
+        
         toast.success("Resume saved successfully");
         
         // Notify parent component of the changes
         onTextChange(combinedHtml);
         
+        // Update preview content
+        setPreviewContent(combinedHtml);
+        
         // Exit edit mode after saving
         setEditMode(false);
+      } else {
+        toast.error("Failed to save resume");
       }
     } catch (error) {
       console.error("Error saving resume:", error);
@@ -346,8 +467,8 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   const openPreview = useCallback(() => {
     try {
       const template = getTemplateById(selectedTemplate);
-      const combinedContent = combineAllSections();
-      const completeHtml = createCompleteHtml(template, combinedContent);
+      const contentToUse = editMode ? combineAllSections() : (previewContent || optimizedText);
+      const completeHtml = createCompleteHtml(template, contentToUse);
       
       const previewWindow = window.open('', '_blank');
       if (previewWindow) {
@@ -358,10 +479,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       console.error("Error opening preview:", error);
       toast.error("Failed to open preview");
     }
-  }, [selectedTemplate, combineAllSections]);
+  }, [selectedTemplate, combineAllSections, editMode, previewContent, optimizedText]);
 
   /**
-   * Toggle edit mode on/off
+   * Toggle edit mode on/off with no confirmation dialog
    */
   const toggleEditMode = useCallback(() => {
     setEditMode(prev => !prev);
@@ -384,6 +505,12 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   }
 
   /**
+   * Content to use for preview - prefers preview content if available
+   * Falls back to optimizedText prop if no preview content
+   */
+  const displayedContent = previewContent || optimizedText;
+
+  /**
    * Main render
    */
   return (
@@ -397,14 +524,14 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         isSaving={isSaving}
         contentModified={contentModified}
         optimizedText={optimizedText}
-        onReset={onReset}
+        onReset={shouldShowReset ? handleReset : undefined}
       />
       
       {/* Warning if no content is available */}
       {!optimizedText && <NoContentWarning />}
       
-      {/* Modified indicator */}
-      {contentModified && editMode && (
+      {/* Modified indicator - show in both edit and preview modes */}
+      {contentModified && (
         <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-4 text-sm text-blue-700 flex items-center">
           <span className="h-2 w-2 bg-blue-500 rounded-full mr-2"></span>
           You have unsaved changes. Click "Save Changes" to apply your modifications.
@@ -477,8 +604,8 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         </div>
       ) : (
         <PreviewContent 
-          optimizedText={optimizedText}
-          combinedSections={combineAllSections()}
+          optimizedText={displayedContent}
+          combinedSections={previewContent || optimizedText}
           sanitizeHtml={sanitizeHtml}
           template={template}
           onDownload={onDownload}
