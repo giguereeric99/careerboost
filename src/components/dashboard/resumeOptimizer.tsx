@@ -18,7 +18,7 @@ import UploadSection from '@/components/ResumeOptimizerSection/uploadSection';
 import ResumePreview from '@/components/ResumeOptimizerSection/resumePreview';
 import ScoreCard from '@/components/ResumeOptimizerSection/scoreCard';
 import SuggestionsList from '@/components/ResumeOptimizerSection/suggestionsList';
-import KeywordList from '@/components/ResumeOptimizerSection/keywordList';
+import KeywordsList from '@/components/ResumeOptimizerSection/keywordsList';
 import TemplateGallery from '@/components/ResumeOptimizerSection/templateGallery';
 import ResetConfirmationDialog from '@/components/Dialogs/resetConfirmationDialog';
 import LoadingState from '@/components/ResumeOptimizerSection/loadingState';
@@ -30,7 +30,7 @@ import useResumeOptimizer from '@/hooks/optimizer/useResumeOptimizer';
 import useUploadSection from '@/hooks/optimizer/useUploadSection';
 
 // Import types
-import { Suggestion, Keyword, OptimizedResumeData } from '@/types/resume';
+import { Suggestion, Keyword, OptimizedResumeData } from '@/types/resumeTypes';
 
 /**
  * Interface for SuggestionImpact based on error messages
@@ -299,7 +299,7 @@ const ResumeOptimizer: React.FC = () => {
   }));
   
   // Maps the database-format keywords to component-format keywords
-  // Adding the 'applied' property required by KeywordList component
+  // Adding the 'applied' property required by KeywordsList component
   const mappedKeywords = keywords.map((k, index) => ({
     id: k.id || String(Math.random()),
     text: k.text,
@@ -315,9 +315,13 @@ const ResumeOptimizer: React.FC = () => {
    * Converts index-based calls to id-based calls
    */
   const handleKeywordApplyAdapter = (index: number) => {
-    if (index >= 0 && index < mappedKeywords.length) {
+    // Only proceed with keyword application if in edit mode
+    if (isEditing && index >= 0 && index < mappedKeywords.length) {
       const keyword = mappedKeywords[index];
       handleKeywordApply(keyword.id, !keyword.isApplied);
+    } else if (!isEditing) {
+      // Optionally notify user that editing is required to apply keywords
+      toast.info("Enter edit mode to apply keywords");
     }
   };
   
@@ -342,11 +346,16 @@ const ResumeOptimizer: React.FC = () => {
   /**
    * Adapter function for apply suggestion
    * Converts index-based calls to id-based calls
+   * Now checks if the user is in edit mode before applying suggestions
    */
   const handleApplySuggestionAdapter = (index: number) => {
-    if (index >= 0 && index < mappedSuggestions.length) {
+    // Only proceed with suggestion application if in edit mode
+    if (isEditing && index >= 0 && index < mappedSuggestions.length) {
       const suggestion = mappedSuggestions[index];
       handleApplySuggestion(suggestion.id, !suggestion.isApplied);
+    } else if (!isEditing) {
+      // Optionally notify user that editing is required to apply suggestions
+      toast.info("Enter edit mode to apply suggestions");
     }
   };
   
@@ -506,6 +515,8 @@ const ResumeOptimizer: React.FC = () => {
                     language={resumeData?.language || "English"}
                     onEditModeChange={setIsEditing}
                     onReset={() => setShowResetDialog(true)}
+                    // Pass the editing state explicitly
+                    isEditing={isEditing}
                   />
                 </div>
 
@@ -523,7 +534,7 @@ const ResumeOptimizer: React.FC = () => {
                     isCalculating={isOptimizing}
                   />
 
-                  {/* AI Suggestions */}
+                  {/* AI Suggestions - Now passing isEditing state */}
                   <SuggestionsList
                     suggestions={mappedSuggestions}
                     isOptimizing={isOptimizing}
@@ -531,15 +542,17 @@ const ResumeOptimizer: React.FC = () => {
                     resumeContent={displayContent}
                     currentScore={atsScore || 0}
                     simulateSuggestionImpact={simulateSuggestionImpactAdapter}
+                    isEditing={isEditing} // Pass the editing state to control when suggestions can be applied
                   />
                   
-                  {/* Keywords */}
-                  <KeywordList
+                  {/* Keywords - Now passing isEditing state */}
+                  <KeywordsList
                     keywords={mappedKeywords}
                     onKeywordApply={handleKeywordApplyAdapter}
                     showImpactDetails={true}
                     currentScore={atsScore || 0}
                     simulateKeywordImpact={simulateKeywordImpactAdapter}
+                    isEditing={isEditing} // Pass the editing state to control when keywords can be applied
                   />
 
                   {/* Template selection gallery */}

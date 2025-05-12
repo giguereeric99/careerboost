@@ -1,26 +1,24 @@
 /**
- * Enhanced KeywordList Component
+ * Enhanced KeywordsList Component
  * 
  * This component displays recommended keywords to improve resume ATS compatibility
  * with advanced impact analysis, categorization, and real-time score preview.
  * 
  * Features:
  * - Categorized keywords by type (technical, soft skills, etc.)
- * - Visual impact indicators
- * - Real-time score preview when applying keywords
- * - Detailed tooltips with impact explanations
- * - Hover effects to simulate impact before applying keywords
+ * - Single impact preview integrated within the component
+ * - Disabled keyword application when not in edit mode
+ * - Visual indicators for applied keywords
+ * - Tooltip descriptions for each keyword category
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { 
   Sparkles, 
   CheckCircle, 
-  TrendingUp, 
-  Tag, 
-  Code, 
-  MessageSquare 
+  BarChart2, 
+  Lock 
 } from "lucide-react";
 import {
   Tooltip,
@@ -32,51 +30,24 @@ import { Badge } from "@/components/ui/badge";
 import { ImpactLevel } from '@/services/resumeScoreLogic';
 import ImpactPreview from './impactPreview';
 
-// Define keyword categories with icons and descriptions
-// Note: The original had French descriptions, replaced with English
-const KEYWORD_CATEGORIES = {
-  "technical": {
-    title: "Technical Skill",
-    description: "Technical abilities, tools, or programming languages",
-    icon: Code
-  },
-  "soft-skill": {
-    title: "Soft Skill",
-    description: "Interpersonal abilities and character traits",
-    icon: MessageSquare
-  },
-  "industry-specific": {
-    title: "Industry Term",
-    description: "Specialized terminology for your industry",
-    icon: Tag
-  },
-  "action-verb": {
-    title: "Action Verb",
-    description: "Dynamic verbs that demonstrate accomplishments",
-    icon: TrendingUp
-  },
-  "general": {
-    title: "General Keyword",
-    description: "General terms relevant to your field",
-    icon: Sparkles
-  }
-};
+// Import types and constants from centralized files
+import { Keyword } from '@/types/keywordTypes';
+import { 
+  KEYWORD_CATEGORIES, 
+  KEYWORD_PRIORITY_ORDER 
+} from '@/constants/suggestions';
 
-export interface Keyword {
-  text: string;            // The keyword text
-  applied: boolean;        // Whether the keyword has been applied
-  impact?: number;         // Impact score (0.0-1.0)
-  category?: string;       // Category (technical, soft skill, industry-specific)
-  pointImpact?: number;    // Point impact on overall score
-}
-
-interface KeywordListProps {
+/**
+ * Props interface for KeywordsList component
+ */
+interface KeywordsListProps {
   keywords: Keyword[];                                // Available keywords
   onKeywordApply: (index: number) => void;            // Handler for applying keywords
   resumeContent?: string;                             // Current resume content
   showImpactDetails?: boolean;                        // Whether to show detailed impact info
   needsRegeneration?: boolean;                        // Whether changes need regeneration
   currentScore?: number;                              // Current ATS score
+  isEditing?: boolean;                                // Whether the resume is in edit mode
   simulateKeywordImpact?: (index: number) => {        // Function to simulate impact
     newScore: number;                                 // Projected new score
     pointImpact: number;                              // Point impact
@@ -85,22 +56,20 @@ interface KeywordListProps {
 }
 
 /**
- * KeywordList component displays recommended keywords
+ * KeywordsList component displays recommended keywords
  * with impact analysis and categorization
  */
-const KeywordList: React.FC<KeywordListProps> = ({ 
+const KeywordsList: React.FC<KeywordsListProps> = ({ 
   keywords, 
   onKeywordApply, 
   resumeContent = "",
   showImpactDetails = false,
   needsRegeneration = false,
   currentScore = 0,
+  isEditing = false,
   simulateKeywordImpact
 }) => {
-  // State for impact previews - tracks which keyword is being hovered
-  const [showPreview, setShowPreview] = useState<number | null>(null);
-
-  // State for keyword impacts - pre-calculated for performance
+  // Define impact data structure for type safety
   interface ImpactData {
     newScore: number;
     pointImpact: number;
@@ -110,8 +79,10 @@ const KeywordList: React.FC<KeywordListProps> = ({
   // State for keyword impacts - pre-calculated for performance
   const [keywordImpacts, setKeywordImpacts] = useState<ImpactData[]>([]);
   
-  // Calculate keyword impacts on mount and when dependencies change
-  // This avoids recalculating impacts on every hover event
+  /**
+   * Calculate keyword impacts on mount and when dependencies change
+   * This avoids recalculating impacts on every render
+   */
   useEffect(() => {
     if (!simulateKeywordImpact || keywords.length === 0) return;
     
@@ -124,8 +95,47 @@ const KeywordList: React.FC<KeywordListProps> = ({
   }, [keywords, simulateKeywordImpact]);
   
   /**
+   * Calculate cumulative impact of all applied keywords
+   * This shows the total effect of all applied keywords combined
+   */
+  const cumulativeImpact = useMemo(() => {
+    // Skip calculation if no impacts are available
+    if (!keywordImpacts.length) return null;
+    
+    // Find all keywords that have been applied
+    const appliedKeywords = keywords.map((k, index) => ({
+      keyword: k,
+      index,
+      impact: keywordImpacts[index]
+    })).filter(item => item.keyword.isApplied || item.keyword.applied);
+    
+    // If no keywords have been applied, return null
+    if (appliedKeywords.length === 0) return null;
+    
+    // Sum up the impact of all applied keywords
+    const totalPointImpact = appliedKeywords.reduce(
+      (sum, item) => sum + (item.impact?.pointImpact || 0), 
+      0
+    );
+    
+    // Calculate the new score, capped at 100
+    const newScore = Math.min(100, currentScore + totalPointImpact);
+    
+    // Return the cumulative impact data
+    return {
+      newScore,
+      pointImpact: totalPointImpact,
+      description: `Applying ${appliedKeywords.length} keyword${appliedKeywords.length !== 1 ? 's' : ''} improves your resume's ATS compatibility.`,
+      appliedCount: appliedKeywords.length
+    };
+  }, [keywords, keywordImpacts, currentScore]);
+  
+  /**
    * Map numeric impact score to impact level enum
    * Converts a raw impact score (0.0-1.0) to a categorical level
+   * 
+   * @param impact - Impact score between 0.0 and 1.0
+   * @returns ImpactLevel enum value
    */
   const getImpactLevel = (impact: number): ImpactLevel => {
     if (impact >= 0.8) return ImpactLevel.CRITICAL;
@@ -135,13 +145,17 @@ const KeywordList: React.FC<KeywordListProps> = ({
   };
   
   /**
-   * Gets the appropriate color for an impact level
+   * Gets the appropriate color class for an impact level
    * Used for visual indicators throughout the component
+   * 
+   * @param level - Impact level or numeric score
+   * @returns CSS class string for the impact level
    */
   const getImpactColor = (level: ImpactLevel | number): string => {
     // Convert numeric impact to level if needed
     const impactLevel = typeof level === 'number' ? getImpactLevel(level) : level;
     
+    // Return the appropriate color class based on the impact level
     switch (impactLevel) {
       case ImpactLevel.CRITICAL:
         return 'text-red-600 bg-red-50 border-red-200';
@@ -157,13 +171,15 @@ const KeywordList: React.FC<KeywordListProps> = ({
   
   /**
    * Handle clicking a keyword button
-   * Applies the keyword and hides any active preview
+   * Only applies the keyword if in edit mode
+   * 
+   * @param index - Index of the keyword to apply
    */
   const handleKeywordClick = (index: number) => {
-    // Apply the keyword
-    onKeywordApply(index);
-    // Hide any active preview
-    setShowPreview(null);
+    // Only allow applying keywords in edit mode
+    if (isEditing) {
+      onKeywordApply(index);
+    }
   };
   
   /**
@@ -172,30 +188,36 @@ const KeywordList: React.FC<KeywordListProps> = ({
    */
   const groupedKeywords = keywords.reduce<Record<string, Keyword[]>>(
     (groups, keyword) => {
+      // Use the keyword's category or default to 'general'
       const category = keyword.category || 'general';
+      
+      // Initialize the category array if it doesn't exist
       if (!groups[category]) {
         groups[category] = [];
       }
+      
+      // Add the keyword to its category group
       groups[category].push(keyword);
       return groups;
     }, 
     {}
   );
   
-  // Sort groups by priority (technical first, then industry-specific, etc.)
-  // This ensures the most important categories appear first
-  const priorityOrder = [
-    'technical', 'industry-specific', 'soft-skill', 'action-verb', 'general'
-  ];
-  
+  /**
+   * Sort group keys by priority order
+   * This ensures the most important categories appear first
+   */
   const sortedGroupKeys = Object.keys(groupedKeywords).sort((a, b) => {
-    const indexA = priorityOrder.indexOf(a);
-    const indexB = priorityOrder.indexOf(b);
+    // Get the priority index for each category
+    const indexA = KEYWORD_PRIORITY_ORDER.indexOf(a);
+    const indexB = KEYWORD_PRIORITY_ORDER.indexOf(b);
     
+    // Handle categories not in the priority list
     if (indexA === -1 && indexB === -1) return a.localeCompare(b);
     if (indexA === -1) return 1;
     if (indexB === -1) return -1;
     
+    // Sort by priority index
     return indexA - indexB;
   });
   
@@ -212,34 +234,76 @@ const KeywordList: React.FC<KeywordListProps> = ({
     );
   }
 
+  // Get applied keywords count for the badge
+  const appliedKeywordsCount = keywords.filter(k => k.isApplied || k.applied).length;
+
   return (
     <div className="bg-brand-50 border border-brand-100 rounded-lg p-4">
+      {/* Header with title and applied count */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-brand-600" />
           <h3 className="font-medium">Recommended Keywords</h3>
         </div>
         
-        {/* Warning badge when changes need to be regenerated */}
-        {needsRegeneration && (
-          <Badge 
-            variant="outline" 
-            className="text-xs bg-amber-50 text-amber-700 border-amber-200"
-          >
-            Regeneration needed
-          </Badge>
-        )}
+        {/* Edit mode indicator and applied count */}
+        <div className="flex items-center gap-2">
+          {/* Badge showing number of applied keywords */}
+          {appliedKeywordsCount > 0 && (
+            <Badge variant="outline" className="bg-green-50 text-green-600 border-green-200">
+              {appliedKeywordsCount} applied
+            </Badge>
+          )}
+          
+          {/* Show lock indicator when not in edit mode */}
+          {!isEditing && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center text-xs text-gray-500">
+                  <Lock className="h-3 w-3 mr-1" />
+                  <span>Edit mode required</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">Click "Edit" button on the resume to apply keywords</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
+      
+      {/* Integrated impact preview - shows the cumulative effect of all applied keywords */}
+      {showImpactDetails && cumulativeImpact && cumulativeImpact.appliedCount > 0 && (
+        <div className="mb-4 bg-white border rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <BarChart2 className="h-4 w-4 text-brand-600" />
+            <h4 className="text-sm font-medium">Keywords Impact</h4>
+          </div>
+          
+          <ImpactPreview
+            currentScore={currentScore}
+            newScore={cumulativeImpact.newScore}
+            pointImpact={cumulativeImpact.pointImpact}
+            impactLevel={getImpactLevel(cumulativeImpact.pointImpact / 10)}
+            description={cumulativeImpact.description}
+            isApplied={true}
+            // No button needed since this shows cumulative impact
+            showApplyButton={false}
+          />
+        </div>
+      )}
       
       {/* Group keywords by category for better organization */}
       <div className="space-y-4">
         {sortedGroupKeys.map(category => {
+          // Get all keywords in this category
           const categoryKeywords = groupedKeywords[category];
-          // Get category info from the predefined categories
-          const categoryInfo = KEYWORD_CATEGORIES[category as keyof typeof KEYWORD_CATEGORIES] || 
-            KEYWORD_CATEGORIES.general;
           
-          const CategoryIcon = categoryInfo.icon;
+          // Get category info from the predefined categories or use default
+          const categoryInfo = KEYWORD_CATEGORIES[category] || KEYWORD_CATEGORIES.general;
+          
+          // Get the icon component for this category
+          const CategoryIcon = categoryInfo.icon || Sparkles;
           
           return (
             <div key={category} className="bg-white rounded-lg border overflow-hidden">
@@ -257,16 +321,19 @@ const KeywordList: React.FC<KeywordListProps> = ({
                 {categoryKeywords.map((keyword, categoryIndex) => {
                   // Find the global index of this keyword for consistent reference
                   const keywordIndex = keywords.findIndex(k => 
-                    k.text === keyword.text && k.category === keyword.category
+                    k.text === keyword.text && 
+                    (k.id === keyword.id || k.category === keyword.category)
                   );
                   
                   // Get pre-calculated impact for this keyword
                   const impact = keywordImpacts[keywordIndex];
                   
+                  // Normalize applied state (supports both isApplied and applied fields)
+                  const isKeywordApplied = keyword.isApplied || keyword.applied;
+                  
                   // Get impact level from keyword or calculate it
                   const impactValue = keyword.impact || (impact?.pointImpact ? impact.pointImpact / 2 : 0.5);
                   const impactLevel = getImpactLevel(impactValue);
-                  const isShowingPreview = showPreview === keywordIndex;
                   
                   return (
                     <div key={categoryIndex} className="relative">
@@ -275,18 +342,21 @@ const KeywordList: React.FC<KeywordListProps> = ({
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button 
-                              variant={keyword.applied ? "default" : "outline"} 
+                              variant={isKeywordApplied ? "default" : "outline"} 
                               size="sm"
-                              className={`${keyword.applied ? "bg-brand-600" : ""} relative`}
+                              className={`${isKeywordApplied ? "bg-brand-600" : ""} relative`}
                               onClick={() => handleKeywordClick(keywordIndex)}
-                              onMouseEnter={() => setShowPreview(keywordIndex)}
-                              onMouseLeave={() => setShowPreview(null)}
+                              // Disable button style when not in edit mode and not applied
+                              disabled={!isEditing && !isKeywordApplied}
                             >
+                              {/* Keyword text */}
                               {keyword.text}
-                              {keyword.applied && <CheckCircle className="h-3 w-3 ml-1" />}
                               
-                              {/* Show point impact indicator on hover */}
-                              {!keyword.applied && impact && showImpactDetails && (
+                              {/* Show checkmark if applied */}
+                              {isKeywordApplied && <CheckCircle className="h-3 w-3 ml-1" />}
+                              
+                              {/* Show point impact indicator for unapplied keywords */}
+                              {!isKeywordApplied && impact && showImpactDetails && isEditing && (
                                 <span 
                                   className={`absolute -top-2 -right-2 h-4 w-4 flex items-center justify-center text-[10px] rounded-full font-bold ${
                                     getImpactColor(impactLevel).replace('border-', 'bg-')
@@ -302,9 +372,9 @@ const KeywordList: React.FC<KeywordListProps> = ({
                           <TooltipContent 
                             side="top" 
                             className="max-w-xs p-3"
-                            onPointerDownOutside={() => setShowPreview(null)}
                           >
                             <div className="flex flex-col gap-1">
+                              {/* Category info */}
                               <div className="flex items-center gap-1">
                                 <CategoryIcon className="h-4 w-4" />
                                 <span className="font-medium">{categoryInfo.title}</span>
@@ -328,34 +398,17 @@ const KeywordList: React.FC<KeywordListProps> = ({
                               )}
                               
                               {/* Applied status indicator */}
-                              {keyword.applied ? (
+                              {isKeywordApplied ? (
                                 <p className="text-xs text-green-600 mt-1">✓ Applied to your resume</p>
-                              ) : (
+                              ) : isEditing ? (
                                 <p className="text-xs text-gray-500 mt-1">Click to add to your resume</p>
+                              ) : (
+                                <p className="text-xs text-gray-500 mt-1">Enter edit mode to apply</p>
                               )}
                             </div>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                      
-                      {/* Show impact preview popup on hover */}
-                      {isShowingPreview && impact && currentScore > 0 && !keyword.applied && (
-                        <div 
-                          className="absolute z-10 -bottom-[110px] left-1/2 transform -translate-x-1/2 w-[250px]"
-                          onMouseEnter={() => setShowPreview(keywordIndex)}
-                          onMouseLeave={() => setShowPreview(null)}
-                        >
-                          <ImpactPreview
-                            currentScore={currentScore}
-                            newScore={impact.newScore}
-                            pointImpact={impact.pointImpact}
-                            impactLevel={impactLevel}
-                            description={impact.description}
-                            isApplied={keyword.applied}
-                            onApply={() => onKeywordApply(keywordIndex)}
-                          />
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -364,8 +417,15 @@ const KeywordList: React.FC<KeywordListProps> = ({
           );
         })}
       </div>
+      
+      {/* Instructions when not in edit mode */}
+      {!isEditing && (
+        <div className="mt-3 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-gray-200">
+          Click the "Edit" button on the resume to modify and apply keywords.
+        </div>
+      )}
     </div>
   );
 };
 
-export default KeywordList;
+export default KeywordsList;

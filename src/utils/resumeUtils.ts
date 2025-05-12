@@ -8,7 +8,7 @@
 import { STANDARD_SECTIONS } from '@/constants/sections';
 import DOMPurify from 'dompurify';
 
-import { Section } from '@/types/resume';
+import { Section } from '@/types/resumeTypes';
 
 /**
  * Standard section names in English - will always be displayed in English

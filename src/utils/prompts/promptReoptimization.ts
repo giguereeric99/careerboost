@@ -7,7 +7,7 @@
  */
 
 import { SUGGESTION_TYPES, RESUME_SECTION_NAMES, SECTION_WEIGHTS } from './resumeOptimizationPrompt';
-import { Suggestion } from '@/types/resume';
+import { Suggestion } from '@/types/resumeTypes';
 
 /**
  * Interface for reoptimization prompt configuration options

@@ -4,7 +4,7 @@
  * These functions run entirely client-side and don't require server access
  */
 
-import { ResumeData } from "@/types/resume";
+import { ResumeData } from "@/types/resumeTypes";
 
 /**
  * Parses optimized text into structured resume sections

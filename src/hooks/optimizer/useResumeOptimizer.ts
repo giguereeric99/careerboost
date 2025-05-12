@@ -26,7 +26,7 @@ import {
   OptimizedResumeData, 
   Suggestion, 
   Keyword
-} from '@/types/resume';
+} from '@/types/resumeTypes';
 
 // Type guard to check if a value is not null or undefined
 function isDefined<T>(value: T | null | undefined): value is T {

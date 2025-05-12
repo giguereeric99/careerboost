@@ -52,7 +52,7 @@ import {
   IsActiveFunction,
   EditorAttributes,
   Suggestion
-} from '@/types/resume';
+} from '@/types/resumeTypes';
 
 /**
  * Enhanced TipTapResumeEditor Component

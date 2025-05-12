@@ -25,17 +25,19 @@ import {
 } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 
-// Props interface for the ImpactPreview component
-interface ImpactPreviewProps {
-  currentScore: number;        // Current ATS score before applying
-  newScore: number;            // Projected score after applying
-  pointImpact: number;         // Raw point impact (score difference)
-  impactLevel: ImpactLevel;    // Impact level category (CRITICAL, HIGH, etc.)
-  description: string;         // Description of the impact
-  isApplied: boolean;          // Whether already applied
-  onApply: () => void;         // Function to call when applying
-  isCollapsible?: boolean;     // Whether to make the component collapsible
-  defaultOpen?: boolean;       // Default open state for collapsible
+/**
+ * Props for ImpactPreview component
+ */
+export interface ImpactPreviewProps {
+  currentScore: number;          // Current ATS score
+  newScore: number;              // Projected new score after applying
+  pointImpact: number;           // Point impact on score
+  impactLevel: ImpactLevel;      // Impact severity level
+  description: string;           // Impact description
+  isApplied: boolean;            // Whether the item is already applied
+  onApply?: () => void;          // Handler for applying the item
+  isDisabled?: boolean;          // Whether the apply button should be disabled
+  showApplyButton?: boolean;     // Whether to show the apply button (default: true)
 }
 
 /**
@@ -252,7 +254,7 @@ const ImpactPreview: React.FC<ImpactPreviewProps> = (props) => {
   // If not collapsible, render the content directly
   if (!isCollapsible) {
     return (
-      <div className="p-3 bg-white border rounded-lg shadow-sm">
+      <div className="p-3 bg-white border rounded-lg shadow-sm impact-4">
         <ImpactContent {...props} />
       </div>
     );
@@ -260,7 +262,7 @@ const ImpactPreview: React.FC<ImpactPreviewProps> = (props) => {
   
   // If collapsible, wrap in Collapsible component
   return ( 
-    <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
+    <div className="bg-white border rounded-lg shadow-sm overflow-hidden impact-3">
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <div className="p-3">
           <div className="flex items-center justify-between mb-2">

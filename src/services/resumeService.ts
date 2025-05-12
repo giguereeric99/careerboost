@@ -13,7 +13,7 @@
  */
 
 import { supabase } from "@/lib/supabase-client";
-import { ResumeData, Suggestion } from "@/types/resume";
+import { ResumeData, Suggestion } from "@/types/resumeTypes";
 import { toast } from "sonner";
 import { parseOptimizedText, extractKeywords, calculateAtsScore } from "./resumeParser";
 
