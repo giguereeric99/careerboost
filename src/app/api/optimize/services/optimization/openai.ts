@@ -115,7 +115,7 @@ export async function optimizeWithOpenAI(
  */
 function parseOpenAIResponse(responseText: string, originalText: string): OptimizationResult {
   try {
-    // Try direct JSON parsing first - the most straightforward approach
+    // Try direct JSON parsing with a try-catch to handle JSON syntax errors
     let parsedResult = JSON.parse(responseText);
     
     // Return the parsed result if it has the expected structure
@@ -145,7 +145,39 @@ function parseOpenAIResponse(responseText: string, originalText: string): Optimi
     console.error('[OpenAI] Failed to parse JSON response:', jsonError);
     console.error('[OpenAI] Response preview:', responseText.substring(0, 200) + '...');
     
-    // ---- RECOVERY ATTEMPT 1: Try to extract a valid JSON object ----
+    // ---- ENHANCED RECOVERY ATTEMPT 1: Try to fix common JSON syntax errors ----
+    try {
+      // Fix common JSON syntax issues
+      const fixedJson = fixCommonJsonErrors(responseText);
+      if (fixedJson !== responseText) {
+        try {
+          // Try parsing the fixed JSON
+          const fixedResult = JSON.parse(fixedJson);
+          if (fixedResult && fixedResult.optimizedText) {
+            console.log('[OpenAI] Successfully parsed fixed JSON');
+            
+            // Ensure proper formatting of recovered fields
+            if (!fixedResult.suggestions || !Array.isArray(fixedResult.suggestions)) {
+              fixedResult.suggestions = [];
+            }
+            if (!fixedResult.keywordSuggestions || !Array.isArray(fixedResult.keywordSuggestions)) {
+              fixedResult.keywordSuggestions = [];
+            }
+            if (typeof fixedResult.atsScore !== 'number') {
+              fixedResult.atsScore = 65;
+            }
+            
+            return fixedResult;
+          }
+        } catch (fixError) {
+          console.warn('[OpenAI] Failed to parse fixed JSON:', fixError);
+        }
+      }
+    } catch (fixAttemptError) {
+      console.error('[OpenAI] Fix JSON attempt failed:', fixAttemptError);
+    }
+    
+    // ---- RECOVERY ATTEMPT 2: Try to extract a valid JSON object ----
     try {
       // Sometimes the AI includes text before or after the JSON
       // This regex tries to find a complete JSON object in the response
@@ -168,7 +200,7 @@ function parseOpenAIResponse(responseText: string, originalText: string): Optimi
       console.error('[OpenAI] Failed to extract JSON from response:', extractError);
     }
     
-    // ---- RECOVERY ATTEMPT 2: Try to balance mismatched brackets ----
+    // ---- RECOVERY ATTEMPT 3: Try to balance mismatched brackets ----
     try {
       // Sometimes the JSON is almost valid but has mismatched brackets
       // balanceJsonString attempts to fix this by adding missing closing brackets
@@ -190,7 +222,28 @@ function parseOpenAIResponse(responseText: string, originalText: string): Optimi
       console.error('[OpenAI] Failed balance attempt:', balanceAttemptError);
     }
     
-    // ---- RECOVERY ATTEMPT 3: If the response looks like a resume, use it directly ----
+    // ---- RECOVERY ATTEMPT 4: Extract HTML sections if present ----
+    try {
+      const sectionPattern = /<section[\s\S]*?<\/section>/g;
+      const sectionMatches = responseText.match(sectionPattern);
+      
+      if (sectionMatches && sectionMatches.length > 0) {
+        console.log('[OpenAI] Found HTML sections in response, using directly');
+        const htmlContent = sectionMatches.join('\n');
+        
+        return {
+          optimizedText: htmlContent,
+          suggestions: [],
+          keywordSuggestions: [],
+          atsScore: 65,
+          provider: 'openai'
+        };
+      }
+    } catch (htmlError) {
+      console.error('[OpenAI] Failed to extract HTML sections:', htmlError);
+    }
+    
+    // ---- RECOVERY ATTEMPT 5: If the response looks like a resume, use it directly ----
     // Sometimes the AI just returns the optimized text without JSON structure
     if (responseText.length > 500 && responseText.includes('\n')) {
       console.warn('[OpenAI] Using raw response as optimized text');
@@ -232,6 +285,72 @@ function parseOpenAIResponse(responseText: string, originalText: string): Optimi
 }
 
 /**
+ * Fix common JSON syntax errors
+ * This function applies a series of replacements to fix the most common JSON issues
+ * 
+ * @param json - The potentially malformed JSON string
+ * @returns A corrected JSON string that may be parseable
+ */
+function fixCommonJsonErrors(json: string): string {
+  let fixed = json;
+  
+  // 1. Fix trailing commas (very common error from AI)
+  fixed = fixed.replace(/,(\s*[\]}])/g, '$1');
+  
+  // 2. Fix missing commas between array items and object properties
+  fixed = fixed.replace(/}(\s*){/g, '},\n$1{');
+  fixed = fixed.replace(/](\s*)\[/g, '],\n$1[');
+  
+  // 3. Make sure all property names are quoted
+  fixed = fixed.replace(/([{,]\s*)([a-zA-Z0-9_]+)(\s*:)/g, '$1"$2"$3');
+  
+  // 4. Remove any extra comma after the last property in an object
+  fixed = fixed.replace(/,(\s*})/g, '$1');
+  
+  // 5. Fix incorrect escape sequences
+  fixed = fixed.replace(/\\([^"\\/bfnrtu])/g, '\\\\$1');
+  
+  // 6. Fix unescaped quotes within strings
+  // This is a complex problem, simplified approach:
+  let inString = false;
+  let result = '';
+  let escaped = false;
+  
+  try {
+    // This is a basic approach that may not catch all issues
+    // but should help with some common cases
+    for (let i = 0; i < fixed.length; i++) {
+      const char = fixed[i];
+      
+      if (char === '\\' && !escaped) {
+        escaped = true;
+        result += char;
+        continue;
+      }
+      
+      if (char === '"' && !escaped) {
+        inString = !inString;
+      }
+      
+      result += char;
+      escaped = false;
+    }
+    
+    // If we somehow ended up still in a string, close it
+    if (inString) {
+      result += '"';
+    }
+    
+    fixed = result;
+  } catch (e) {
+    // If our string fixing attempt fails, just use the original
+    console.error('[OpenAI] String fixing attempt failed:', e);
+  }
+  
+  return fixed;
+}
+
+/**
  * Utility function to balance unmatched brackets in malformed JSON
  * 
  * This can fix common JSON errors like missing closing brackets
@@ -250,19 +369,41 @@ function balanceJsonString(input: string): string {
     // Stack to keep track of opening brackets
     const stack: string[] = [];
     
+    // Flag to track if we're inside a string (to ignore brackets in strings)
+    let inString = false;
+    let escaped = false;
+    
     // Scan through the input string, tracking opening brackets
-    for (const char of input) {
-      if (opens.includes(char)) {
-        // When we see an opening bracket, push it to the stack
-        stack.push(char);
-      } else if (closes.includes(char)) {
-        // When we see a closing bracket, check if it matches the last opening bracket
-        const expected = stack.length > 0 ? pairs[stack[stack.length - 1]] : null;
-        if (expected === char) {
-          // If it matches, pop the opening bracket from the stack
-          stack.pop();
+    for (let i = 0; i < input.length; i++) {
+      const char = input[i];
+      
+      // Handle escape characters
+      if (char === '\\' && !escaped) {
+        escaped = true;
+        continue;
+      }
+      
+      // Handle string boundaries (but only if not escaped)
+      if (char === '"' && !escaped) {
+        inString = !inString;
+      }
+      
+      // Only process brackets if we're not inside a string
+      if (!inString) {
+        if (opens.includes(char)) {
+          // When we see an opening bracket, push it to the stack
+          stack.push(char);
+        } else if (closes.includes(char)) {
+          // When we see a closing bracket, check if it matches the last opening bracket
+          const expected = stack.length > 0 ? pairs[stack[stack.length - 1]] : null;
+          if (expected === char) {
+            // If it matches, pop the opening bracket from the stack
+            stack.pop();
+          }
         }
       }
+      
+      escaped = false;
     }
     
     // Add missing closing brackets in reverse order

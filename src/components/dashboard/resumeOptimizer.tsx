@@ -344,20 +344,53 @@ const ResumeOptimizer: React.FC = () => {
   };
   
   /**
-   * Adapter function for apply suggestion
-   * Converts index-based calls to id-based calls
-   * Now checks if the user is in edit mode before applying suggestions
+   * Adapter function for applying suggestions
+   * Converts index-based calls to id-based calls and includes validation
+   * 
+   * @param index - The index of the suggestion in the suggestions array
+   * @returns Boolean indicating if operation started successfully
    */
-  const handleApplySuggestionAdapter = (index: number) => {
-    // Only proceed with suggestion application if in edit mode
+  const handleApplySuggestionAdapter = useCallback((index: number) => {
+    // Only proceed if in edit mode and index is valid
     if (isEditing && index >= 0 && index < mappedSuggestions.length) {
       const suggestion = mappedSuggestions[index];
+      
+      // Validate that the suggestion has a valid ID
+      if (!suggestion.id) {
+        console.error("Cannot apply suggestion: Missing suggestion ID", suggestion);
+        toast.error("Cannot apply suggestion: Missing ID");
+        return false;
+      }
+      
+      // Validate the resume data exists and has an ID
+      if (!resumeData?.id) {
+        console.error("Cannot apply suggestion: Missing resume ID");
+        toast.error("Cannot apply suggestion: Resume not found");
+        return false;
+      }
+      
+      // Log the operation for debugging
+      console.log("Applying suggestion:", {
+        resumeId: resumeData.id,
+        suggestionId: suggestion.id, 
+        suggestion: suggestion.text,
+        currentState: suggestion.isApplied,
+        newState: !suggestion.isApplied
+      });
+      
+      // Call the parent handler with suggestion ID and toggle applied state
       handleApplySuggestion(suggestion.id, !suggestion.isApplied);
+      return true;
     } else if (!isEditing) {
-      // Optionally notify user that editing is required to apply suggestions
+      // User needs to be in edit mode to apply suggestions
       toast.info("Enter edit mode to apply suggestions");
+      return false;
+    } else {
+      // Invalid index
+      console.error("Invalid suggestion index:", index, "Max:", mappedSuggestions.length - 1);
+      return false;
     }
-  };
+  }, [isEditing, mappedSuggestions, resumeData, handleApplySuggestion]);
   
   /**
    * Adapter function for simulate suggestion impact

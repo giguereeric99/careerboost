@@ -381,6 +381,45 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   }, [localEditMode, onEditModeChange, isEditing]);
 
   /**
+   * Effect to initialize sections when entering edit mode
+   * This ensures that when we toggle to edit mode, the correct content is loaded into the editors
+   */
+  useEffect(() => {
+    // Only execute when edit mode is activated
+    if (editMode) {
+      console.log("Edit mode activated, preparing sections...");
+      
+      // Determine which content to use - prefer previewContent over optimizedText
+      const contentToLoad = previewContent || optimizedText;
+      
+      if (contentToLoad) {
+        try {
+          // Process and normalize the content
+          const normalizedContent = processContent(contentToLoad);
+          
+          // Parse content into sections
+          const parsedSections = parseHtmlIntoSections(
+            normalizedContent,
+            getSectionName,
+            SECTION_NAMES,
+            SECTION_ORDER
+          );
+          
+          // Initialize all standard sections with the current content
+          const allSections = initializeAllSections(parsedSections);
+          
+          // Update sections with the parsed content
+          setSections(allSections);
+          
+          console.log("Sections initialized for edit mode with current content");
+        } catch (error) {
+          console.error("Error initializing sections for edit mode:", error);
+        }
+      }
+    }
+  }, [editMode, previewContent, optimizedText, processContent, initializeAllSections]);
+
+  /**
    * Handle section content update
    * Updates section content and also updates preview in real-time
    */
@@ -425,17 +464,22 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
   /**
    * Handle save button click
+   * Performs validation, saves content, and updates UI states
+   * Calls parent onSave handler and processes result
    */
   const handleSave = useCallback(async () => {
+    // Prevent simultaneous save operations
     if (isSaving) return;
     
     try {
+      // Set saving state to show loading indicator
       setIsSaving(true);
       
-      // Get combined HTML from non-empty sections and normalize it
+      // Combine all non-empty sections into complete HTML and process it
       let combinedHtml = combineAllSections();
       combinedHtml = processContent(combinedHtml);
       
+      // Validate content length
       if (combinedHtml.length < 50) {
         toast.error("Content too short", {
           description: "Resume content must be at least 50 characters."
@@ -444,35 +488,63 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         return;
       }
       
-      // Call parent save handler
+      // Log for debugging
+      console.log("Calling parent onSave with content length:", combinedHtml.length);
+      
+      // Call parent save handler and await its result
       const saveResult = await Promise.resolve(onSave(combinedHtml));
       
+      // Handle success case
       if (saveResult) {
+        // Update local state
         setContentModified(false);
-        // Keep hasBeenModified as true since changes have been made and saved
+        // Keep hasBeenModified true to preserve modification history
         
-        toast.success("Resume saved successfully");
+        // Update preview content with saved content
+        setPreviewContent(combinedHtml);
+        
+        // Update sections state with the saved content to ensure it's available in edit mode
+        try {
+          const normalizedContent = processContent(combinedHtml);
+          const parsedSections = parseHtmlIntoSections(
+            normalizedContent,
+            getSectionName,
+            SECTION_NAMES,
+            SECTION_ORDER
+          );
+          
+          // Initialize all standard sections with the saved content
+          const allSections = initializeAllSections(parsedSections);
+          setSections(allSections);
+          
+          console.log("Updated sections with saved content for future edit sessions");
+        } catch (sectionError) {
+          console.error("Error parsing saved content into sections:", sectionError);
+        }
         
         // Notify parent component of the changes
         onTextChange(combinedHtml);
-        
-        // Update preview content
-        setPreviewContent(combinedHtml);
         
         // Exit edit mode after saving if we're in uncontrolled mode
         if (isEditing === undefined) {
           setLocalEditMode(false);
         }
+        
+        // No success toast here - parent component will handle this
+        // This prevents duplicate toasts
       } else {
+        // Handle failure case
         toast.error("Failed to save resume");
       }
     } catch (error) {
+      // Log error and show error toast
       console.error("Error saving resume:", error);
       toast.error("Failed to save resume");
     } finally {
+      // Always reset saving state when done
       setIsSaving(false);
     }
-  }, [isSaving, combineAllSections, processContent, onSave, onTextChange, isEditing]);
+  }, [isSaving, combineAllSections, processContent, onSave, onTextChange, isEditing, initializeAllSections]);
 
   /**
    * Open preview in new window

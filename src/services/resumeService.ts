@@ -318,7 +318,25 @@ export async function updateSuggestionStatus(
   applied: boolean
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
+    // Validation des paramètres
+    if (!resumeId || !suggestionId || applied === undefined) {
+      const error = new Error("Missing required parameters: resumeId, suggestionId, and applied status");
+      console.error("updateSuggestionStatus validation error:", {
+        resumeId,
+        suggestionId,
+        applied,
+        error
+      });
+      return { success: false, error };
+    }
+    
     // Call the API to update suggestion status
+    console.log("Sending request to update suggestion:", {
+      resumeId,
+      suggestionId,
+      applied
+    });
+    
     const response = await fetch('/api/resumes/suggestions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -383,7 +401,7 @@ export function isValidNoResumeState(response: Response, result: any): boolean {
 
 /**
  * Save resume content and score
- * Updates the resume content and score in the database
+ * Updates the resume content and score in the database via API
  * 
  * @param resumeId - The ID of the resume to update
  * @param content - The new content to save
@@ -396,19 +414,41 @@ export async function saveResumeContent(
   atsScore: number
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
-    // Update the resume content and score
-    const { error } = await supabase
-      .from('resumes')
-      .update({
-        last_saved_text: content,
-        last_saved_score_ats: atsScore,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', resumeId);
+    // Log debugging information
+    console.log('Saving resume content:', {
+      resumeId,
+      contentLength: content.length,
+      atsScore
+    });
+
+    // Validate parameters
+    if (!resumeId || !content) {
+      console.error('saveResumeContent: Missing required parameters');
+      return { success: false, error: new Error('Missing required parameters') };
+    }
+
+    // Use the API route instead of direct Supabase query for better error handling
+    const response = await fetch('/api/resumes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        resumeId,
+        content,
+        atsScore
+      }),
+    });
+
+    // Parse the response to get error details
+    const result = await response.json();
     
-    // Handle update errors
-    if (error) throw error;
+    // Check if the API returned an error
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to save resume');
+    }
     
+    // Request successful
     return { success: true, error: null };
   } catch (error) {
     // Log error for debugging and return error object

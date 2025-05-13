@@ -44,7 +44,7 @@ export const useResumeOptimizer = (userId?: string) => {
   // Resume content state
   const [resumeData, setResumeData] = useState<OptimizedResumeData | null>(null);
   const [originalText, setOriginalText] = useState<string>(''); // Original optimized text from AI
-  const [optimizedText, setOptimizedText] = useState<string>(''); // Current display text (either original or edited)
+  const [optimizedText, setOptimizedText] = useState<string>(''); // Current displayed text (either original or edited)
   const [editedText, setEditedText] = useState<string>(''); // User edited content in edit mode
   
   // Scoring and enhancement data
@@ -236,45 +236,62 @@ export const useResumeOptimizer = (userId?: string) => {
     // Use provided content or current edited text
     const contentToSave = newContent || editedText;
     
+    // Validate required data
     if (!userId || !resumeData?.id || !contentToSave) {
+      console.error("Cannot save: Missing data", { userId, resumeId: resumeData?.id, contentLength: contentToSave?.length });
       toast.error("Cannot save: Missing data");
       return false;
     }
     
     try {
+      // Set saving state to show loading indicators
       setIsSaving(true);
       
-      // Use resumeService to save content and score
+      // Log saving attempt
+      console.log("Saving resume:", {
+        resumeId: resumeData.id,
+        contentLength: contentToSave.length,
+        atsScore: currentAtsScore || 0
+      });
+      
+      // Use the updated saveResumeContent service function
+      // This now uses the API route instead of direct Supabase access
       const { success, error } = await saveResumeContent(
         resumeData.id, 
         contentToSave, 
         currentAtsScore || 0
       );
       
-      if (!success) throw error;
-      
-      // Update local state with type safety
-      if (resumeData) {
-        setResumeData({
-          ...resumeData,
-          last_saved_text: contentToSave,
-          last_saved_score_ats: currentAtsScore
-        });
+      // Handle errors from the service
+      if (!success) {
+        console.error("Error from saveResumeContent:", error);
+        throw error;
       }
       
-      // Update optimized text to show the saved content
+      // Update local state with the saved data
+      setResumeData({
+        ...resumeData,
+        last_saved_text: contentToSave,
+        last_saved_score_ats: currentAtsScore
+      });
+      
+      // Update optimized text to reflect the saved content
       setOptimizedText(contentToSave);
       
-      // Mark content as no longer modified since we just saved
+      // Mark content as no longer modified since it was just saved
       setContentModified(false);
       
+      // Display success toast
       toast.success("Changes saved successfully");
+      
       return true;
     } catch (error) {
+      // Handle and display errors
       console.error("Error saving resume:", error);
       toast.error("Failed to save changes");
       return false;
     } finally {
+      // Always reset the saving state when done
       setIsSaving(false);
     }
   }, [userId, resumeData, editedText, currentAtsScore]);
