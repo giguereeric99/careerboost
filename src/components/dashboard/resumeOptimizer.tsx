@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 
-// Import components - using the correct paths for your project structure
+// Import components for UI
 import UploadSection from '@/components/ResumeOptimizerSection/uploadSection';
 import ResumePreview from '@/components/ResumeOptimizerSection/resumePreview';
 import ScoreCard from '@/components/ResumeOptimizerSection/scoreCard';
@@ -31,21 +31,79 @@ import useUploadSection from '@/hooks/optimizer/useUploadSection';
 
 // Import types
 import { Suggestion, Keyword, OptimizedResumeData } from '@/types/resumeTypes';
-
-/**
- * Interface for SuggestionImpact based on error messages
- */
-interface SuggestionImpact {
-  newScore: number;
-  pointImpact: number;
-  description: string;
-}
+import { SuggestionImpact } from '@/types/suggestionTypes';
 
 /**
  * EmptyPreviewStateProps interface based on error messages
+ * Props for the empty state component when no resume is available
  */
 interface EmptyPreviewStateProps {
-  onGoToUpload: () => void;
+  onGoToUpload: () => void;  // Action to navigate to upload section
+}
+
+/**
+ * Normalizes a suggestion object to ensure consistent structure
+ * Handles different property naming conventions and ensures IDs exist
+ * 
+ * @param suggestion - Suggestion to normalize
+ * @param index - Index for fallback ID generation
+ * @returns Normalized suggestion with consistent property names
+ */
+function normalizeSuggestion(suggestion: any, index: number): Suggestion {
+  // Generate debug output for suggestions without ID
+  if (!suggestion.id) {
+    console.warn(`Suggestion without ID at index ${index}:`, suggestion);
+  }
+
+  return {
+    // Ensure ID exists with fallbacks
+    id: suggestion.id || suggestion.suggestion_id || `suggestion-${index}-${Date.now()}`,
+    // Ensure text property exists
+    text: suggestion.text || suggestion.original_text || '',
+    // Provide defaults for optional properties
+    type: suggestion.type || 'general',
+    impact: suggestion.impact || '',
+    // Handle both naming conventions
+    isApplied: suggestion.isApplied || suggestion.is_applied || false,
+    // Include pointImpact for score calculations
+    pointImpact: suggestion.pointImpact || suggestion.point_impact || 2
+  };
+}
+
+/**
+ * Normalizes a keyword object to ensure consistent structure
+ * Handles different property naming conventions and formats
+ * 
+ * @param keyword - Keyword to normalize (string or object)
+ * @param index - Index for fallback ID generation
+ * @returns Normalized keyword with consistent property names
+ */
+function normalizeKeyword(keyword: any, index: number): Keyword {
+  // Handle case where keyword is just a string
+  if (typeof keyword === 'string') {
+    return {
+      id: `keyword-${index}-${Date.now()}`,
+      text: keyword,
+      isApplied: false,
+      relevance: 1,
+      pointImpact: 1
+    };
+  }
+  
+  // Generate debug output for keywords without ID
+  if (!keyword.id) {
+    console.warn(`Keyword object without ID at index ${index}:`, keyword);
+  }
+  
+  // Handle keyword as an object with potential varying property names
+  return {
+    id: keyword.id || keyword.keyword_id || `keyword-${index}-${Date.now()}`,
+    text: keyword.text || keyword.keyword || '',
+    // Support all possible variations of the applied property
+    isApplied: keyword.isApplied || keyword.is_applied || keyword.applied || false,
+    relevance: keyword.relevance || 1,
+    pointImpact: keyword.pointImpact || keyword.point_impact || 1
+  };
 }
 
 /**
@@ -114,14 +172,36 @@ const ResumeOptimizer: React.FC = () => {
     handleTextAnalysis     // Send content for AI analysis
   } = useUploadSection({
     // Pass the callback to receive optimization data after completion
-    onOptimizationComplete: (optimizedText, resumeId, atsScore, suggestions, keywords) => {
+    onOptimizationComplete: (optimizedText, resumeId, atsScore, suggestionsData, keywordsData) => {
+      console.log("Optimization complete, processing results:", {
+        resumeId,
+        atsScore,
+        suggestionsCount: suggestionsData?.length || 0,
+        keywordsCount: keywordsData?.length || 0
+      });
+      
+      // Normalize suggestions to ensure consistent structure
+      const normalizedSuggestions = Array.isArray(suggestionsData)
+        ? suggestionsData.map(normalizeSuggestion)
+        : [];
+      
+      // Normalize keywords to ensure consistent structure
+      const normalizedKeywords = Array.isArray(keywordsData)
+        ? keywordsData.map(normalizeKeyword)
+        : [];
+        
+      console.log("Normalized data for UI:", {
+        suggestionsNormalized: normalizedSuggestions.length,
+        keywordsNormalized: normalizedKeywords.length
+      });
+      
       // Update the main state with optimization results
       updateResumeWithOptimizedData(
         optimizedText || '',
         resumeId || '',
         atsScore || 65,
-        suggestions || [],
-        keywords || []
+        normalizedSuggestions,
+        normalizedKeywords
       );
       
       // Change tab after processing is complete
@@ -288,48 +368,89 @@ const ResumeOptimizer: React.FC = () => {
     toast.success("Resume downloaded successfully");
   }, [displayContent, selectedTemplate]);
   
-  // Maps the database-format suggestions to component-format suggestions
-  const mappedSuggestions = suggestions.map(s => ({
-    id: s.id,
-    text: s.text,
-    type: s.type,
-    impact: s.impact,
-    isApplied: s.isApplied,
-    pointImpact: s.pointImpact
-  }));
+  /**
+   * Maps the database-format suggestions to component-format suggestions
+   * Ensures each suggestion has required properties including ID
+   */
+  const mappedSuggestions = suggestions.map((s, index) => {
+    // Log warning for suggestions without ID
+    if (!s.id) {
+      console.warn(`Suggestion without ID in mapping (index ${index}):`, s);
+    }
+    
+    return {
+      // Ensure ID with fallback
+      id: s.id || `mapped-suggestion-${index}-${Date.now()}`,
+      text: s.text || '',
+      type: s.type || 'general',
+      impact: s.impact || '',
+      // Handle both naming conventions
+      isApplied: s.isApplied || false,
+      pointImpact: s.pointImpact || 2
+    };
+  });
   
-  // Maps the database-format keywords to component-format keywords
-  // Adding the 'applied' property required by KeywordsList component
-  const mappedKeywords = keywords.map((k, index) => ({
-    id: k.id || String(Math.random()),
-    text: k.text,
-    isApplied: k.isApplied,
-    // Add the 'applied' property required by the component
-    applied: k.isApplied,
-    relevance: k.relevance || 1,
-    pointImpact: k.pointImpact || 1
-  }));
+  /**
+   * Maps the database-format keywords to component-format keywords
+   * Adding the 'applied' property required by KeywordsList component
+   */
+  const mappedKeywords = keywords.map((k, index) => {
+    // Log warning for keywords without ID
+    if (!k.id) {
+      console.warn(`Keyword without ID in mapping (index ${index}):`, k);
+    }
+    
+    return {
+      // Ensure ID with fallback
+      id: k.id || `mapped-keyword-${index}-${Date.now()}`,
+      text: k.text || '',
+      isApplied: k.isApplied || false,
+      // Add the 'applied' property required by the component
+      applied: k.isApplied || false,
+      relevance: k.relevance || 1,
+      pointImpact: k.pointImpact || 1
+    };
+  });
   
   /**
    * Adapter function for onKeywordApply
    * Converts index-based calls to id-based calls
+   * 
+   * @param index - Index of keyword in the array
    */
-  const handleKeywordApplyAdapter = (index: number) => {
+  const handleKeywordApplyAdapter = useCallback((index: number) => {
+    console.log(`handleKeywordApplyAdapter called with index ${index}`);
+    
     // Only proceed with keyword application if in edit mode
     if (isEditing && index >= 0 && index < mappedKeywords.length) {
       const keyword = mappedKeywords[index];
+      
+      console.log(`Applying keyword:`, keyword);
+      
+      // Handle missing ID with warning
+      if (!keyword.id) {
+        console.warn(`Keyword at index ${index} has no ID:`, keyword);
+        toast.error("Cannot apply keyword: Missing ID");
+        return;
+      }
+      
       handleKeywordApply(keyword.id, !keyword.isApplied);
     } else if (!isEditing) {
       // Optionally notify user that editing is required to apply keywords
       toast.info("Enter edit mode to apply keywords");
+    } else {
+      console.error(`Invalid keyword index: ${index}. Max: ${mappedKeywords.length - 1}`);
     }
-  };
+  }, [isEditing, mappedKeywords, handleKeywordApply]);
   
   /**
    * Adapter function for simulateKeywordImpact
-   * Returns the expected object structure
+   * Returns the expected object structure for impact calculation
+   * 
+   * @param index - Index of keyword in the array
+   * @returns Impact calculation object
    */
-  const simulateKeywordImpactAdapter = (index: number) => {
+  const simulateKeywordImpactAdapter = useCallback((index: number) => {
     // Default impact values
     const pointImpact = 1;
     const currentScore = atsScore || 0;
@@ -341,7 +462,7 @@ const ResumeOptimizer: React.FC = () => {
       pointImpact,
       description: "Adding this keyword will improve your ATS compatibility score."
     };
-  };
+  }, [atsScore]);
   
   /**
    * Adapter function for applying suggestions
@@ -351,13 +472,25 @@ const ResumeOptimizer: React.FC = () => {
    * @returns Boolean indicating if operation started successfully
    */
   const handleApplySuggestionAdapter = useCallback((index: number) => {
+    console.log(`handleApplySuggestionAdapter called with index ${index}`);
+    
     // Only proceed if in edit mode and index is valid
     if (isEditing && index >= 0 && index < mappedSuggestions.length) {
       const suggestion = mappedSuggestions[index];
       
+      console.log(`Applying suggestion:`, suggestion);
+      
       // Validate that the suggestion has a valid ID
       if (!suggestion.id) {
         console.error("Cannot apply suggestion: Missing suggestion ID", suggestion);
+        
+        // Generate temporary ID for this operation
+        const tempId = `temp-suggestion-${index}-${Date.now()}`;
+        console.log(`Generated temporary ID: ${tempId}`);
+        
+        // Assign the temporary ID to the suggestion
+        suggestion.id = tempId;
+        
         toast.error("Cannot apply suggestion: Missing ID");
         return false;
       }
@@ -395,8 +528,11 @@ const ResumeOptimizer: React.FC = () => {
   /**
    * Adapter function for simulate suggestion impact
    * Returns the expected impact object structure
+   * 
+   * @param index - Index of suggestion in array
+   * @returns Impact calculation object
    */
-  const simulateSuggestionImpactAdapter = (index: number): SuggestionImpact => {
+  const simulateSuggestionImpactAdapter = useCallback((index: number): SuggestionImpact => {
     // Default impact values
     const pointImpact = 2;
     const currentScore = atsScore || 0;
@@ -408,10 +544,16 @@ const ResumeOptimizer: React.FC = () => {
       pointImpact,
       description: "This suggestion will improve your resume's clarity and impact."
     };
-  };
+  }, [atsScore]);
   
   /**
    * Adapter for file upload to match expected signature
+   * Provides default values for optional parameters
+   * 
+   * @param url - URL of the uploaded file
+   * @param name - Name of the file
+   * @param size - Size of the file in bytes
+   * @param type - MIME type of the file
    */
   const handleFileUploadAdapter = useCallback((url: string, name: string, size?: number, type?: string) => {
     // Call the original handler with defaults for optional parameters
@@ -499,13 +641,25 @@ const ResumeOptimizer: React.FC = () => {
             setActiveTab={setActiveTab}
             onAnalysisStart={handleAnalysisStart}
             onAnalysisComplete={(optimizedText, resumeId, atsScore, suggestions, keywords) => {
+              // Normalize suggestions and keywords before updating
+              const normalizedSuggestions = Array.isArray(suggestions) 
+                ? suggestions.map(normalizeSuggestion)
+                : [];
+                
+              const normalizedKeywords = Array.isArray(keywords)
+                ? keywords.map(normalizeKeyword)
+                : [];
+              
+              // Update state with normalized data
               updateResumeWithOptimizedData(
                 optimizedText || '',
                 resumeId || '',
                 atsScore || 65,
-                suggestions || [],
-                keywords || []
+                normalizedSuggestions,
+                normalizedKeywords
               );
+              
+              // Hide loading state when complete
               setShowLoadingState(false);
             }}
             checkingForExistingResumes={isLoading} // Pass isLoading to the checkingForExistingResumes prop

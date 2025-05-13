@@ -1,4 +1,4 @@
-import { IconType } from "lucide-react";
+import { LucideIcon } from "lucide-react";
 import { ImpactLevel } from '@/services/resumeScoreLogic';
 
 /**
@@ -8,7 +8,7 @@ export interface SuggestionType {
   type: string;         // Type identifier
   title: string;        // Display title
   description: string;  // Description of this type of suggestion
-  icon?: IconType;      // Optional icon component
+  icon?: LucideIcon;      // Optional icon component
 }
 
 /**

@@ -53,6 +53,58 @@ interface UseUploadSectionProps {
 }
 
 /**
+ * Normalizes a suggestion object to ensure consistent structure
+ * Handles different property naming conventions (camelCase vs snake_case)
+ * 
+ * @param suggestion - Raw suggestion from API or other source
+ * @returns Normalized suggestion with consistent property names
+ */
+function normalizeSuggestion(suggestion: any) {
+  return {
+    // Generate ID if missing - critical for operations on suggestions
+    id: suggestion.id || suggestion.suggestion_id || String(Math.random()),
+    // Ensure required text properties exist
+    text: suggestion.text || suggestion.original_text || '',
+    type: suggestion.type || 'general',
+    impact: suggestion.impact || 'This improvement could enhance your resume',
+    // Handle both camelCase and snake_case variations
+    isApplied: suggestion.isApplied || suggestion.is_applied || false,
+    // Include pointImpact for score calculations
+    pointImpact: suggestion.pointImpact || suggestion.point_impact || 2
+  };
+}
+
+/**
+ * Normalizes a keyword object to ensure consistent structure
+ * Handles different property naming conventions and formats
+ * 
+ * @param keyword - Raw keyword from API (string or object)
+ * @returns Normalized keyword with consistent property names
+ */
+function normalizeKeyword(keyword: any) {
+  // Handle case where keyword is just a string
+  if (typeof keyword === 'string') {
+    return {
+      id: String(Math.random()),
+      text: keyword,
+      isApplied: false,
+      relevance: 1,
+      pointImpact: 1
+    };
+  }
+  
+  // Handle keyword as an object with potential varying property names
+  return {
+    id: keyword.id || keyword.keyword_id || String(Math.random()),
+    text: keyword.text || keyword.keyword || '',
+    // Support all possible variations of the applied property
+    isApplied: keyword.isApplied || keyword.is_applied || keyword.applied || false,
+    relevance: keyword.relevance || 1,
+    pointImpact: keyword.pointImpact || keyword.point_impact || 1
+  };
+}
+
+/**
  * Custom hook for managing the upload section functionality
  * Provides a complete API for handling resume uploads and optimization
  * 
@@ -186,28 +238,28 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
         const resumeId = result.resumeId || '';
         const atsScore = result.atsScore || 65;
         
-        // Format suggestions with consistent structure
+        // Log raw suggestions data for debugging
+        console.log('Raw suggestions data from API:', result.suggestions);
+        
+        // Format and normalize suggestions with consistent structure
+        // This fixes issues with missing IDs and property name inconsistencies
         const suggestions = Array.isArray(result.suggestions) 
-          ? result.suggestions.map((s: any) => ({
-              id: s.id || String(Math.random()),
-              text: s.text || s.original_text || '',
-              improvement: s.improvement || s.improved_text || '',
-              type: s.type || 'general',
-              impact: s.impact || 'This improvement could enhance your resume',
-              is_applied: s.is_applied || false
-            }))
+          ? result.suggestions.map(normalizeSuggestion)
           : [];
         
+        // Log normalized suggestions for verification
+        console.log('Normalized suggestions:', suggestions);
+        
         // Format keywords with consistent structure
+        // Handle both arrays of objects and arrays of strings
         const keywords = result.keywords 
-          ? result.keywords 
+          ? result.keywords.map(normalizeKeyword)
           : (result.keywordSuggestions 
-              ? result.keywordSuggestions.map((text: string) => ({ 
-                  id: String(Math.random()),
-                  text, 
-                  is_applied: false 
-                })) 
+              ? result.keywordSuggestions.map(normalizeKeyword)
               : []);
+        
+        // Log normalized keywords for verification
+        console.log('Normalized keywords:', keywords);
         
         // Notify parent component of successful optimization
         if (onOptimizationComplete) {
@@ -307,28 +359,28 @@ export const useUploadSection = ({ onOptimizationComplete, onAnalysisStart }: Us
         const resumeId = result.resumeId || '';
         const atsScore = result.atsScore || 65;
         
-        // Format suggestions with consistent structure
+        // Log raw suggestions data for debugging
+        console.log('Raw suggestions data from API:', result.suggestions);
+        
+        // Format and normalize suggestions with consistent structure
+        // This fixes issues with missing IDs and property name inconsistencies
         const suggestions = Array.isArray(result.suggestions) 
-          ? result.suggestions.map((s: any) => ({
-              id: s.id || String(Math.random()),
-              text: s.text || s.original_text || '',
-              improvement: s.improvement || s.improved_text || '',
-              type: s.type || 'general',
-              impact: s.impact || 'This improvement could enhance your resume',
-              is_applied: s.is_applied || false
-            }))
+          ? result.suggestions.map(normalizeSuggestion)
           : [];
         
+        // Log normalized suggestions for verification
+        console.log('Normalized suggestions after text analysis:', suggestions);
+        
         // Format keywords with consistent structure
+        // Handle both arrays of objects and arrays of strings
         const keywords = result.keywords 
-          ? result.keywords 
+          ? result.keywords.map(normalizeKeyword)
           : (result.keywordSuggestions 
-              ? result.keywordSuggestions.map((text: string) => ({ 
-                  id: String(Math.random()),
-                  text, 
-                  is_applied: false 
-                })) 
+              ? result.keywordSuggestions.map(normalizeKeyword)
               : []);
+        
+        // Log normalized keywords for verification
+        console.log('Normalized keywords after text analysis:', keywords);
         
         // Notify parent component of successful optimization
         if (onOptimizationComplete) {

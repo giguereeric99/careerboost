@@ -10,6 +10,7 @@
  * - Improved error handling for different file formats
  * - Loading state visualization during analysis
  * - Auto-switching to preview tab after analysis
+ * - Replace upload button with loading animation during upload
  */
 
 'use client';
@@ -18,7 +19,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { FileUp, CheckCircle, AlertCircle, Upload, FileText } from "lucide-react";
+import { FileUp, CheckCircle, AlertCircle, Upload, FileText, Loader2 } from "lucide-react";
 import { UploadButton, useUploadThing } from "@/utils/uploadthing";
 import { toast } from "sonner";
 import { useUser, SignInButton } from "@clerk/nextjs";
@@ -101,6 +102,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   const [analysisCompleted, setAnalysisCompleted] = useState(false);
   const [showAnalyzeState, setShowAnalyzeState] = useState(false);
   const [uploadedInfo, setUploadedInfo] = useState<{ name: string; size: number; type: string } | null>(null);
+  const [isActiveUpload, setIsActiveUpload] = useState(false);
   
   // Initialize UploadThing hook for drag and drop file uploads
   const { startUpload, isUploading: isUploadingFile } = useUploadThing("resumeUploader");
@@ -528,7 +530,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   if (showAnalyzeState) {
     return <LoadingAnalyzeState />;
   }
-
+  
   // Otherwise render the upload interface
   return (
     <Card>
@@ -578,34 +580,64 @@ const UploadSection: React.FC<UploadSectionProps> = ({
                 }
               }}
             >
-              {/* File icon */}
+              {/* File icon - changes to loader when uploading */}
               <div className="rounded-full bg-blue-50 p-3">
-                <FileUp className="h-6 w-6 text-blue-600" />
+                {isUploadingFile || isUploading || isProcessing ? (
+                  <Loader2 className="h-6 w-6 text-blue-600 animate-spin" />
+                ) : (
+                  <FileUp className="h-6 w-6 text-blue-600" />
+                )}
               </div>
               
               <p className="text-center">
                 {isAnalysisInProgress() 
-                  ? "Analysis in progress..." 
+                  ? "Uploading and analyzing your resume..." 
                   : "Drag & Drop your resume here or use the button below."}
               </p>
 
-              {/* Upload button or sign-in prompt */}
+              {/* Upload button or uploading animation or sign-in prompt */}
               <div className="relative w-full flex justify-center items-center">
                 {isSignedIn ? (
-                  <UploadButton
-                    className={`custom-btn ut-button:bg-blue-600 ut-button:text-white ut-button:rounded-md ut-button:px-4 ut-button:py-2 ut-button:hover:hover:bg-blue-700 ${
-                      shouldDisableUpload() ? 'ut-button:opacity-50 ut-button:cursor-not-allowed' : ''
-                    }`}
-                    endpoint="resumeUploader"
-                    disabled={shouldDisableUpload()}
-                    onClientUploadComplete={handleButtonUpload}
-                    onUploadError={(error) => {
-                      toast.error("Upload error", {
-                        description: error.message,
-                        duration: 6000,
-                      });
-                    }}
-                  />
+                  isActiveUpload || isProcessing || isUploading || isUploadingFile ? (
+                    // Loading animation during upload - completely replaces the button
+                    <div className="flex flex-col items-center py-2 px-4 min-h-[40px] min-w-[120px]">
+                      <div className="w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"></div>
+                      <p className="text-sm text-blue-600 mt-2">
+                        {isProcessing ? "Processing..." : "Uploading..."}
+                      </p>
+                    </div>
+                  ) : (
+                    // Normal UploadButton when not uploading
+                    <UploadButton
+                      className={`custom-btn ut-button:bg-blue-600 ut-button:text-white ut-button:rounded-md ut-button:px-4 ut-button:py-2 ut-button:hover:hover:bg-blue-700 ${
+                        shouldDisableUpload() ? 'ut-button:opacity-50 ut-button:cursor-not-allowed' : ''
+                      }`}
+                      endpoint="resumeUploader"
+                      disabled={shouldDisableUpload()}
+                      // Intercepter le début du téléchargement (si disponible dans votre version d'UploadThing)
+                      onBeforeUploadBegin={(files) => {
+                        console.log("Upload about to begin with files:", files);
+                        setIsActiveUpload(true);
+                        return files;
+                      }}
+                      // Intercepter la fin du téléchargement
+                      onClientUploadComplete={(results) => {
+                        console.log("Upload completed with results:", results);
+                        // Garder l'état actif pendant que nous traitons le fichier
+                        handleButtonUpload(results);
+                        // Ne pas réinitialiser setIsActiveUpload ici - le laisser actif pendant le traitement
+                      }}
+                      onUploadError={(error) => {
+                        console.error("Upload error:", error);
+                        toast.error("Upload error", {
+                          description: error.message,
+                          duration: 6000,
+                        });
+                        // Réinitialiser l'état actif en cas d'erreur
+                        setIsActiveUpload(false);
+                      }}
+                    />
+                  )
                 ) : (
                   <SignInButton mode="modal">
                     <Button className="px-4">You must be signed in to upload</Button>

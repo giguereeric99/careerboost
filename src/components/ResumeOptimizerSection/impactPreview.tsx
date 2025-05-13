@@ -38,6 +38,8 @@ export interface ImpactPreviewProps {
   onApply?: () => void;          // Handler for applying the item
   isDisabled?: boolean;          // Whether the apply button should be disabled
   showApplyButton?: boolean;     // Whether to show the apply button (default: true)
+  isCollapsible?: boolean;       // Whether the component can be collapsed
+  defaultOpen?: boolean;         // Initial collapsed state (if collapsible)
 }
 
 /**
@@ -63,7 +65,7 @@ const getImpactColor = (level: ImpactLevel): string => {
 
 /**
  * Get a human-readable label for an impact level
- * Translates enum values to user-friendly French labels
+ * Translates enum values to user-friendly labels
  * 
  * @param level - Impact level enum value
  * @returns Human-readable impact level label
@@ -71,15 +73,15 @@ const getImpactColor = (level: ImpactLevel): string => {
 const getImpactLabel = (level: ImpactLevel): string => {
   switch (level) {
     case ImpactLevel.CRITICAL:
-      return 'Impact Critique';
+      return 'Critical Impact';
     case ImpactLevel.HIGH:
-      return 'Impact Élevé';
+      return 'High Impact';
     case ImpactLevel.MEDIUM:
-      return 'Impact Moyen';
+      return 'Medium Impact';
     case ImpactLevel.LOW:
-      return 'Impact Faible';
+      return 'Low Impact';
     default:
-      return 'Impact Inconnu';
+      return 'Unknown Impact';
   }
 };
 
@@ -94,7 +96,8 @@ const ImpactContent: React.FC<Omit<ImpactPreviewProps, 'isCollapsible' | 'defaul
   impactLevel,
   description,
   isApplied,
-  onApply
+  onApply,
+  showApplyButton = true
 }) => {
   // State for animating the score display
   const [displayScore, setDisplayScore] = useState(currentScore);
@@ -178,8 +181,8 @@ const ImpactContent: React.FC<Omit<ImpactPreviewProps, 'isCollapsible' | 'defaul
         {/* Impact description text */}
         <p className="text-xs text-gray-600">{description}</p>
         
-        {/* Apply button - only show if not already applied */}
-        {!isApplied && (
+        {/* Apply button - only show if not already applied and if showApplyButton is true */}
+        {!isApplied && showApplyButton && onApply && (
           <button
             onClick={onApply}
             className="mt-2 px-3 py-1 text-xs font-medium rounded-full transition-all duration-200 flex items-center"
@@ -190,7 +193,7 @@ const ImpactContent: React.FC<Omit<ImpactPreviewProps, 'isCollapsible' | 'defaul
             }}
           >
             <TrendingUp className="h-3 w-3 mr-1" />
-            Appliquer (+{pointImpact.toFixed(1)} points)
+            Apply (+{pointImpact.toFixed(1)} points)
           </button>
         )}
         
@@ -198,7 +201,7 @@ const ImpactContent: React.FC<Omit<ImpactPreviewProps, 'isCollapsible' | 'defaul
         {isApplied && (
           <span className="mt-2 inline-block px-3 py-1 text-xs font-medium text-green-600 bg-green-50 rounded-full border border-green-200 flex items-center">
             <CheckCircle className="h-3 w-3 mr-1" />
-            Déjà appliqué
+            Already applied
           </span>
         )}
       </div>
@@ -248,7 +251,10 @@ const ImpactContent: React.FC<Omit<ImpactPreviewProps, 'isCollapsible' | 'defaul
  * of applying a suggestion or keyword on the ATS score
  */
 const ImpactPreview: React.FC<ImpactPreviewProps> = (props) => {
+  // Destructure props with default values for collapsible behavior
   const { isCollapsible = false, defaultOpen = true } = props;
+  
+  // State to track collapsed state if component is collapsible
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
   // If not collapsible, render the content directly

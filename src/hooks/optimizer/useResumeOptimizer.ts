@@ -28,13 +28,73 @@ import {
   Keyword
 } from '@/types/resumeTypes';
 
-// Type guard to check if a value is not null or undefined
+/**
+ * Type guard to check if a value is not null or undefined
+ * Used for safer type narrowing in TypeScript
+ * 
+ * @param value - Value to check
+ * @returns Boolean indicating if value is defined (type predicate)
+ */
 function isDefined<T>(value: T | null | undefined): value is T {
   return value !== null && value !== undefined;
 }
 
 /**
+ * Normalizes a suggestion object to ensure consistent structure
+ * Handles different property naming conventions (camelCase vs snake_case)
+ * 
+ * @param suggestion - Raw suggestion from API or other source
+ * @returns Normalized suggestion with consistent property names
+ */
+function normalizeSuggestion(suggestion: any): Suggestion {
+  return {
+    // Generate ID if missing with fallbacks
+    id: suggestion.id || suggestion.suggestion_id || String(Math.random()),
+    // Ensure basic text properties
+    text: suggestion.text || suggestion.original_text || '',
+    type: suggestion.type || 'general',
+    impact: suggestion.impact || '',
+    // Handle both naming conventions for applied state
+    isApplied: suggestion.isApplied || suggestion.is_applied || false,
+    // Include pointImpact for score calculations
+    pointImpact: suggestion.pointImpact || suggestion.point_impact || 2
+  };
+}
+
+/**
+ * Normalizes a keyword object to ensure consistent structure
+ * Handles different property naming conventions and formats
+ * 
+ * @param keyword - Raw keyword from API (string or object)
+ * @returns Normalized keyword with consistent property names
+ */
+function normalizeKeyword(keyword: any): Keyword {
+  // Handle case where keyword is just a string
+  if (typeof keyword === 'string') {
+    return {
+      id: String(Math.random()),
+      text: keyword,
+      isApplied: false,
+      relevance: 1,
+      pointImpact: 1
+    };
+  }
+  
+  // Handle keyword as an object with potential varying property names
+  return {
+    id: keyword.id || keyword.keyword_id || String(Math.random()),
+    text: keyword.text || keyword.keyword || '',
+    // Support all possible variations of the applied property
+    isApplied: keyword.isApplied || keyword.is_applied || keyword.applied || false,
+    relevance: keyword.relevance || 1,
+    pointImpact: keyword.pointImpact || keyword.point_impact || 1
+  };
+}
+
+/**
  * Custom hook for resume optimization management
+ * Provides comprehensive state and operations for resume editing workflow
+ * 
  * @param userId - The user ID for data fetching
  * @returns Object containing state and methods for resume optimization
  */
@@ -78,34 +138,27 @@ export const useResumeOptimizer = (userId?: string) => {
 
   /**
    * Convert API data to our standardized format
-   * Handles mapping between different property names
+   * Handles mapping between different property names and ensures consistent structure
    * 
    * @param apiData - Raw data from API
    * @returns Formatted data with proper structure
    */
   const convertApiDataToOptimizedFormat = (apiData: any): OptimizedResumeData => {
-    // Convert keywords from API format to application format
+    console.log('Converting API data to optimized format:', apiData);
+    
+    // Convert keywords from API format to application format with enhanced normalization
     const formattedKeywords: Keyword[] = Array.isArray(apiData.keywords) 
-      ? apiData.keywords.map((k: any): Keyword => ({
-          id: k.id || k.keyword_id || String(Math.random()),
-          text: k.keyword || k.text || '',
-          isApplied: k.is_applied || false,
-          relevance: k.relevance || 1,
-          pointImpact: k.point_impact || 1
-        }))
+      ? apiData.keywords.map(normalizeKeyword)
       : [];
     
-    // Convert suggestions from API format to application format
+    // Convert suggestions from API format to application format with enhanced normalization
     const formattedSuggestions: Suggestion[] = Array.isArray(apiData.suggestions) 
-      ? apiData.suggestions.map((s: any): Suggestion => ({
-          id: s.id || s.suggestion_id || String(Math.random()),
-          text: s.text || '',
-          type: s.type || 'general',
-          impact: s.impact || '',
-          isApplied: s.is_applied || false,
-          pointImpact: s.point_impact || 2
-        }))
+      ? apiData.suggestions.map(normalizeSuggestion)
       : [];
+
+    // Log normalized data for debugging
+    console.log('Normalized suggestions:', formattedSuggestions);
+    console.log('Normalized keywords:', formattedKeywords);
     
     // Map to our OptimizedResumeData format with correct type handling
     return {
@@ -385,11 +438,29 @@ export const useResumeOptimizer = (userId?: string) => {
    * @returns Boolean indicating if operation was successful
    */
   const handleApplySuggestion = useCallback(async (suggestionId: string, applyState?: boolean) => {
-    if (!resumeData?.id) return false;
+    // Log the operation with all details for debugging
+    console.log("handleApplySuggestion called with:", { 
+      suggestionId, 
+      applyState, 
+      resumeId: resumeData?.id 
+    });
+    
+    if (!resumeData?.id) {
+      console.error("Cannot apply suggestion: No resume data available");
+      return false;
+    }
     
     // Find the suggestion
     const suggestion = suggestions.find(s => s.id === suggestionId);
-    if (!suggestion) return false;
+    
+    // Log the matched suggestion
+    console.log("Found matching suggestion:", suggestion);
+    
+    if (!suggestion) {
+      console.error("Suggestion not found with ID:", suggestionId);
+      console.log("Available suggestions:", suggestions);
+      return false;
+    }
     
     // Determine new applied state (toggle if not specified)
     const newIsApplied = applyState !== undefined ? applyState : !suggestion.isApplied;
@@ -402,12 +473,19 @@ export const useResumeOptimizer = (userId?: string) => {
         newIsApplied
       );
       
-      if (!success) throw error;
+      if (!success) {
+        console.error("Service failed to update suggestion:", error);
+        throw error;
+      }
+      
+      console.log("Suggestion status updated successfully in database");
       
       // Update local state
-      setSuggestions(suggestions.map(s => 
-        s.id === suggestionId ? { ...s, isApplied: newIsApplied } : s
-      ));
+      setSuggestions(prevSuggestions => 
+        prevSuggestions.map(s => 
+          s.id === suggestionId ? { ...s, isApplied: newIsApplied } : s
+        )
+      );
       
       // Update score 
       const scoreDelta = newIsApplied ? 2 : -2; // Each suggestion is worth 2 points
@@ -442,11 +520,29 @@ export const useResumeOptimizer = (userId?: string) => {
    * @returns Boolean indicating if operation was successful
    */
   const handleKeywordApply = useCallback(async (keywordId: string, applyState?: boolean) => {
-    if (!resumeData?.id) return false;
+    // Log the operation with all details for debugging
+    console.log("handleKeywordApply called with:", { 
+      keywordId, 
+      applyState, 
+      resumeId: resumeData?.id 
+    });
+    
+    if (!resumeData?.id) {
+      console.error("Cannot apply keyword: No resume data available");
+      return false;
+    }
     
     // Find the keyword
     const keyword = keywords.find(k => k.id === keywordId);
-    if (!keyword) return false;
+    
+    // Log the matched keyword
+    console.log("Found matching keyword:", keyword);
+    
+    if (!keyword) {
+      console.error("Keyword not found with ID:", keywordId);
+      console.log("Available keywords:", keywords);
+      return false;
+    }
     
     // Determine new applied state (toggle if not specified)
     const newIsApplied = applyState !== undefined ? applyState : !keyword.isApplied;
@@ -459,12 +555,19 @@ export const useResumeOptimizer = (userId?: string) => {
         newIsApplied
       );
       
-      if (!success) throw error;
+      if (!success) {
+        console.error("Service failed to update keyword:", error);
+        throw error;
+      }
+      
+      console.log("Keyword status updated successfully in database");
       
       // Update local state
-      setKeywords(keywords.map(k => 
-        k.id === keywordId ? { ...k, isApplied: newIsApplied } : k
-      ));
+      setKeywords(prevKeywords => 
+        prevKeywords.map(k => 
+          k.id === keywordId ? { ...k, isApplied: newIsApplied } : k
+        )
+      );
       
       // Update score
       const scoreDelta = newIsApplied ? 1 : -1; // Each keyword is worth 1 point
@@ -504,9 +607,41 @@ export const useResumeOptimizer = (userId?: string) => {
     optimizedTextContent: string,
     resumeId: string,
     scoreValue: number,
-    suggestionsData: Suggestion[],
-    keywordsData: Keyword[]
+    suggestionsData: any[],  // Type any[] to accept different structures
+    keywordsData: any[]      // Type any[] to accept different structures
   ) => {
+    console.log("Updating resume with optimized data:", {
+      resumeId,
+      scoreValue,
+      suggestionsCount: suggestionsData?.length || 0,
+      keywordsCount: keywordsData?.length || 0
+    });
+    
+    // Normalize suggestions to ensure consistent structure
+    const normalizedSuggestions = Array.isArray(suggestionsData) 
+      ? suggestionsData.map((suggestion, index) => {
+          // Log suggestions without IDs for debugging
+          if (!suggestion.id) {
+            console.warn(`Suggestion without ID detected (index ${index}):`, suggestion);
+          }
+          return normalizeSuggestion(suggestion);
+        })
+      : [];
+    
+    // Normalize keywords to ensure consistent structure
+    const normalizedKeywords = Array.isArray(keywordsData)
+      ? keywordsData.map((keyword, index) => {
+          // Log keywords without IDs for debugging
+          if (typeof keyword !== 'string' && !keyword.id) {
+            console.warn(`Keyword without ID detected (index ${index}):`, keyword);
+          }
+          return normalizeKeyword(keyword);
+        })
+      : [];
+    
+    console.log("Normalized suggestions:", normalizedSuggestions);
+    console.log("Normalized keywords:", normalizedKeywords);
+    
     // Update content state
     setOriginalText(optimizedTextContent);
     setOptimizedText(optimizedTextContent);
@@ -516,9 +651,9 @@ export const useResumeOptimizer = (userId?: string) => {
     setOriginalAtsScore(scoreValue);
     setCurrentAtsScore(scoreValue);
     
-    // Update enhancements state
-    setSuggestions(suggestionsData);
-    setKeywords(keywordsData);
+    // Update enhancements state with normalized data
+    setSuggestions(normalizedSuggestions);
+    setKeywords(normalizedKeywords);
     
     // Reset modification tracking
     setContentModified(false);
@@ -721,37 +856,37 @@ export const useResumeOptimizer = (userId?: string) => {
     currentAtsScore,       // Current/edited score
     suggestions,
     keywords,
-    isEditing,
-    selectedTemplate,
-    contentModified,       // Whether there are unsaved changes
-    isLoading,
-    isSaving,
-    isResetting,
-    hasResume,
-    activeTab,
-    
-    // Actions
-    setActiveTab,
-    setIsEditing,
-    loadLatestResume,
-    saveResume,
-    resetResume,
-    handleContentEdit,
-    handleApplySuggestion,
-    handleKeywordApply,
-    updateResumeWithOptimizedData,
-    updateSelectedTemplate,
-    getAppliedKeywords,
-    hasUnsavedChanges,
-    calculateCompletionScore,
-    
-    // Direct state setters (use with caution)
-    setOptimizedText,
-    setCurrentAtsScore,
-    setSuggestions,
-    setKeywords,
-    setContentModified
-  };
+   isEditing,
+   selectedTemplate,
+   contentModified,       // Whether there are unsaved changes
+   isLoading,
+   isSaving,
+   isResetting,
+   hasResume,
+   activeTab,
+   
+   // Actions
+   setActiveTab,
+   setIsEditing,
+   loadLatestResume,
+   saveResume,
+   resetResume,
+   handleContentEdit,
+   handleApplySuggestion,
+   handleKeywordApply,
+   updateResumeWithOptimizedData,
+   updateSelectedTemplate,
+   getAppliedKeywords,
+   hasUnsavedChanges,
+   calculateCompletionScore,
+   
+   // Direct state setters (use with caution)
+   setOptimizedText,
+   setCurrentAtsScore,
+   setSuggestions,
+   setKeywords,
+   setContentModified
+ };
 };
 
 export default useResumeOptimizer;

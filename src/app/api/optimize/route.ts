@@ -21,6 +21,7 @@
  * - Added support for resetting last_saved_text on new uploads
  * - Fixed timeout handling to prevent unhandled rejections
  * - Added handling for RETRY_UPLOAD errors from OpenAI parsing
+ * - Ensures all suggestions and keywords have valid IDs when returned
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -53,6 +54,13 @@ interface ResumeData {
   file_size: number | null;
   ai_provider: string;
   [key: string]: any; // Allow for additional properties
+}
+
+// Interface for keywords with IDs for frontend consumption
+interface KeywordWithId {
+  id: string;
+  text: string;
+  isApplied: boolean;
 }
 
 /**
@@ -98,7 +106,7 @@ export async function POST(req: NextRequest) {
 
     if (fileUrl) {
       // Extract text from uploaded file - FIXED: Now passing fileType to properly handle DOCX files
-      const extractionResult = await extractTextFromFile(fileUrl, fileType);
+      const extractionResult = await extractTextFromFile(fileUrl, fileType || undefined);
       
       if (extractionResult.error) {
         clearTimeout(timeoutId);
@@ -142,7 +150,13 @@ export async function POST(req: NextRequest) {
     console.log(`Detected language: ${language}`);
 
     // Optimize resume with cascade of AI services
-    let optimizationResult: OptimizationResult;
+    let optimizationResult: OptimizationResult & { keywords?: KeywordWithId[] } = {
+      optimizedText: '',
+      suggestions: [],
+      keywordSuggestions: [],
+      atsScore: 0,
+      provider: ''
+    };
     
     try {
       // Create options object with only properties that exist in OptimizationOptions
@@ -198,6 +212,12 @@ export async function POST(req: NextRequest) {
       console.log("Generated fallback optimization");
     }
 
+    // Initialize keywords property if needed
+    // This ensures type safety for later operations
+    if (!optimizationResult.keywords) {
+      optimizationResult.keywords = [];
+    }
+
     // Save results to database if user ID is provided
     let resumeData: ResumeData | null = null;
     if (userId) {
@@ -240,30 +260,67 @@ export async function POST(req: NextRequest) {
           
           // Save keywords if present
           if (optimizationResult.keywordSuggestions?.length > 0) {
+            // Prepare keywords with resume ID reference
             const keywordsToInsert = optimizationResult.keywordSuggestions.map((keyword: string) => ({
-              resume_id: resumeData!.id, // Use non-null assertion as we've checked for resumeData above
+              resume_id: resumeData!.id,
               keyword: keyword,
               is_applied: false
             }));
             
-            await supabaseAdmin
+            // Insert keywords and retrieve the created records with their IDs
+            const { data: insertedKeywords, error: keywordsError } = await supabaseAdmin
               .from('resume_keywords')
-              .insert(keywordsToInsert);
+              .insert(keywordsToInsert)
+              .select(); // Important: this returns inserted records with generated IDs
+            
+            if (keywordsError) {
+              console.error("Error inserting keywords:", keywordsError);
+            } else if (insertedKeywords) {
+              // Create a properly formatted keywords array with IDs for the response
+              // This ensures all keywords have a valid ID from the database
+              // We use the extended type definition to ensure type safety
+              optimizationResult.keywords = insertedKeywords.map(k => ({
+                id: k.id,
+                text: k.keyword,
+                isApplied: k.is_applied // Convert snake_case to camelCase for frontend
+              }));
+              
+              console.log("Keywords saved with IDs:", insertedKeywords.length);
+            }
           }
           
           // Save suggestions if present
           if (optimizationResult.suggestions?.length > 0) {
+            // Prepare suggestions with resume ID reference
             const suggestionsToInsert = optimizationResult.suggestions.map((suggestion: any) => ({
-              resume_id: resumeData!.id, // Use non-null assertion as we've checked for resumeData above
+              resume_id: resumeData!.id,
               type: suggestion.type || "general",
               text: suggestion.text,
               impact: suggestion.impact,
               is_applied: false
             }));
             
-            await supabaseAdmin
+            // Insert suggestions and retrieve the created records with their IDs
+            const { data: insertedSuggestions, error: suggestionsError } = await supabaseAdmin
               .from('resume_suggestions')
-              .insert(suggestionsToInsert);
+              .insert(suggestionsToInsert)
+              .select(); // Important: this returns inserted records with generated IDs
+            
+            if (suggestionsError) {
+              console.error("Error inserting suggestions:", suggestionsError);
+            } else if (insertedSuggestions) {
+              // Replace suggestions in optimization result with those having valid IDs
+              // This ensures all suggestions have an ID from the database
+              optimizationResult.suggestions = insertedSuggestions.map(s => ({
+                id: s.id, // Database-generated ID
+                text: s.text,
+                type: s.type,
+                impact: s.impact,
+                isApplied: s.is_applied // Convert snake_case to camelCase for frontend
+              }));
+              
+              console.log("Suggestions saved with IDs:", insertedSuggestions.length);
+            }
           }
         }
       } catch (dbError) {
@@ -280,10 +337,14 @@ export async function POST(req: NextRequest) {
     // Clear the timeout since we're done
     clearTimeout(timeoutId);
 
-    // Return successful response
+    // Return successful response with properly ID'd suggestions and keywords
     return NextResponse.json({
       success: true,
       ...optimizationResult,
+      // Ensure suggestions and keywords are included with their IDs
+      suggestions: optimizationResult.suggestions || [],
+      // Use the keywords property we've already ensured exists and is typed correctly
+      keywords: optimizationResult.keywords || [],
       data: {
         rawText: resumeText,
         originalText: resumeText,

@@ -8,7 +8,7 @@ import {
   Code,
   Tag 
 } from "lucide-react";
-import { SuggestionType } from '@/types/suggestions';
+import { SuggestionType } from '@/types/suggestionTypes';
 
 /**
  * Define suggestion types with descriptions for better user context

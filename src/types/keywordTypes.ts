@@ -2,7 +2,7 @@
  * Types related to resume keywords
  */
 
-import { IconType } from "lucide-react";
+import { LucideIcon } from "lucide-react";
 
 /**
  * Keyword data structure
@@ -25,7 +25,7 @@ export interface KeywordCategory {
   type: string;           // Category identifier
   title: string;          // Display title
   description: string;    // Description of this category
-  icon?: IconType;        // Optional icon component
+  icon?: LucideIcon;        // Optional icon component
 }
 
 /**
