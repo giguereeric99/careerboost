@@ -117,6 +117,8 @@ export const useResumeOptimizer = (userId?: string) => {
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('basic');
   const [contentModified, setContentModified] = useState<boolean>(false);
+  // New state to track whether score has been modified specifically
+  const [scoreModified, setScoreModified] = useState<boolean>(false);
   
   // Loading states
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -250,8 +252,9 @@ export const useResumeOptimizer = (userId?: string) => {
         setSuggestions(optimizedData.suggestions || []);
         setKeywords(optimizedData.keywords || []);
         
-        // Set content as not modified initially
+        // Reset modification states initially
         setContentModified(false);
+        setScoreModified(false);
         
         // Set template if available
         if (optimizedData.selected_template) {
@@ -331,8 +334,9 @@ export const useResumeOptimizer = (userId?: string) => {
       // Update optimized text to reflect the saved content
       setOptimizedText(contentToSave);
       
-      // Mark content as no longer modified since it was just saved
+      // Mark content and score as no longer modified since they were just saved
       setContentModified(false);
+      setScoreModified(false);
       
       // Display success toast
       toast.success("Changes saved successfully");
@@ -392,6 +396,7 @@ export const useResumeOptimizer = (userId?: string) => {
       // Reset editing state
       setIsEditing(false);
       setContentModified(false);
+      setScoreModified(false);
       
       toast.success("Resume reset to original version");
       return true;
@@ -426,8 +431,12 @@ export const useResumeOptimizer = (userId?: string) => {
     const keywordsBonus = currentAppliedKeywords * 1; // Each keyword worth 1 point
     const newScore = Math.min(100, baseScore + suggestionsBonus + keywordsBonus);
     
-    setCurrentAtsScore(newScore);
-  }, [suggestions, keywords, originalAtsScore]);
+    // Update the score and mark it as modified if it changed
+    if (newScore !== currentAtsScore) {
+      setCurrentAtsScore(newScore);
+      setScoreModified(true);
+    }
+  }, [suggestions, keywords, originalAtsScore, currentAtsScore]);
   
   /**
    * Apply or unapply a suggestion
@@ -495,8 +504,9 @@ export const useResumeOptimizer = (userId?: string) => {
         return Math.min(100, Math.max(0, newScore)); // Ensure score stays between 0-100
       });
       
-      // Mark content as modified since applying suggestions is a change
+      // Mark content and score as modified since applying suggestions is a change
       setContentModified(true);
+      setScoreModified(true);
       
       toast.success(newIsApplied ? 
         "Suggestion applied" : 
@@ -577,8 +587,9 @@ export const useResumeOptimizer = (userId?: string) => {
         return Math.min(100, Math.max(0, newScore)); // Ensure score stays between 0-100
       });
       
-      // Mark content as modified since applying keywords is a change
+      // Mark content and score as modified since applying keywords is a change
       setContentModified(true);
+      setScoreModified(true);
       
       toast.success(newIsApplied ? 
         "Keyword applied" : 
@@ -657,6 +668,7 @@ export const useResumeOptimizer = (userId?: string) => {
     
     // Reset modification tracking
     setContentModified(false);
+    setScoreModified(false);
     
     // Fetch the complete resume data if not already available
     if (!resumeData || resumeData.id !== resumeId) {
@@ -733,8 +745,9 @@ export const useResumeOptimizer = (userId?: string) => {
    * @returns Boolean indicating if there are unsaved changes
    */
   const hasUnsavedChanges = useCallback(() => {
-    return contentModified;
-  }, [contentModified]);
+    // Consider both content and score modifications
+    return contentModified || scoreModified;
+  }, [contentModified, scoreModified]);
   
   /**
    * Get array of applied keywords for templates
@@ -844,6 +857,17 @@ export const useResumeOptimizer = (userId?: string) => {
     }
     
   }, [hasResume, isLoading, toastShown]);
+
+  /**
+   * Checks if the save button should be enabled
+   * Called by UI components to determine button state
+   * 
+   * @returns Boolean indicating if save button should be enabled
+   */
+  const shouldEnableSaveButton = useCallback(() => {
+    // Enable save button if either content or score is modified
+    return contentModified || scoreModified;
+  }, [contentModified, scoreModified]);
   
   // Return the hook interface with all state values and functions
   return {
@@ -856,37 +880,40 @@ export const useResumeOptimizer = (userId?: string) => {
     currentAtsScore,       // Current/edited score
     suggestions,
     keywords,
-   isEditing,
-   selectedTemplate,
-   contentModified,       // Whether there are unsaved changes
-   isLoading,
-   isSaving,
-   isResetting,
-   hasResume,
-   activeTab,
-   
-   // Actions
-   setActiveTab,
-   setIsEditing,
-   loadLatestResume,
-   saveResume,
-   resetResume,
-   handleContentEdit,
-   handleApplySuggestion,
-   handleKeywordApply,
-   updateResumeWithOptimizedData,
-   updateSelectedTemplate,
-   getAppliedKeywords,
-   hasUnsavedChanges,
-   calculateCompletionScore,
-   
-   // Direct state setters (use with caution)
-   setOptimizedText,
-   setCurrentAtsScore,
-   setSuggestions,
-   setKeywords,
-   setContentModified
- };
+    isEditing,
+    selectedTemplate,
+    contentModified,       // Whether content has unsaved changes
+    scoreModified,         // Whether score has unsaved changes (NEW)
+    isLoading,
+    isSaving,
+    isResetting,
+    hasResume,
+    activeTab,
+    
+    // Actions
+    setActiveTab,
+    setIsEditing,
+    loadLatestResume,
+    saveResume,
+    resetResume,
+    handleContentEdit,
+    handleApplySuggestion,
+    handleKeywordApply,
+    updateResumeWithOptimizedData,
+    updateSelectedTemplate,
+    getAppliedKeywords,
+    hasUnsavedChanges,
+    calculateCompletionScore,
+    shouldEnableSaveButton, // NEW: Helper for UI components
+    
+    // Direct state setters (use with caution)
+    setOptimizedText,
+    setCurrentAtsScore,
+    setSuggestions,
+    setKeywords,
+    setContentModified,
+    setScoreModified       // NEW: Direct setter for score modified state
+  };
 };
 
 export default useResumeOptimizer;

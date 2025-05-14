@@ -4,16 +4,25 @@
  * Main component that manages the resume optimization workflow.
  * Uses custom hooks for separation of concerns between uploading and editing.
  * Centralized UI state management for loading views and toasts.
+ * 
+ * Key functionality:
+ * - File upload and parsing
+ * - AI optimization of resume content
+ * - Editing of optimized content with real-time feedback
+ * - Application of AI suggestions and keywords
+ * - Template selection and preview
+ * - Saving and resetting functionality
  */
 
 'use client';
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button"; // Import Button from UI components
 
-// Import components for UI
+// Import UI components
 import UploadSection from '@/components/ResumeOptimizerSection/uploadSection';
 import ResumePreview from '@/components/ResumeOptimizerSection/resumePreview';
 import ScoreCard from '@/components/ResumeOptimizerSection/scoreCard';
@@ -25,11 +34,11 @@ import LoadingState from '@/components/ResumeOptimizerSection/loadingState';
 import EmptyPreviewState from '@/components/ResumeOptimizerSection/emptyPreviewState';
 import { resumeTemplates } from '@/constants/resumeTemplates';
 
-// Import custom hooks
+// Import custom hooks for state management
 import useResumeOptimizer from '@/hooks/optimizer/useResumeOptimizer';
 import useUploadSection from '@/hooks/optimizer/useUploadSection';
 
-// Import types
+// Import types for type safety
 import { Suggestion, Keyword, OptimizedResumeData } from '@/types/resumeTypes';
 import { SuggestionImpact } from '@/types/suggestionTypes';
 
@@ -137,6 +146,8 @@ const ResumeOptimizer: React.FC = () => {
     keywords,           // Relevant keywords for the resume
     isEditing,          // Whether user is in edit mode
     selectedTemplate,   // Currently selected visual template
+    contentModified,    // Whether text content has been modified
+    scoreModified,      // Whether score has been modified (NEW)
     isLoading,          // Loading initial data - IMPORTANT: Used to show LoadingState during initial load
     isSaving,           // Saving changes to database
     isResetting,        // Resetting to original state
@@ -153,7 +164,9 @@ const ResumeOptimizer: React.FC = () => {
     handleApplySuggestion,    // Apply a suggestion to content
     handleKeywordApply,       // Apply a keyword to content
     updateResumeWithOptimizedData,  // Update state with optimization results
-    updateSelectedTemplate     // Update template selection
+    updateSelectedTemplate,    // Update template selection
+    setContentModified,        // Set content modified state
+    setScoreModified          // Set score modified state
   } = useResumeOptimizer(user?.id);
   
   // Use the upload section hook to handle file upload and initial optimization
@@ -278,7 +291,7 @@ const ResumeOptimizer: React.FC = () => {
    * Handle analysis start - show loading state
    * Called when the AI optimization process begins
    */
-  const [showLoadingState, setShowLoadingState] = React.useState(false);
+  const [showLoadingState, setShowLoadingState] = useState(false);
   const handleAnalysisStart = useCallback(() => {
     setShowLoadingState(true);
   }, []);
@@ -313,7 +326,7 @@ const ResumeOptimizer: React.FC = () => {
    * Handle reset dialog confirmation
    * Controls visibility of the reset confirmation dialog
    */
-  const [showResetDialog, setShowResetDialog] = React.useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
   
   /**
    * Handle resume download
@@ -413,8 +426,8 @@ const ResumeOptimizer: React.FC = () => {
   });
   
   /**
-   * Adapter function for onKeywordApply
-   * Converts index-based calls to id-based calls
+   * Enhanced adapter function for onKeywordApply
+   * Converts index-based calls to id-based calls and updates modification state
    * 
    * @param index - Index of keyword in the array
    */
@@ -434,14 +447,21 @@ const ResumeOptimizer: React.FC = () => {
         return;
       }
       
+      // Apply the keyword using the hook's handler
       handleKeywordApply(keyword.id, !keyword.isApplied);
+      
+      // Explicitly mark score as modified when applying keyword
+      // This ensures the save button is enabled after keyword application
+      setScoreModified(true);
+      setContentModified(true);
+      
     } else if (!isEditing) {
       // Optionally notify user that editing is required to apply keywords
       toast.info("Enter edit mode to apply keywords");
     } else {
       console.error(`Invalid keyword index: ${index}. Max: ${mappedKeywords.length - 1}`);
     }
-  }, [isEditing, mappedKeywords, handleKeywordApply]);
+  }, [isEditing, mappedKeywords, handleKeywordApply, setScoreModified, setContentModified]);
   
   /**
    * Adapter function for simulateKeywordImpact
@@ -465,8 +485,9 @@ const ResumeOptimizer: React.FC = () => {
   }, [atsScore]);
   
   /**
-   * Adapter function for applying suggestions
-   * Converts index-based calls to id-based calls and includes validation
+   * Enhanced adapter function for applying suggestions
+   * Converts index-based calls to id-based calls, includes validation
+   * and updates modification state
    * 
    * @param index - The index of the suggestion in the suggestions array
    * @returns Boolean indicating if operation started successfully
@@ -513,6 +534,12 @@ const ResumeOptimizer: React.FC = () => {
       
       // Call the parent handler with suggestion ID and toggle applied state
       handleApplySuggestion(suggestion.id, !suggestion.isApplied);
+      
+      // Explicitly mark score as modified when applying suggestion
+      // This ensures the save button is enabled after suggestion application
+      setScoreModified(true);
+      setContentModified(true);
+      
       return true;
     } else if (!isEditing) {
       // User needs to be in edit mode to apply suggestions
@@ -523,7 +550,7 @@ const ResumeOptimizer: React.FC = () => {
       console.error("Invalid suggestion index:", index, "Max:", mappedSuggestions.length - 1);
       return false;
     }
-  }, [isEditing, mappedSuggestions, resumeData, handleApplySuggestion]);
+  }, [isEditing, mappedSuggestions, resumeData, handleApplySuggestion, setScoreModified, setContentModified]);
   
   /**
    * Adapter function for simulate suggestion impact
@@ -559,6 +586,26 @@ const ResumeOptimizer: React.FC = () => {
     // Call the original handler with defaults for optional parameters
     handleFileUpload(url, name, size || 0, type || '');
   }, [handleFileUpload]);
+
+  /**
+   * Enhanced save handler that resets modification states after save
+   * Centralizes the saving logic and feedback
+   * 
+   * @param content - Content to save
+   * @returns Promise resolving to the save result
+   */
+  const handleSaveWithUpdates = useCallback(async (content: string) => {
+    // Call the original save method
+    const result = await saveResume(content);
+    
+    // If save was successful, reset modification states
+    if (result) {
+      setContentModified(false);
+      setScoreModified(false);
+    }
+    
+    return result;
+  }, [saveResume, setContentModified, setScoreModified]);
 
   // Check for previous toast shown in session storage
   useEffect(() => {
@@ -695,7 +742,7 @@ const ResumeOptimizer: React.FC = () => {
                     appliedKeywords={appliedKeywordsArray}
                     suggestions={mappedSuggestions}
                     onDownload={handleDownload}
-                    onSave={saveResume}
+                    onSave={handleSaveWithUpdates} // Use enhanced save handler
                     onTextChange={handleContentEdit}
                     isOptimizing={isOptimizing}
                     isApplyingChanges={isSaving}
@@ -704,6 +751,8 @@ const ResumeOptimizer: React.FC = () => {
                     onReset={() => setShowResetDialog(true)}
                     // Pass the editing state explicitly
                     isEditing={isEditing}
+                    // Pass scoreModified state - make sure ResumePreview expects this prop
+                    scoreModified={scoreModified}
                   />
                 </div>
 
@@ -748,6 +797,30 @@ const ResumeOptimizer: React.FC = () => {
                     selectedTemplate={selectedTemplate}
                     onTemplateSelect={updateSelectedTemplate}
                   />
+                  
+                  {/* Save button for changes made outside editing mode */}
+                  {!isEditing && (contentModified || scoreModified) && (
+                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                      <h3 className="text-sm font-medium text-amber-800 mb-2">Unsaved Changes</h3>
+                      <p className="text-xs text-amber-700 mb-3">
+                        You have unsaved changes to your resume. Save now to keep your progress.
+                      </p>
+                      <Button 
+                        onClick={() => handleSaveWithUpdates(displayContent)}
+                        disabled={isSaving}
+                        className="w-full bg-amber-600 hover:bg-amber-700"
+                      >
+                        {isSaving ? (
+                          <>
+                            <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                            Saving...
+                          </>
+                        ) : (
+                          'Save Changes'
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </>

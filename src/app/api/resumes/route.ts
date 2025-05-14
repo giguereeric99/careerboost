@@ -771,7 +771,7 @@ function sanitizeHtml(html: string): string {
         'data-section', 'data-section-id', 'title', 'alt'
       ],
       // Enable these DOMPurify options for better security
-      ADD_ATTR: ['target'], // Add target attribute to links
+      ADD_ATTR: ['target', 'id'], // Add 'id' to preserve IDs without prefixing
       ADD_URI_SAFE_ATTR: ['style'], // Allow style attributes with safe values
       ALLOW_ARIA_ATTR: true, // Allow ARIA attributes
       USE_PROFILES: { html: true }, // Use HTML profile
@@ -783,7 +783,10 @@ function sanitizeHtml(html: string): string {
       RETURN_DOM_IMPORT: false, // Don't return imported DOM
       FORCE_BODY: false, // Don't force a body element
       SANITIZE_NAMED_PROPS: true, // Sanitize named properties (e.g. innerHTML)
-      ALLOW_DATA_ATTR: false // Don't allow data attributes by default (too risky)
+      ALLOW_DATA_ATTR: false, // Don't allow data attributes by default (too risky)
+      ALLOW_UNKNOWN_PROTOCOLS: false, // Don't allow unknown protocols
+      // Add this to prevent prefixing of user-supplied IDs
+      ADD_TAGS: ['section'] // Ensure section is explicitly allowed
     });
   } catch (error) {
     console.error("Error sanitizing HTML:", error);

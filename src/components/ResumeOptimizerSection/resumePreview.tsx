@@ -75,7 +75,8 @@ interface ResumePreviewProps {
   onReset?: () => void;                 // Optional callback for reset button
   onRegenerateContent?: () => void;     // Optional callback for regenerating content with applied changes
   needsRegeneration?: boolean;          // Whether the content needs regeneration after applying changes
-  isEditing?: boolean;                  // NEW: Whether the resume is in edit mode (controlled by parent)
+  isEditing?: boolean;                  // Whether the resume is in edit mode (controlled by parent)
+  scoreModified?: boolean;              // Whether the score has been modified due to applied suggestions/keywords
 }
 
 /**
@@ -98,7 +99,8 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   onReset,
   onRegenerateContent,
   needsRegeneration = false,
-  isEditing // NEW: Using isEditing prop from parent component
+  isEditing, // Whether the resume is in edit mode (controlled by parent)
+  scoreModified = false // Whether score has been modified (default: false)
 }) => {
   // UI state - Now checking if isEditing is provided by parent
   // If isEditing is provided by parent, we use it for controlled mode
@@ -146,7 +148,11 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       // Additional options to preserve formatting
       ALLOW_ARIA_ATTR: true,
       USE_PROFILES: { html: true },
-      KEEP_CONTENT: true
+      ALLOW_DATA_ATTR: true,
+      SANITIZE_DOM: false,
+      KEEP_CONTENT: true,
+      // Add this to explicitly allow ID attributes without prefixing
+      ADD_ATTR: ['id']
     });
   }, []);
 
@@ -222,11 +228,12 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     // 1. The onReset callback exists
     // 2. Either the content is currently modified OR 
     // 3. The content was modified at some point and differs from original
+    // 4. OR the score has been modified (NEW)
     
     if (!onReset) return false;
     
-    // If content is currently modified, show reset button
-    if (contentModified) return true;
+    // If content or score is currently modified, show reset button
+    if (contentModified || scoreModified) return true;
     
     // If content has been modified before and current content differs from original
     const currentContent = previewContent || optimizedText;
@@ -237,7 +244,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     }
     
     return false;
-  }, [onReset, contentModified, hasBeenModified, previewContent, optimizedText, originalOptimizedText]);
+  }, [onReset, contentModified, scoreModified, hasBeenModified, previewContent, optimizedText, originalOptimizedText]);
   
   /**
    * Combine non-empty sections into complete HTML
@@ -605,6 +612,12 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   const displayedContent = previewContent || optimizedText;
 
   /**
+   * Determine if save button should be enabled
+   * Now considering both content modification and score modification
+   */
+  const shouldEnableSave = contentModified || scoreModified;
+
+  /**
    * Main render
    */
   return (
@@ -616,7 +629,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         openPreview={openPreview}
         handleSave={handleSave}
         isSaving={isSaving}
-        contentModified={contentModified}
+        contentModified={shouldEnableSave} // Use combined state
         optimizedText={optimizedText}
         onReset={shouldShowReset ? handleReset : undefined}
       />
@@ -625,7 +638,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       {!optimizedText && <NoContentWarning />}
       
       {/* Modified indicator - show in both edit and preview modes */}
-      {contentModified && (
+      {shouldEnableSave && (
         <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-4 text-sm text-blue-700 flex items-center">
           <span className="h-2 w-2 bg-blue-500 rounded-full mr-2"></span>
           You have unsaved changes. Click "Save Changes" to apply your modifications.
@@ -677,10 +690,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
               Cancel
             </Button>
             
-            {/* Save button */}
+            {/* Save button - now considers both content and score modifications */}
             <Button 
               onClick={handleSave}
-              disabled={isSaving || !contentModified}
+              disabled={isSaving || !shouldEnableSave}
               className="bg-brand-600 hover:bg-brand-700"
             >
               {isSaving ? (

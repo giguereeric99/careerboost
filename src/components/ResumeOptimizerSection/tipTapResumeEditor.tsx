@@ -6,7 +6,7 @@
  * - Rich text formatting capabilities
  * - Section-specific editing
  * - Support for applying suggestions
- * - Keyword integration
+ * - Keyword integration removed from editor display
  * - ID preservation for resume sections
  */
 
@@ -405,25 +405,7 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
         />
       </div>
       
-      {/* Applied keywords section (if provided) */}
-      {!readOnly && appliedKeywords.length > 0 && (
-        <div className="p-4 border-t bg-gray-50">
-          <p className="text-sm font-medium mb-2">{uiText.keywordsTitle}</p>
-          <div className="flex flex-wrap gap-1">
-            {appliedKeywords.map((keyword, index) => (
-              <Button
-                key={index}
-                variant="outline" 
-                size="sm"
-                className="text-xs"
-                onClick={() => insertKeyword(keyword)}
-              >
-                {keyword}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Removed applied keywords section - this is what you didn't want */}
       
       {/* Suggestions section with Apply Changes button */}
       {!readOnly && suggestions.length > 0 && (
