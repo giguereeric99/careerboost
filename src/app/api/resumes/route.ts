@@ -737,8 +737,26 @@ async function getOrCreateSupabaseUuid(supabaseAdmin: any, clerkUserId: string):
  * @param html - Raw HTML content from the client
  * @returns Sanitized HTML content
  */
+/**
+ * Sanitizes HTML content to prevent XSS attacks using DOMPurify with JSDOM
+ * Enhanced version for server-side use with ID preservation
+ * 
+ * @param html - Raw HTML content from the client
+ * @returns Sanitized HTML content
+ */
+/**
+ * Sanitizes HTML content to prevent XSS attacks using DOMPurify with JSDOM
+ * Enhanced version for server-side use that preserves IDs with hooks
+ * 
+ * @param html - Raw HTML content from the client
+ * @returns Sanitized HTML content
+ */
 function sanitizeHtml(html: string): string {
   try {
+    // Log the beginning of sanitization process for debugging
+    console.log("===== STARTING HTML SANITIZATION =====");
+    console.log(`Sanitizing HTML content (length: ${html?.length || 0})`);
+    
     // Safety check for null/undefined input
     if (!html) {
       console.warn("Empty HTML content provided for sanitization");
@@ -756,14 +774,80 @@ function sanitizeHtml(html: string): string {
         .replace(/javascript:/gi, ''); // Remove javascript: protocol
     }
     
+    // Sample HTML before sanitization for debugging (log just the first 100 chars)
+    const sampleBefore = html.substring(0, 100).replace(/</g, '&lt;');
+    console.log(`HTML before sanitization (sample): ${sampleBefore}...`);
+    
+    // Extract the IDs before sanitization for comparison
+    const originalIdRegex = /id=["']([^"']+)["']/g;
+    const originalIds: string[] = [];
+    let match;
+    let originalHtml = html; // Save original for hook reference
+    
+    while ((match = originalIdRegex.exec(html)) !== null) {
+      originalIds.push(match[1]);
+    }
+    
+    console.log(`Found ${originalIds.length} IDs before sanitization:`, 
+    originalIds.length > 0 ? originalIds.slice(0, 5) : []);
+    
+    // Register a one-time hook for this specific sanitization call
+    // This hook will be used just for this call and then removed
+    const hookId = `fixIds-${Date.now()}`;
+    DOMPurify.addHook('afterSanitizeAttributes', function(node) {
+      // Only process nodes that have an id attribute
+      if (node.hasAttribute('id')) {
+        const currentId = node.getAttribute('id');
+        
+        // Check if the ID looks modified (contains a prefix like user-content-)
+        if (currentId && currentId.includes('-')) {
+          const securityPrefixRegex = /^(dompurify|user|sanitize|safe|content|clean)[-_]/i;
+          
+          // If ID has a security prefix
+          if (securityPrefixRegex.test(currentId)) {
+            // Extract the potential original ID parts
+            const idParts = currentId.split('-');
+            
+            // Look for resume section patterns
+            if (idParts.some(part => part === 'resume')) {
+              // Find where "resume" appears in the parts
+              const resumeIndex = idParts.findIndex(part => part === 'resume');
+              
+              // Reconstruct original ID, preserving the resume-xxx pattern
+              if (resumeIndex >= 0) {
+                const reconstructedId = idParts.slice(resumeIndex).join('-');
+                console.log(`Fixing ID from ${currentId} to ${reconstructedId}`);
+                node.setAttribute('id', reconstructedId);
+              }
+            } else {
+              // For non-resume IDs, try to match against original IDs
+              // Remove the security prefix to see if it matches any original ID
+              const unprefixedId = currentId.replace(securityPrefixRegex, '');
+              
+              // Check if this unprefixed ID matches or is contained in any original ID
+              for (const origId of originalIds) {
+                if (origId === unprefixedId || origId.endsWith(unprefixedId)) {
+                  console.log(`Restoring ID from ${currentId} to ${origId}`);
+                  node.setAttribute('id', origId);
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // Now perform sanitization with DOMPurify (with SANITIZE_DOM enabled for security)
+    console.log("Running DOMPurify sanitization with ID preservation hook...");
+    
     // Use DOMPurify for comprehensive sanitization with JSDOM
-    return DOMPurify.sanitize(html, {
+    let sanitizedHtml = DOMPurify.sanitize(html, {  // Use let instead of const here
       // Allow most standard HTML tags
       ALLOWED_TAGS: [
-        'a', 'b', 'blockquote', 'br', 'caption', 'code', 'div', 'em',
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'li', 'nl', 'ol',
-        'p', 'pre', 'section', 'span', 'strong', 'table', 'tbody',
-        'td', 'th', 'thead', 'tr', 'u', 'ul'
+        'b', 'br', 'caption', 'div', 'em',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'li', 'ol',
+        'p', 'section', 'span', 'strong', 'ul'
       ],
       // Allow common attributes
       ALLOWED_ATTR: [
@@ -776,18 +860,72 @@ function sanitizeHtml(html: string): string {
       ALLOW_ARIA_ATTR: true, // Allow ARIA attributes
       USE_PROFILES: { html: true }, // Use HTML profile
       WHOLE_DOCUMENT: false, // Don't sanitize the entire document
-      SANITIZE_DOM: true, // Sanitize DOM elements
+      SANITIZE_DOM: true, // Keep this enabled for better security
       KEEP_CONTENT: true, // Keep content of elements when removing elements
       RETURN_DOM: false, // Return HTML as string, not DOM
       RETURN_DOM_FRAGMENT: false, // Don't return DOM fragment
       RETURN_DOM_IMPORT: false, // Don't return imported DOM
       FORCE_BODY: false, // Don't force a body element
       SANITIZE_NAMED_PROPS: true, // Sanitize named properties (e.g. innerHTML)
-      ALLOW_DATA_ATTR: false, // Don't allow data attributes by default (too risky)
+      ALLOW_DATA_ATTR: true, // Allow data attributes for compatibility with our resume sections
       ALLOW_UNKNOWN_PROTOCOLS: false, // Don't allow unknown protocols
-      // Add this to prevent prefixing of user-supplied IDs
       ADD_TAGS: ['section'] // Ensure section is explicitly allowed
     });
+    
+    // Remove the temporary hook after use
+    DOMPurify.removeHook('afterSanitizeAttributes');
+    
+    // Sample HTML after sanitization for debugging (log just the first 100 chars)
+    const sampleAfter = sanitizedHtml.substring(0, 100).replace(/</g, '&lt;');
+    console.log(`HTML after sanitization (sample): ${sampleAfter}...`);
+    
+    // Extract the IDs after sanitization to check if they've been preserved correctly
+    const sanitizedIdRegex = /id=["']([^"']+)["']/g;
+    const sanitizedIds: string[] = [];
+    let sanitizedMatch;
+    while ((sanitizedMatch = sanitizedIdRegex.exec(sanitizedHtml)) !== null) {
+      sanitizedIds.push(sanitizedMatch[1]);
+    }
+    
+    console.log(`Found ${sanitizedIds.length} IDs after sanitization:`, 
+    sanitizedIds.length > 0 ? sanitizedIds.slice(0, 5) : []);
+    
+    // Check if all resume-prefixed IDs have been preserved correctly
+    const resumeIds = originalIds.filter(id => id.startsWith('resume-'));
+    const missingSectionIds = resumeIds.filter(id => !sanitizedIds.includes(id));
+    
+    if (missingSectionIds.length > 0) {
+      console.warn(`Some section IDs were not preserved during sanitization: ${missingSectionIds.slice(0, 5)}`);
+      
+      // Last resort: manual post-processing to fix missing IDs
+      let fixedHtml = sanitizedHtml;
+      
+      for (const id of missingSectionIds) {
+        // Try to find prefixed versions of the ID and fix them manually
+        const potentialPrefixes = ['user-content-', 'dompurify-', 'sanitize-'];
+        
+        for (const prefix of potentialPrefixes) {
+          const prefixedId = `${prefix}${id}`;
+          const regex = new RegExp(`id=["']${prefixedId}["']`, 'g');
+          
+          if (fixedHtml.match(regex)) {
+            console.log(`Post-processing fix: replacing ${prefixedId} with ${id}`);
+            fixedHtml = fixedHtml.replace(regex, `id="${id}"`);
+          }
+        }
+      }
+      
+      // If we had to fix something, return the fixed HTML
+      if (fixedHtml !== sanitizedHtml) {
+        console.log("Post-processing fixes were applied to restore section IDs");
+        sanitizedHtml = fixedHtml;  // Now this works since sanitizedHtml is let
+      }
+    } else {
+      console.log("All section IDs were successfully preserved during sanitization");
+    }
+    
+    console.log("===== COMPLETED HTML SANITIZATION =====");
+    return sanitizedHtml;
   } catch (error) {
     console.error("Error sanitizing HTML:", error);
     // Fallback to simple HTML entity encoding if sanitization fails
