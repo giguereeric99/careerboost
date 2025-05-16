@@ -7,6 +7,7 @@
  * - AI-powered optimization and enhancement
  * - Resume retrieval and manipulation
  * - ATS (Applicant Tracking System) compatibility scoring
+ * - Atomic saving operations to ensure data consistency
  * 
  * The service handles interaction with backend storage and AI processing while
  * providing appropriate error handling and user feedback.
@@ -265,99 +266,6 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
 }
 
 /**
- * Updates the status of a keyword for a resume
- * Uses the API route instead of direct database access for security
- * 
- * @param resumeId - The resume ID
- * @param keyword - The keyword to update
- * @param applied - Whether the keyword has been applied
- * @returns Success status and any error
- */
-export async function updateKeywordStatus(
-  resumeId: string,
-  keyword: string,
-  applied: boolean
-): Promise<{ success: boolean; error: Error | null }> {
-  try {
-    // Call the API to update keyword status
-    const response = await fetch('/api/resumes/keywords', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        resumeId, 
-        keywords: [{ text: keyword, applied }] 
-      })
-    });
-    
-    // Handle API errors
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to update keyword");
-    }
-    
-    return { success: true, error: null };
-  } catch (error: any) {
-    // Log error for debugging and return error object
-    console.error("Error updating keyword status:", error);
-    return { success: false, error };
-  }
-}
-
-/**
- * Updates the status of a suggestion for a resume
- * Uses the API route instead of direct database access for security
- * 
- * @param resumeId - The resume ID
- * @param suggestionId - The suggestion ID
- * @param applied - Whether the suggestion has been applied
- * @returns Success status and any error
- */
-export async function updateSuggestionStatus(
-  resumeId: string,
-  suggestionId: string,
-  applied: boolean
-): Promise<{ success: boolean; error: Error | null }> {
-  try {
-    // Validation des paramètres
-    if (!resumeId || !suggestionId || applied === undefined) {
-      const error = new Error("Missing required parameters: resumeId, suggestionId, and applied status");
-      console.error("updateSuggestionStatus validation error:", {
-        resumeId,
-        suggestionId,
-        applied,
-        error
-      });
-      return { success: false, error };
-    }
-    
-    // Call the API to update suggestion status
-    console.log("Sending request to update suggestion:", {
-      resumeId,
-      suggestionId,
-      applied
-    });
-    
-    const response = await fetch('/api/resumes/suggestions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resumeId, suggestionId, applied })
-    });
-    
-    // Handle API errors
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to update suggestion");
-    }
-    
-    return { success: true, error: null };
-  } catch (error: any) {
-    // Log error for debugging and return error object
-    console.error("Error updating suggestion status:", error);
-    return { success: false, error };
-  }
-}
-
-/**
  * Validates if a resume load attempt should be made
  * Helps prevent infinite loading loops for non-existent resumes
  * 
@@ -400,59 +308,71 @@ export function isValidNoResumeState(response: Response, result: any): boolean {
 }
 
 /**
- * Save resume content and score
- * Updates the resume content and score in the database via API
+ * Save resume complete with all changes atomically
+ * Uses a Supabase RPC function to ensure all related data is saved in a single transaction
+ * This replaces the previous saveResumeContent, updateKeywordStatus, and updateSuggestionStatus functions
+ * with a single atomic operation
  * 
  * @param resumeId - The ID of the resume to update
  * @param content - The new content to save
  * @param atsScore - The new ATS score
+ * @param appliedSuggestionIds - Array of suggestion IDs that are applied
+ * @param appliedKeywords - Array of keywords that are applied
  * @returns Success status and any error
  */
-export async function saveResumeContent(
-  resumeId: string, 
-  content: string, 
-  atsScore: number
+export async function saveResumeComplete(
+  resumeId: string,
+  content: string,
+  atsScore: number,
+  appliedSuggestionIds: string[],
+  appliedKeywords: string[]
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
     // Log debugging information
-    console.log('Saving resume content:', {
+    console.log('Saving resume completely with atomic transaction:', {
       resumeId,
       contentLength: content.length,
-      atsScore
+      atsScore,
+      suggestionCount: appliedSuggestionIds.length,
+      keywordCount: appliedKeywords.length
     });
 
     // Validate parameters
     if (!resumeId || !content) {
-      console.error('saveResumeContent: Missing required parameters');
+      console.error('saveResumeComplete: Missing required parameters');
       return { success: false, error: new Error('Missing required parameters') };
     }
 
-    // Use the API route instead of direct Supabase query for better error handling
-    const response = await fetch('/api/resumes', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        resumeId,
-        content,
-        atsScore
-      }),
-    });
+    // Call the Supabase RPC function
+    const { data, error } = await supabase.rpc(
+      'save_resume_complete',
+      {
+        p_resume_id: resumeId,
+        p_content: content,
+        p_ats_score: atsScore,
+        p_applied_suggestions: appliedSuggestionIds,
+        p_applied_keywords: appliedKeywords
+      }
+    );
 
-    // Parse the response to get error details
-    const result = await response.json();
-    
-    // Check if the API returned an error
-    if (!response.ok) {
-      throw new Error(result.error || 'Failed to save resume');
+    if (error) {
+      console.error('Error during save_resume_complete RPC call:', error);
+      throw error;
     }
     
-    // Request successful
+    // data will be true if successful
+    if (data !== true) {
+      console.error('Save failed on server side');
+      throw new Error('Failed to save resume');
+    }
+    
+    console.log(`Resume ${resumeId} saved successfully with all changes`);
+    
+    // Success - return success status
     return { success: true, error: null };
   } catch (error) {
-    // Log error for debugging and return error object
-    console.error("Error saving resume content:", error);
+    // Log the error and return it
+    console.error("Error saving resume completely:", error);
     return { success: false, error: error as Error };
   }
 }
@@ -460,7 +380,7 @@ export async function saveResumeContent(
 /**
  * Reset resume to original version
  * Removes all applied changes and reverts to the original optimized version
- * Uses the API route instead of direct database access
+ * Uses the Supabase RPC function for atomic operations
  * 
  * @param resumeId - The ID of the resume to reset
  * @returns Success status and any error

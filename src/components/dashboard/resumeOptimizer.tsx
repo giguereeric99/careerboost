@@ -524,7 +524,8 @@ const ResumeOptimizer: React.FC = () => {
 
   /**
    * Enhanced adapter function for onKeywordApply
-   * Converts index-based calls to id-based calls and updates modification state
+   * Updates only local state without saving to database immediately
+   * Now follows the atomic save approach where all changes are saved together
    *
    * @param index - Index of keyword in the array
    */
@@ -536,7 +537,7 @@ const ResumeOptimizer: React.FC = () => {
       if (isEditing && index >= 0 && index < mappedKeywords.length) {
         const keyword = mappedKeywords[index];
 
-        console.log(`Applying keyword:`, keyword);
+        console.log(`Applying keyword (local only):`, keyword);
 
         // Handle missing ID with warning
         if (!keyword.id) {
@@ -545,7 +546,7 @@ const ResumeOptimizer: React.FC = () => {
           return;
         }
 
-        // Apply the keyword using the hook's handler
+        // Apply the keyword using the hook's handler - now only updates local state
         handleKeywordApply(keyword.id, !keyword.isApplied);
 
         // Explicitly mark score as modified when applying keyword
@@ -553,7 +554,7 @@ const ResumeOptimizer: React.FC = () => {
         setScoreModified(true);
         setContentModified(true);
       } else if (!isEditing) {
-        // Optionally notify user that editing is required to apply keywords
+        // Notify user that editing is required to apply keywords
         toast.info("Enter edit mode to apply keywords");
       } else {
         console.error(
@@ -597,11 +598,11 @@ const ResumeOptimizer: React.FC = () => {
 
   /**
    * Enhanced adapter function for applying suggestions
-   * Converts index-based calls to id-based calls, includes validation
-   * and updates modification state
+   * Updates only local state without saving to database immediately
+   * Now follows the atomic save approach where all changes are saved together
    *
    * @param index - The index of the suggestion in the suggestions array
-   * @returns Boolean indicating if operation started successfully
+   * @returns Boolean indicating if operation was successful
    */
   const handleApplySuggestionAdapter = useCallback(
     (index: number) => {
@@ -611,7 +612,7 @@ const ResumeOptimizer: React.FC = () => {
       if (isEditing && index >= 0 && index < mappedSuggestions.length) {
         const suggestion = mappedSuggestions[index];
 
-        console.log(`Applying suggestion:`, suggestion);
+        console.log(`Applying suggestion (local only):`, suggestion);
 
         // Validate that the suggestion has a valid ID
         if (!suggestion.id) {
@@ -639,7 +640,7 @@ const ResumeOptimizer: React.FC = () => {
         }
 
         // Log the operation for debugging
-        console.log("Applying suggestion:", {
+        console.log("Applying suggestion (local state only):", {
           resumeId: resumeData.id,
           suggestionId: suggestion.id,
           suggestion: suggestion.text,
@@ -648,6 +649,7 @@ const ResumeOptimizer: React.FC = () => {
         });
 
         // Call the parent handler with suggestion ID and toggle applied state
+        // Now only updates local state without making API calls
         handleApplySuggestion(suggestion.id, !suggestion.isApplied);
 
         // Explicitly mark score as modified when applying suggestion
@@ -724,21 +726,45 @@ const ResumeOptimizer: React.FC = () => {
   );
 
   /**
-   * Enhanced save handler that resets modification states after save
-   * Centralizes the saving logic and feedback
+   * Enhanced save handler that handles all changes in a single atomic transaction
+   * Collects all applied suggestions and keywords and saves them with the content
    *
    * @param content - Content to save
    * @returns Promise resolving to the save result
    */
   const handleSaveWithUpdates = useCallback(
     async (content: string) => {
-      // Call the original save method
+      // Create a unique ID for this save operation's toast
+      const toastId = "saving-changes-toast";
+
+      // Show processing state to user with the ID
+      toast.loading("Saving all changes...", {
+        id: toastId,
+        description: "Saving resume content, keywords, and suggestions.",
+      });
+
+      // Call the atomic save method from the hook
       const result = await saveResume(content);
 
-      // If save was successful, reset modification states
+      // If save was successful
       if (result) {
+        // Reset modification states
         setContentModified(false);
         setScoreModified(false);
+
+        // Update the toast to show success using the same ID
+        toast.success("All changes saved successfully", {
+          id: toastId,
+          description:
+            "Your resume, keywords, and suggestions have been updated.",
+        });
+      } else {
+        // Update the toast to show error using the same ID
+        toast.error("Failed to save changes", {
+          id: toastId,
+          description:
+            "Please try again. If the problem persists, contact support.",
+        });
       }
 
       return result;
@@ -955,33 +981,6 @@ const ResumeOptimizer: React.FC = () => {
                     selectedTemplate={selectedTemplate}
                     onTemplateSelect={updateSelectedTemplate}
                   />
-
-                  {/* Save button for changes made outside editing mode */}
-                  {!isEditing && (contentModified || scoreModified) && (
-                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-4">
-                      <h3 className="text-sm font-medium text-amber-800 mb-2">
-                        Unsaved Changes
-                      </h3>
-                      <p className="text-xs text-amber-700 mb-3">
-                        You have unsaved changes to your resume. Save now to
-                        keep your progress.
-                      </p>
-                      <Button
-                        onClick={() => handleSaveWithUpdates(displayContent)}
-                        disabled={isSaving}
-                        className="w-full bg-amber-600 hover:bg-amber-700"
-                      >
-                        {isSaving ? (
-                          <>
-                            <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                            Saving...
-                          </>
-                        ) : (
-                          "Save Changes"
-                        )}
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
             </>

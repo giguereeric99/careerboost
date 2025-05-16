@@ -10,6 +10,7 @@
  * - Download functionality
  * - Reset to original version (always visible in preview mode)
  * - Real-time updates when applying suggestions and keywords
+ * - Updated to work with atomic save approach
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
@@ -24,6 +25,8 @@ import {
   FileText,
   RotateCcw,
   AlertCircle,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import {
   Accordion,
@@ -509,6 +512,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   /**
    * Handle save button click
    * Performs validation, saves content, and updates UI states
+   * Updated to reflect atomic save approach - saves all changes at once
    */
   const handleSave = useCallback(async () => {
     // Prevent simultaneous save operations
@@ -531,11 +535,25 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         return;
       }
 
+      // Notify user that we're saving all changes
+      // toast.loading("Saving all changes...", {
+      //   id: "save-changes-toast",
+      //   description:
+      //     "Saving resume content, applied keywords, and suggestions...",
+      // });
+
       // Call parent save handler and await its result
       const saveResult = await Promise.resolve(onSave(combinedHtml));
 
       // Handle success case
       if (saveResult) {
+        // Dismiss loading toast and show success
+        // toast.success("All changes saved successfully", {
+        //   id: "save-changes-toast",
+        //   description:
+        //     "Resume content, keywords, and suggestions have been updated.",
+        // });
+
         // Update local state
         setContentModified(false);
 
@@ -571,12 +589,18 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         }
       } else {
         // Handle failure case
-        toast.error("Failed to save resume");
+        toast.error("Failed to save resume", {
+          id: "save-changes-toast",
+          description: "An error occurred while saving your changes.",
+        });
       }
     } catch (error) {
       // Log error and show error toast
       console.error("Error saving resume:", error);
-      toast.error("Failed to save resume");
+      toast.error("Failed to save resume", {
+        id: "save-changes-toast",
+        description: "An unexpected error occurred. Please try again.",
+      });
     } finally {
       // Always reset saving state when done
       setIsSaving(false);
@@ -674,12 +698,17 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       {/* Warning if no content is available */}
       {!optimizedText && <NoContentWarning />}
 
-      {/* Modified indicator - show in both edit and preview modes */}
+      {/* Modified indicator - show in both edit and preview modes with warning icon */}
       {shouldEnableSave && (
-        <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-4 text-sm text-blue-700 flex items-center">
-          <span className="h-2 w-2 bg-blue-500 rounded-full mr-2"></span>
-          You have unsaved changes. Click "Save Changes" to apply your
-          modifications.
+        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4 text-sm text-amber-700 flex items-start">
+          <AlertTriangle className="h-4 w-4 mr-2 mt-0.5 text-amber-500 flex-shrink-0" />
+          <div>
+            <p className="font-medium">You have unsaved changes</p>
+            <p className="text-xs mt-1">
+              This includes content edits, applied keywords, and suggestions.
+              Click "Save Changes" to update your resume with all modifications.
+            </p>
+          </div>
         </div>
       )}
 
@@ -721,27 +750,36 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
           <div className="pt-4 flex justify-end gap-2">
             {/* Cancel button */}
             <Button variant="outline" size="sm" onClick={toggleEditMode}>
-              Cancel
+              <X className="h-4 w-4 mr-2" /> Cancel
             </Button>
 
             {/* Save button - considers content and score modifications */}
             <Button
+              size="sm"
               onClick={handleSave}
               disabled={isSaving || !shouldEnableSave}
-              className="bg-brand-600 hover:bg-brand-700"
+              className="bg-brand-600 hover:bg-brand-700 "
             >
               {isSaving ? (
                 <>
                   <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                  Saving...
+                  Saving all changes...
                 </>
               ) : (
                 <>
-                  <Check className="h-4 w-4 mr-2" /> Save & Apply Changes
+                  <Save className="h-4 w-4 mr-2" /> Save Changes
                 </>
               )}
             </Button>
           </div>
+
+          {/* Atomic save notice */}
+          {shouldEnableSave && (
+            <div className="mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-gray-200">
+              Clicking "Save Changes" will save your resume content and all
+              applied keywords and suggestions.
+            </div>
+          )}
         </div>
       ) : (
         <PreviewContent

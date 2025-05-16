@@ -14,10 +14,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { 
-  getLatestOptimizedResume, 
-  updateKeywordStatus, 
-  updateSuggestionStatus,
-  saveResumeContent,
+  getLatestOptimizedResume,
+  saveResumeComplete, // New atomic save function
   resetResumeToOriginal,
   updateResumeTemplate
 } from '@/services/resumeService';
@@ -303,24 +301,37 @@ export const useResumeOptimizer = (userId?: string) => {
       // Set saving state to show loading indicators
       setIsSaving(true);
       
-      // Log saving attempt
-      console.log("Saving resume:", {
+      // Get all applied suggestion IDs
+      const appliedSuggestionIds = suggestions
+        .filter(s => s.isApplied)
+        .map(s => s.id);
+      
+      // Get all applied keywords
+      const appliedKeywords = keywords
+        .filter(k => k.isApplied)
+        .map(k => k.text);
+      
+      // Log saving attempt with complete details
+      console.log("Saving resume with atomic transaction:", {
         resumeId: resumeData.id,
         contentLength: contentToSave.length,
-        atsScore: currentAtsScore || 0
+        atsScore: currentAtsScore || 0,
+        appliedSuggestions: appliedSuggestionIds.length,
+        appliedKeywords: appliedKeywords.length
       });
       
-      // Use the updated saveResumeContent service function
-      // This now uses the API route instead of direct Supabase access
-      const { success, error } = await saveResumeContent(
+      // Use the new atomic save function that handles all changes in a single transaction
+      const { success, error } = await saveResumeComplete(
         resumeData.id, 
         contentToSave, 
-        currentAtsScore || 0
+        currentAtsScore || 0,
+        appliedSuggestionIds,
+        appliedKeywords
       );
       
       // Handle errors from the service
       if (!success) {
-        console.error("Error from saveResumeContent:", error);
+        console.error("Error from saveResumeComplete:", error);
         throw error;
       }
       
@@ -339,7 +350,7 @@ export const useResumeOptimizer = (userId?: string) => {
       setScoreModified(false);
       
       // Display success toast
-      toast.success("Changes saved successfully");
+      // toast.success("All changes saved successfully");
       
       return true;
     } catch (error) {
@@ -351,7 +362,7 @@ export const useResumeOptimizer = (userId?: string) => {
       // Always reset the saving state when done
       setIsSaving(false);
     }
-  }, [userId, resumeData, editedText, currentAtsScore]);
+  }, [userId, resumeData, editedText, currentAtsScore, suggestions, keywords]);
   
   /**
    * Reset changes to the original optimized version
@@ -444,14 +455,15 @@ export const useResumeOptimizer = (userId?: string) => {
   }, [suggestions, keywords, originalAtsScore, currentAtsScore]);
   
   /**
-   * Apply or unapply a suggestion
-   * Updates suggestion state and recalculates ATS score
+   * Apply or unapply a suggestion - LOCAL STATE ONLY
+   * Updates ONLY local suggestion state and recalculates ATS score
+   * No longer makes individual API calls - changes will be saved atomically later
    * 
    * @param suggestionId - ID of the suggestion to apply/unapply
    * @param applyState - Optional boolean to force specific state (true/false)
    * @returns Boolean indicating if operation was successful
    */
-  const handleApplySuggestion = useCallback(async (suggestionId: string, applyState?: boolean) => {
+  const handleApplySuggestion = useCallback((suggestionId: string, applyState?: boolean) => {
     // Log the operation with all details for debugging
     console.log("handleApplySuggestion called with:", { 
       suggestionId, 
@@ -480,28 +492,14 @@ export const useResumeOptimizer = (userId?: string) => {
     const newIsApplied = applyState !== undefined ? applyState : !suggestion.isApplied;
     
     try {
-      // Update suggestion status through service
-      const { success, error } = await updateSuggestionStatus(
-        resumeData.id,
-        suggestionId,
-        newIsApplied
-      );
-      
-      if (!success) {
-        console.error("Service failed to update suggestion:", error);
-        throw error;
-      }
-      
-      console.log("Suggestion status updated successfully in database");
-      
-      // Update local state
+      // Update local state ONLY - no API call
       setSuggestions(prevSuggestions => 
         prevSuggestions.map(s => 
           s.id === suggestionId ? { ...s, isApplied: newIsApplied } : s
         )
       );
       
-      // Update score 
+      // Update score locally
       const scoreDelta = newIsApplied ? 2 : -2; // Each suggestion is worth 2 points
       setCurrentAtsScore(prevScore => {
         if (!prevScore) return originalAtsScore || 65;
@@ -513,28 +511,27 @@ export const useResumeOptimizer = (userId?: string) => {
       setContentModified(true);
       setScoreModified(true);
       
-      toast.success(newIsApplied ? 
-        "Suggestion applied" : 
-        "Suggestion removed"
-      );
+      // Success notification is now optional since changes aren't saved yet
+      // toast.success(newIsApplied ? "Suggestion applied locally" : "Suggestion removed locally");
       
       return true;
     } catch (error) {
-      console.error("Error applying suggestion:", error);
+      console.error("Error applying suggestion locally:", error);
       toast.error("Failed to apply suggestion");
       return false;
     }
   }, [resumeData?.id, suggestions, originalAtsScore]);
   
   /**
-   * Apply or unapply a keyword
-   * Updates keyword state and recalculates ATS score
+   * Apply or unapply a keyword - LOCAL STATE ONLY
+   * Updates ONLY local keyword state and recalculates ATS score
+   * No longer makes individual API calls - changes will be saved atomically later
    * 
    * @param keywordId - ID of the keyword to apply/unapply
    * @param applyState - Optional boolean to force specific state (true/false)
    * @returns Boolean indicating if operation was successful
    */
-  const handleKeywordApply = useCallback(async (keywordId: string, applyState?: boolean) => {
+  const handleKeywordApply = useCallback((keywordId: string, applyState?: boolean) => {
     // Log the operation with all details for debugging
     console.log("handleKeywordApply called with:", { 
       keywordId, 
@@ -563,28 +560,14 @@ export const useResumeOptimizer = (userId?: string) => {
     const newIsApplied = applyState !== undefined ? applyState : !keyword.isApplied;
     
     try {
-      // Update keyword status through service
-      const { success, error } = await updateKeywordStatus(
-        resumeData.id,
-        keyword.text,
-        newIsApplied
-      );
-      
-      if (!success) {
-        console.error("Service failed to update keyword:", error);
-        throw error;
-      }
-      
-      console.log("Keyword status updated successfully in database");
-      
-      // Update local state
+      // Update local state ONLY - no API call
       setKeywords(prevKeywords => 
         prevKeywords.map(k => 
           k.id === keywordId ? { ...k, isApplied: newIsApplied } : k
         )
       );
       
-      // Update score
+      // Update score locally
       const scoreDelta = newIsApplied ? 1 : -1; // Each keyword is worth 1 point
       setCurrentAtsScore(prevScore => {
         if (!prevScore) return originalAtsScore || 65;
@@ -596,14 +579,12 @@ export const useResumeOptimizer = (userId?: string) => {
       setContentModified(true);
       setScoreModified(true);
       
-      toast.success(newIsApplied ? 
-        "Keyword applied" : 
-        "Keyword removed"
-      );
+      // Success notification is now optional since changes aren't saved yet
+      // toast.success(newIsApplied ? "Keyword applied locally" : "Keyword removed locally");
       
       return true;
     } catch (error) {
-      console.error("Error applying keyword:", error);
+      console.error("Error applying keyword locally:", error);
       toast.error("Failed to apply keyword");
       return false;
     }
