@@ -24,10 +24,18 @@ import {
 } from '@/services/resumeService';
 import { parseOptimizedText } from '@/services/resumeParser';
 import { OptimizedResumeData } from '@/types/resumeTypes';
-// Import correct types from their respective files
 import { OptimizationSuggestion as Suggestion } from '@/types/suggestionTypes';
 import { Keyword } from '@/types/keywordTypes';
 import useResumeScore from './useResumeScore';
+
+// Import the centralized data normalizers
+import {
+  normalizeApiData,
+  normalizeSuggestions,
+  normalizeKeywords,
+  normalizeSuggestion,
+  normalizeKeyword
+} from '@/utils/dataNormalizers';
 
 /**
  * Type guard to check if a value is not null or undefined
@@ -38,53 +46,12 @@ function isDefined<T>(value: T | null | undefined): value is T {
 }
 
 /**
- * Normalizes a suggestion object to ensure consistent structure
- * Handles different property naming conventions (camelCase vs snake_case)
- */
-function normalizeSuggestion(suggestion: any): Suggestion {
-  return {
-    id: suggestion.id || suggestion.suggestion_id || String(Math.random()),
-    text: suggestion.text || suggestion.original_text || '',
-    type: suggestion.type || 'general',
-    impact: suggestion.impact || '',
-    isApplied: suggestion.isApplied || suggestion.is_applied || false,
-    pointImpact: suggestion.pointImpact || suggestion.point_impact || 2,
-    score: suggestion.score || undefined
-  };
-}
-
-/**
- * Normalizes a keyword object to ensure consistent structure
- * Handles different property naming conventions and formats
- */
-function normalizeKeyword(keyword: any): Keyword {
-  if (typeof keyword === 'string') {
-    return {
-      id: String(Math.random()),
-      text: keyword,
-      isApplied: false,
-      relevance: 1,
-      pointImpact: 1,
-      category: 'general',
-      impact: 0.5
-    };
-  }
-  
-  return {
-    id: keyword.id || keyword.keyword_id || String(Math.random()),
-    text: keyword.text || keyword.keyword || '',
-    isApplied: keyword.isApplied || keyword.is_applied || keyword.applied || false,
-    relevance: keyword.relevance || 1,
-    pointImpact: keyword.pointImpact || keyword.point_impact || 1,
-    category: keyword.category || 'general',
-    impact: keyword.impact || 0.5
-  };
-}
-
-/**
  * Custom hook for resume optimization management
  * Provides comprehensive state and operations for resume editing workflow
  * Uses useResumeScore for all score-related functionality
+ * 
+ * @param userId - Optional user ID for loading user-specific data
+ * @returns Complete resume optimization state and actions
  */
 export const useResumeOptimizer = (userId?: string) => {
   // Resume content state
@@ -153,71 +120,56 @@ export const useResumeOptimizer = (userId?: string) => {
   });
 
   /**
-   * Convert API data to standardized format with normalized suggestions and keywords
-   */
-  const convertApiDataToOptimizedFormat = useCallback((apiData: any): OptimizedResumeData => {
-    const formattedKeywords = Array.isArray(apiData.keywords) 
-      ? apiData.keywords.map(normalizeKeyword)
-      : [];
-    
-    const formattedSuggestions = Array.isArray(apiData.suggestions) 
-      ? apiData.suggestions.map(normalizeSuggestion)
-      : [];
-    
-    return {
-      id: apiData.id,
-      original_text: apiData.original_text,
-      optimized_text: apiData.optimized_text,
-      last_saved_text: apiData.last_saved_text ?? undefined,
-      last_saved_score_ats: apiData.last_saved_score_ats ?? undefined,
-      language: apiData.language,
-      file_name: apiData.file_name,
-      file_type: apiData.file_type,
-      file_size: apiData.file_size,
-      ats_score: apiData.ats_score,
-      selected_template: apiData.selected_template,
-      keywords: formattedKeywords,
-      suggestions: formattedSuggestions
-    };
-  }, []);
-
-  /**
    * Load the latest resume for a user
+   * Fetches resume data from the API and updates local state
+   * 
+   * @returns Promise resolving to the loaded resume data or null
    */
   const loadLatestResume = useCallback(async () => {
+    // Skip if no user ID is provided
     if (!userId) {
       console.log("No user ID provided, skipping resume load");
       return null;
     }
     
+    // Track load attempts to prevent infinite loops
     loadAttemptRef.current += 1;
     
+    // Limit maximum load attempts
     if (loadAttemptRef.current > 3) {
       console.log("Maximum resume load attempts reached");
       return null;
     }
     
     try {
+      // Set loading state for UI feedback
       setIsLoading(true);
       
+      // Fetch resume data from API
       const { data: apiData, error } = await getLatestOptimizedResume(userId);
       
+      // Handle API errors
       if (error) {
         console.error("Error loading resume:", error);
         throw error;
       }
       
+      // Process valid resume data
       if (apiData) {
         console.log("Resume loaded successfully:", apiData.id);
         
-        const optimizedData = convertApiDataToOptimizedFormat(apiData);
+        // Use centralized normalizer to standardize API data
+        const optimizedData = normalizeApiData(apiData);
         
+        // Update resume data state
         setResumeData(optimizedData);
         setHasResume(true);
         hasLoadedDataRef.current = true;
         
+        // Set text content states
         setOriginalText(optimizedData.optimized_text || '');
         
+        // Prioritize last saved text if available
         if (optimizedData.last_saved_text) {
           setOptimizedText(optimizedData.last_saved_text);
           setEditedText(optimizedData.last_saved_text);
@@ -226,25 +178,31 @@ export const useResumeOptimizer = (userId?: string) => {
           setEditedText(optimizedData.optimized_text || '');
         }
         
+        // Set ATS score
         const baseScore = optimizedData.ats_score || 65;
         setBaseScore(baseScore);
         
+        // Update current score if saved score exists
         if (isDefined(optimizedData.last_saved_score_ats)) {
           updateScore(optimizedData.last_saved_score_ats, false);
         }
         
+        // Set suggestions and keywords
         setSuggestions(optimizedData.suggestions || []);
         setKeywords(optimizedData.keywords || []);
         
+        // Reset modification flags for fresh load
         setContentModified(false);
         setScoreModified(false);
         
+        // Set template if available
         if (optimizedData.selected_template) {
           setSelectedTemplate(optimizedData.selected_template);
         }
         
         return optimizedData;
       } else {
+        // Handle case when no resume is found
         console.log("No resume found for user");
         setHasResume(false);
         hasLoadedDataRef.current = true;
@@ -252,65 +210,88 @@ export const useResumeOptimizer = (userId?: string) => {
         return null;
       }
     } catch (error) {
+      // Handle and log errors
       console.error("Error loading resume:", error);
       toast.error("Error loading resume");
       setHasResume(false);
       return null;
     } finally {
+      // Always reset loading state when done
       setIsLoading(false);
     }
-  }, [userId, convertApiDataToOptimizedFormat, setBaseScore, updateScore]);
+  }, [userId, setBaseScore, updateScore]);
   
   /**
    * Save the edited resume content, score, and applied enhancements
-   * Now using an atomic approach to ensure data consistency
+   * Uses an atomic approach to ensure data consistency
+   * 
+   * @param newContent - Optional new content to save, defaults to current edited text
+   * @returns Promise resolving to success status
    */
   const saveResume = useCallback(async (newContent?: string) => {
+    // Use provided content or current edited text
     const contentToSave = newContent || editedText;
     
+    // Validate required data is available
     if (!userId || !resumeData?.id || !contentToSave) {
-      console.error("Cannot save: Missing data", { userId, resumeId: resumeData?.id, contentLength: contentToSave?.length });
+      console.error("Cannot save: Missing data", { 
+        userId, 
+        resumeId: resumeData?.id, 
+        contentLength: contentToSave?.length 
+      });
       toast.error("Cannot save: Missing data");
       return false;
     }
     
     try {
-      // Set saving state to show loading indicators
+      // Set saving state for UI feedback
       setIsSaving(true);
       
-      // Log saving attempt
+      // Log saving attempt for debugging
       console.log("Saving resume:", {
         resumeId: resumeData.id,
         contentLength: contentToSave.length,
         atsScore: currentAtsScore || 0
       });
       
-      // MODIFICATION: Create an array of all save operations to execute them together
+      // Create an array of all save operations to execute them together
       const savePromises = [];
       
-      // Save the resume content and score
+      // 1. Save the resume content and score
       savePromises.push(
         saveResumeContent(resumeData.id, contentToSave, currentAtsScore || 0)
       );
       
-      // Save all suggestion states with type checking
-      for (const [index, suggestion] of suggestions.entries()) {
+      // 2. Save all suggestion states
+      for (const suggestion of suggestions) {
+        // Ensure suggestion has valid ID
+        if (!suggestion.id) {
+          console.warn("Suggestion without ID during save:", suggestion);
+          continue;
+        }
+        
         savePromises.push(
           updateSuggestionStatus(
             resumeData.id, 
-            suggestion.id || `suggestion-${index}-${Date.now()}`, // Add fallback for ID
-            suggestion.isApplied || false // Ensure boolean type
+            suggestion.id,
+            Boolean(suggestion.isApplied) // Ensure boolean type
           )
         );
       }
       
-      // Save all keyword states with type checking
-      for (const [index, keyword] of keywords.entries()) {
+      // 3. Save all keyword states
+      for (const keyword of keywords) {
+        // Skip keywords without text
+        if (!keyword.text) {
+          console.warn("Keyword without text during save:", keyword);
+          continue;
+        }
+        
         savePromises.push(
           updateKeywordStatus(
             resumeData.id, 
-            keyword.text || '', // Ensure non-empty string
-            keyword.isApplied || false // Ensure boolean type
+            keyword.text,
+            Boolean(keyword.isApplied) // Ensure boolean type
           )
         );
       }
@@ -321,6 +302,7 @@ export const useResumeOptimizer = (userId?: string) => {
       // Check if all operations were successful
       const allSuccessful = results.every(result => result.success);
       
+      // Handle partial failures
       if (!allSuccessful) {
         const errors = results.filter(r => !r.success).map(r => r.error);
         console.error("Some save operations failed:", errors);
@@ -341,7 +323,7 @@ export const useResumeOptimizer = (userId?: string) => {
       setContentModified(false);
       setScoreModified(false);
       
-      // Display success toast
+      // Provide user feedback
       toast.success("Changes saved successfully");
       
       return true;
@@ -358,30 +340,32 @@ export const useResumeOptimizer = (userId?: string) => {
   
   /**
    * Reset resume to original AI-optimized version
-   * This function handles the complete resume reset workflow including:
+   * Handles the complete resume reset workflow including:
    * - API call to reset database records
    * - Reloading fresh data from the server
    * - Updating all local state to reflect original content
-   * - Resetting all UI elements and modification flags
    * 
-   * @returns Promise<boolean> - Success status of the reset operation
+   * @returns Promise resolving to success status
    */
   const resetResume = useCallback(async () => {
-    // Validate required data before proceeding
+    // Validate required data is available
     if (!userId || !resumeData?.id) {
-      console.error("Cannot reset: Missing required data", { userId, resumeId: resumeData?.id });
+      console.error("Cannot reset: Missing required data", { 
+        userId, 
+        resumeId: resumeData?.id 
+      });
       toast.error("Cannot reset: Missing data");
       return false;
     }
     
     try {
-      // Set loading state to show UI indicators
+      // Set loading state for UI feedback
       setIsResetting(true);
       
       // Log reset attempt for debugging
       console.log(`Initiating resume reset for ID: ${resumeData.id}`);
       
-      // Call API to reset database records
+      // 1. Call API to reset database records
       const { success, error } = await resetResumeToOriginal(resumeData.id);
       
       // Handle API call failures
@@ -390,8 +374,7 @@ export const useResumeOptimizer = (userId?: string) => {
         throw error;
       }
       
-      // After successful database reset, reload fresh data from server
-      // This ensures we have the latest state consistent with the database
+      // 2. After successful database reset, reload fresh data from server
       console.log("Database reset successful, now reloading fresh data");
       const { data: freshData, error: loadError } = await getLatestOptimizedResume(userId);
       
@@ -415,50 +398,47 @@ export const useResumeOptimizer = (userId?: string) => {
         textLength: freshData.optimized_text?.length || 0
       });
       
-      // Update all local state with fresh data from server
-      // This ensures the UI reflects the reset database state
+      // 3. Normalize data using centralized normalizers
+      const normalizedData = normalizeApiData(freshData);
       
-      // 1. Update core resume data
-      setResumeData(freshData);
+      // 4. Update all local state with fresh data from server
       
-      // 2. Update text content states
-      setOriginalText(freshData.optimized_text || '');
-      setOptimizedText(freshData.optimized_text || '');
-      setEditedText(freshData.optimized_text || '');
+      // Update core resume data
+      setResumeData(normalizedData);
       
-      // 3. Reset ATS score to original value
-      setBaseScore(freshData.ats_score || 65);
+      // Update text content states
+      setOriginalText(normalizedData.optimized_text || '');
+      setOptimizedText(normalizedData.optimized_text || '');
+      setEditedText(normalizedData.optimized_text || '');
       
-      // 4. Reset all suggestions to not applied state
-      const resetSuggestions = Array.isArray(freshData.suggestions)
-        ? freshData.suggestions.map(s => ({
-            ...s,
-            isApplied: false // Ensure all suggestions are marked as not applied
-          }))
-        : [];
+      // Reset ATS score to original value
+      setBaseScore(normalizedData.ats_score || 65);
+      
+      // Reset all suggestions to not applied state
+      const resetSuggestions = normalizedData.suggestions?.map(s => ({
+        ...s,
+        isApplied: false // Ensure all suggestions are marked as not applied
+      })) || [];
       setSuggestions(resetSuggestions);
       
-      // 5. Reset all keywords to not applied state
-      const resetKeywords = Array.isArray(freshData.keywords)
-        ? freshData.keywords.map(k => ({
-            ...k,
-            isApplied: false, // Ensure all keywords are marked as not applied
-            applied: false // Support both naming conventions
-          }))
-        : [];
+      // Reset all keywords to not applied state
+      const resetKeywords = normalizedData.keywords?.map(k => ({
+        ...k,
+        isApplied: false, // Ensure all keywords are marked as not applied
+        applied: false // Support both naming conventions
+      })) || [];
       setKeywords(resetKeywords);
       
-      // 6. Exit edit mode to show the reset preview
+      // Exit edit mode to show the reset preview
       setIsEditing(false);
       
-      // 7. Clear all modification flags
+      // Clear all modification flags
       setContentModified(false);
       setScoreModified(false);
       
-      // 8. Notify user of successful reset
+      // Notify user of successful reset
       toast.success("Resume reset to original version");
       
-      // Return success
       return true;
     } catch (error) {
       // Comprehensive error handling
@@ -471,16 +451,13 @@ export const useResumeOptimizer = (userId?: string) => {
       // Always reset loading state when done
       setIsResetting(false);
     }
-  }, [
-    // Dependencies
-    userId, 
-    resumeData, 
-    setBaseScore, 
-    resetResumeToOriginal, 
-    getLatestOptimizedResume
-  ]);
+  }, [userId, resumeData, setBaseScore, resetResumeToOriginal, getLatestOptimizedResume]);
+  
   /**
    * Handle content changes in the editor
+   * Updates edited text state and marks content as modified
+   * 
+   * @param newContent - New content from the editor
    */
   const handleContentEdit = useCallback((newContent: string) => {
     setEditedText(newContent);
@@ -489,7 +466,11 @@ export const useResumeOptimizer = (userId?: string) => {
   
   /**
    * Apply or unapply a suggestion
-   * Modified to update only local state, not database, until save is called
+   * Updates local state only, not database, until save is called
+   * 
+   * @param suggestionId - ID of the suggestion to apply/unapply
+   * @param applyState - Optional explicit state to set (true/false), defaults to toggling current state
+   * @returns Promise resolving to success status
    */
   const handleApplySuggestion = useCallback(async (suggestionId: string, applyState?: boolean) => {
     console.log("handleApplySuggestion called with:", { 
@@ -498,28 +479,29 @@ export const useResumeOptimizer = (userId?: string) => {
       resumeId: resumeData?.id 
     });
     
+    // Validate resume data is available
     if (!resumeData?.id) {
       console.error("Cannot apply suggestion: No resume data available");
       return false;
     }
     
+    // Find the suggestion by ID
     const suggestion = suggestions.find(s => s.id === suggestionId);
     
     console.log("Found matching suggestion:", suggestion);
     
+    // Validate suggestion exists
     if (!suggestion) {
       console.error("Suggestion not found with ID:", suggestionId);
       console.log("Available suggestions:", suggestions);
       return false;
     }
     
+    // Determine new applied state (toggle current if not explicitly provided)
     const newIsApplied = applyState !== undefined ? applyState : !suggestion.isApplied;
     
     try {
-      // MODIFICATION: Only update local state, not database
-      // We'll save all changes at once when the user clicks Save
-      
-      // Update local state
+      // Update local state only - database updates happen on save
       setSuggestions(prevSuggestions => 
         prevSuggestions.map(s => 
           s.id === suggestionId ? { ...s, isApplied: newIsApplied } : s
@@ -532,6 +514,7 @@ export const useResumeOptimizer = (userId?: string) => {
       // Mark content as modified since applying suggestions is a change
       setContentModified(true);
       
+      // Provide user feedback
       toast.success(newIsApplied ? 
         "Suggestion applied" : 
         "Suggestion removed"
@@ -539,6 +522,7 @@ export const useResumeOptimizer = (userId?: string) => {
       
       return true;
     } catch (error) {
+      // Handle errors
       console.error("Error applying suggestion:", error);
       toast.error("Failed to apply suggestion");
       return false;
@@ -547,7 +531,11 @@ export const useResumeOptimizer = (userId?: string) => {
   
   /**
    * Apply or unapply a keyword
-   * Modified to update only local state, not database, until save is called
+   * Updates local state only, not database, until save is called
+   * 
+   * @param keywordId - ID of the keyword to apply/unapply
+   * @param applyState - Optional explicit state to set (true/false), defaults to toggling current state
+   * @returns Promise resolving to success status
    */
   const handleKeywordApply = useCallback(async (keywordId: string, applyState?: boolean) => {
     console.log("handleKeywordApply called with:", { 
@@ -556,31 +544,36 @@ export const useResumeOptimizer = (userId?: string) => {
       resumeId: resumeData?.id 
     });
     
+    // Validate resume data is available
     if (!resumeData?.id) {
       console.error("Cannot apply keyword: No resume data available");
       return false;
     }
     
+    // Find the keyword by ID
     const keyword = keywords.find(k => k.id === keywordId);
     
     console.log("Found matching keyword:", keyword);
     
+    // Validate keyword exists
     if (!keyword) {
       console.error("Keyword not found with ID:", keywordId);
       console.log("Available keywords:", keywords);
       return false;
     }
     
+    // Determine new applied state (toggle current if not explicitly provided)
     const newIsApplied = applyState !== undefined ? applyState : !keyword.isApplied;
     
     try {
-      // MODIFICATION: Only update local state, not database
-      // We'll save all changes at once when the user clicks Save
-      
-      // Update local state
+      // Update local state only - database updates happen on save
       setKeywords(prevKeywords => 
         prevKeywords.map(k => 
-          k.id === keywordId ? { ...k, isApplied: newIsApplied } : k
+          k.id === keywordId ? { 
+            ...k, 
+            isApplied: newIsApplied,
+            applied: newIsApplied // Update both properties for compatibility
+          } : k
         )
       );
       
@@ -590,6 +583,7 @@ export const useResumeOptimizer = (userId?: string) => {
       // Mark content as modified since applying keywords is a change
       setContentModified(true);
       
+      // Provide user feedback
       toast.success(newIsApplied ? 
         "Keyword applied" : 
         "Keyword removed"
@@ -597,6 +591,7 @@ export const useResumeOptimizer = (userId?: string) => {
       
       return true;
     } catch (error) {
+      // Handle errors
       console.error("Error applying keyword:", error);
       toast.error("Failed to apply keyword");
       return false;
@@ -605,6 +600,13 @@ export const useResumeOptimizer = (userId?: string) => {
   
   /**
    * Update resume state with optimized data from API or upload
+   * Sets all relevant state for newly optimized content
+   * 
+   * @param optimizedTextContent - Optimized text content
+   * @param resumeId - ID of the resume
+   * @param scoreValue - ATS score value
+   * @param suggestionsData - Suggestions data from optimization
+   * @param keywordsData - Keywords data from optimization
    */
   const updateResumeWithOptimizedData = useCallback((
     optimizedTextContent: string,
@@ -613,33 +615,38 @@ export const useResumeOptimizer = (userId?: string) => {
     suggestionsData: any[],
     keywordsData: any[]
   ) => {
-    const normalizedSuggestions = Array.isArray(suggestionsData) 
-      ? suggestionsData.map(normalizeSuggestion)
-      : [];
+    // Use centralized normalizers for consistent data structure
+    const normalizedSuggestions = normalizeSuggestions(suggestionsData);
+    const normalizedKeywords = normalizeKeywords(keywordsData);
     
-    const normalizedKeywords = Array.isArray(keywordsData)
-      ? keywordsData.map(normalizeKeyword)
-      : [];
-    
+    // Update text content states
     setOriginalText(optimizedTextContent);
     setOptimizedText(optimizedTextContent);
     setEditedText(optimizedTextContent);
     
+    // Set ATS score
     setBaseScore(scoreValue);
     
+    // Update suggestions and keywords with normalized data
     setSuggestions(normalizedSuggestions);
     setKeywords(normalizedKeywords);
     
+    // Reset modification flags for fresh optimization
     setContentModified(false);
     
+    // Reload complete resume data if ID changed or no data exists yet
     if (!resumeData || resumeData.id !== resumeId) {
       getLatestOptimizedResume(userId || '')
         .then(({ data: apiData }) => {
           if (apiData) {
-            const optimizedData = convertApiDataToOptimizedFormat(apiData);
+            // Use centralized normalizer for API data
+            const optimizedData = normalizeApiData(apiData);
+            
+            // Update resume data and status
             setResumeData(optimizedData);
             setHasResume(true);
             
+            // Set template if available
             if (optimizedData.selected_template) {
               setSelectedTemplate(optimizedData.selected_template);
             }
@@ -648,30 +655,41 @@ export const useResumeOptimizer = (userId?: string) => {
         .catch(error => console.error("Error fetching resume data:", error));
     }
     
+    // Update resume status
     setHasResume(true);
     hasLoadedDataRef.current = true;
     
+    // Switch to preview tab
     setActiveTab('preview');
     
+    // Provide user feedback
     toast.success("Resume optimized successfully!", {
       description: "Your resume has been analyzed and improved by our AI.",
       duration: 5000,
     });
-  }, [resumeData, userId, convertApiDataToOptimizedFormat, setBaseScore, setActiveTab]);
+  }, [resumeData, userId, setBaseScore, setActiveTab]);
   
   /**
    * Update template selection and save to database
+   * 
+   * @param templateId - ID of the template to select
+   * @returns Promise resolving to success status
    */
   const updateSelectedTemplate = useCallback(async (templateId: string) => {
+    // Validate resume data is available
     if (!resumeData?.id) return false;
     
     try {
+      // Call API to update template
       const { success, error } = await updateResumeTemplate(resumeData.id, templateId);
       
+      // Handle API errors
       if (!success) throw error;
       
+      // Update local state
       setSelectedTemplate(templateId);
       
+      // Update resume data if available
       if (resumeData) {
         setResumeData({
           ...resumeData,
@@ -679,9 +697,11 @@ export const useResumeOptimizer = (userId?: string) => {
         });
       }
       
+      // Provide user feedback
       toast.success("Template updated successfully");
       return true;
     } catch (error) {
+      // Handle errors
       console.error("Error updating template:", error);
       toast.error("Failed to update template");
       return false;
@@ -690,6 +710,9 @@ export const useResumeOptimizer = (userId?: string) => {
   
   /**
    * Check if there are unsaved changes
+   * Used to determine if save button should be enabled
+   * 
+   * @returns Boolean indicating if there are unsaved changes
    */
   const hasUnsavedChanges = useCallback(() => {
     return contentModified || scoreModified;
@@ -697,30 +720,41 @@ export const useResumeOptimizer = (userId?: string) => {
   
   /**
    * Get array of applied keywords for templates
+   * 
+   * @returns Array of applied keyword text strings
    */
   const getAppliedKeywords = useCallback(() => {
     return keywords
-      .filter(keyword => keyword.isApplied)
+      .filter(keyword => keyword.isApplied || keyword.applied)
       .map(keyword => keyword.text);
   }, [keywords]);
   
   /**
    * Calculate the current completion score
+   * Represents the percentage of suggestions and keywords applied
+   * 
+   * @returns Completion percentage (0-100)
    */
   const calculateCompletionScore = useCallback(() => {
+    // Return 0 if no items to calculate
     if (!suggestions.length && !keywords.length) return 0;
     
+    // Count applied items
     const appliedSuggestions = suggestions.filter(s => s.isApplied).length;
-    const appliedKeywords = keywords.filter(k => k.isApplied).length;
+    const appliedKeywords = keywords.filter(k => k.isApplied || k.applied).length;
     
+    // Calculate total items and applied ratio
     const totalItems = suggestions.length + keywords.length;
     const appliedItems = appliedSuggestions + appliedKeywords;
     
+    // Return percentage
     return Math.round((appliedItems / totalItems) * 100);
   }, [suggestions, keywords]);
   
   /**
    * Check if save button should be enabled
+   * 
+   * @returns Boolean indicating if save button should be enabled
    */
   const shouldEnableSaveButton = useCallback(() => {
     return contentModified || scoreModified;
@@ -728,7 +762,10 @@ export const useResumeOptimizer = (userId?: string) => {
   
   // Effects for welcome toast and data loading
   
-  // Check for session storage welcome toast on mount
+  /**
+   * Effect to check for session storage welcome toast on mount
+   * Prevents showing welcome toast multiple times in the same session
+   */
   useEffect(() => {
     try {
       const lastToastTime = sessionStorage.getItem('welcomeToastTime');
@@ -737,6 +774,7 @@ export const useResumeOptimizer = (userId?: string) => {
         const lastTime = parseInt(lastToastTime, 10);
         const currentTime = Date.now();
         
+        // Consider toast shown if it was displayed in the last 15 minutes
         if (currentTime - lastTime < 15 * 60 * 1000) {
           welcomeToastDisplayedRef.current = true;
           setToastShown(true);
@@ -746,6 +784,7 @@ export const useResumeOptimizer = (userId?: string) => {
       // Ignore session storage errors
     }
     
+    // Save toast timestamp when component unmounts
     return () => {
       if (welcomeToastDisplayedRef.current) {
         try {
@@ -757,27 +796,39 @@ export const useResumeOptimizer = (userId?: string) => {
     };
   }, []);
   
-  // Load resume on initial mount if userId is available
+  /**
+   * Effect to load resume on initial mount if userId is available
+   * Only loads if no data exists yet and not previously loaded
+   */
   useEffect(() => {
     if (userId && hasResume === null && !hasLoadedDataRef.current) {
       loadLatestResume();
     }
   }, [userId, hasResume, loadLatestResume]);
   
-  // Improved effect for welcome toasts
+  /**
+   * Improved effect for welcome toasts
+   * Shows toast when loading completes and resume status is determined
+   */
   useEffect(() => {
+    // Skip if toast already shown
     if (toastShown) return;
     
+    // Track loading state changes
     const wasLoading = previousLoadingState.current;
     previousLoadingState.current = isLoading;
     
+    // Only proceed when loading completes
     if ((!wasLoading && !isLoading) || isLoading) return;
     
+    // Wait for resume status to be determined
     if (hasResume === null) return;
     
+    // Mark toast as shown
     setToastShown(true);
     welcomeToastDisplayedRef.current = true;
     
+    // Save toast timestamp to session storage
     try {
       sessionStorage.setItem('welcomeToastTime', Date.now().toString());
     } catch (e) {
