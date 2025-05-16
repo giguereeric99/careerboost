@@ -32,7 +32,11 @@ import { optimizeResume } from './services/optimization';
 import { generateFallbackOptimization } from './services/optimization/fallback';
 import { getSupabaseUuid } from './services/userMapping';
 import { cleanupTempFile } from './services/fileHandler';
-import { OptimizationResult, OptimizationOptions } from './types';
+import { 
+  OptimizationResult, 
+  OptimizationOptions, 
+  ResumeData, 
+  KeywordWithId } from './types';
 
 // API timeout duration in milliseconds (60 seconds)
 const API_TIMEOUT = 60000;

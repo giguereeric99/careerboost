@@ -89,3 +89,29 @@ export interface FallbackParams {
   resumeText: string;                // Original resume text
   language: string;                  // Detected language
 }
+
+// Resume data interface for database operations
+interface ResumeData {
+  id: string;
+  user_id: string;
+  auth_user_id: string;
+  supabase_user_id: string;
+  original_text: string;
+  optimized_text: string;
+  last_saved_text: string | null;
+  language: string;
+  ats_score: number;
+  file_url: string | null;
+  file_name: string | null;
+  file_type: string | null;
+  file_size: number | null;
+  ai_provider: string;
+  [key: string]: any;
+}
+
+// Keyword interface with ID for frontend consumption
+interface KeywordWithId {
+  id: string;
+  text: string;
+  isApplied: boolean;
+}
