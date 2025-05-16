@@ -469,43 +469,35 @@ export async function resetResumeToOriginal(
   resumeId: string
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
-    // Log the reset operation
-    console.log(`Resetting resume ID ${resumeId} to original version`);
-    
     // Validate input
     if (!resumeId) {
       console.error('resetResumeToOriginal: Missing required resumeId parameter');
-      return { success: false, error: new Error('Missing required parameter: resumeId') };
+      return { success: false, error: new Error('Resume ID is missing') };
     }
 
-    // Call the PATCH API endpoint to reset the resume
-    // Using the PATCH API endpoint which is already implemented in api/resumes/route.ts
-    const response = await fetch('/api/resumes', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        resumeId,
-        action: 'reset'  // This matches what your PATCH handler expects
-      }),
-    });
+    console.log(`Resetting resume ID ${resumeId} via RPC function...`);
 
-    // Parse the response
-    const result = await response.json();
+    // Call the Supabase RPC function
+    const { data, error } = await supabase
+      .rpc('reset_resume', { p_resume_id: resumeId });
     
-    // Check if the API returned an error
-    if (!response.ok) {
-      throw new Error(result.error || 'Failed to reset resume');
+    if (error) {
+      console.error('Error during RPC call:', error);
+      throw error;
     }
     
-    // Log success
+    // Check the result (function returns true on success)
+    if (data !== true) {
+      console.error('Reset failed on server side');
+      throw new Error('Failed to reset resume');
+    }
+    
     console.log(`Resume ${resumeId} successfully reset to original version`);
     
-    // Request successful - return the success status
+    // Success - return success status
     return { success: true, error: null };
   } catch (error) {
-    // Log error for debugging and return error object
+    // Log the error and return it
     console.error("Error resetting resume:", error);
     return { success: false, error: error as Error };
   }

@@ -581,12 +581,12 @@ export async function PATCH(req: NextRequest) {
   try {
     // Parse request body
     const body = await req.json();
-    const { resumeId, userId, action, resetScore } = body;
+    const { resumeId, userId, action } = body;
     
-    // Validate request parameters
+    // Validate parameters
     if (!resumeId || action !== 'reset') {
       return NextResponse.json({ 
-        error: "Missing required parameters or invalid action. Expected 'action: reset'" 
+        error: "Missing parameters or invalid action. Expected 'reset' action" 
       }, { status: 400 });
     }
     
@@ -606,16 +606,13 @@ export async function PATCH(req: NextRequest) {
     // Get Supabase admin client
     const supabaseAdmin = getAdminClient();
     
-    // Get Supabase UUID for the user
-    const supabaseUserId = await getOrCreateSupabaseUuid(supabaseAdmin, authenticatedUserId);
-    
     // Verify resume ownership
     const { data: existingResume, error: fetchError } = await supabaseAdmin
       .from("resumes")
       .select("id, user_id, auth_user_id, optimized_text, supabase_user_id")
       .eq("id", resumeId)
       .single();
-    
+      
     if (fetchError) {
       return NextResponse.json({ 
         error: "Resume not found" 
@@ -626,8 +623,7 @@ export async function PATCH(req: NextRequest) {
     const isAuthorized = 
       existingResume.user_id === authenticatedUserId || 
       existingResume.auth_user_id === authenticatedUserId ||
-      existingResume.user_id === supabaseUserId ||
-      existingResume.supabase_user_id === supabaseUserId;
+      existingResume.supabase_user_id === authenticatedUserId;
     
     if (!isAuthorized) {
       return NextResponse.json({ 
@@ -635,47 +631,36 @@ export async function PATCH(req: NextRequest) {
       }, { status: 403 });
     }
     
-    // Ensure the resume has an optimized_text to reset to
+    // Check that the resume has optimized text to reset to
     if (!existingResume.optimized_text) {
       return NextResponse.json({ 
         error: "This resume has no optimized version to reset to" 
       }, { status: 400 });
     }
     
-    // Create update object with fields to reset
-    const updateObject: any = {
-      last_saved_text: null,
-      updated_at: new Date().toISOString()
-    };
+    // Call the RPC function to reset the resume
+    const { data, error } = await supabaseAdmin
+      .rpc('reset_resume', { p_resume_id: resumeId });
     
-    // Also reset the score if requested or by default
-    // If resetScore parameter is explicitly false, don't reset the score
-    if (resetScore !== false) {
-      updateObject.last_saved_score_ats = null;
+    if (error) {
+      return NextResponse.json({ 
+        error: `Failed to reset resume: ${error.message}` 
+      }, { status: 500 });
     }
     
-    // Reset the resume by setting last_saved_text and optionally last_saved_score_ats to null
-    const { data: updatedResume, error: updateError } = await supabaseAdmin
-      .from("resumes")
-      .update(updateObject)
-      .eq("id", resumeId)
-      .select()
-      .single();
-    
-    if (updateError) {
+    if (data !== true) {
       return NextResponse.json({ 
-        error: `Failed to reset resume: ${updateError.message}` 
+        error: "Resume reset operation failed" 
       }, { status: 500 });
     }
     
     return NextResponse.json({
       success: true,
-      message: "Resume reset successfully",
-      data: updatedResume
+      message: "Resume reset successfully"
     });
     
   } catch (error: any) {
-    console.error("Unexpected error in reset resume handler:", error);
+    console.error("Unexpected error in reset handler:", error);
     return NextResponse.json({ 
       error: error.message || "An unexpected error occurred" 
     }, { status: 500 });

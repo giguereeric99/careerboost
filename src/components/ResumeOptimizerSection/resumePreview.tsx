@@ -296,7 +296,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       // Notify parent of content change back to original
       onTextChange(originalOptimizedText);
 
-      toast.success("Content reset to original version");
+      // toast.success("Content reset to original version");
     } catch (error) {
       console.error("Error resetting content:", error);
       toast.error("Failed to reset content");
@@ -320,7 +320,14 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     if (onReset) {
       onReset();
     }
-  }, [handleLocalReset, onReset]);
+
+    // Force a re-render of the preview content
+    setPreviewContent(originalOptimizedText || "");
+
+    // Also reset content modified state
+    setContentModified(false);
+    setHasBeenModified(false);
+  }, [handleLocalReset, onReset, originalOptimizedText]);
 
   /**
    * Parse the resume HTML into sections when optimizedText changes

@@ -390,8 +390,13 @@ export const useResumeOptimizer = (userId?: string) => {
       setCurrentAtsScore(originalAtsScore);
       
       // Reset suggestions and keywords state
-      setSuggestions(suggestions.map(s => ({ ...s, isApplied: false })));
-      setKeywords(keywords.map(k => ({ ...k, isApplied: false })));
+      // Important: Create new arrays to trigger re-render
+      setSuggestions(prevSuggestions => 
+        prevSuggestions.map(s => ({ ...s, isApplied: false }))
+      );
+      setKeywords(prevKeywords => 
+        prevKeywords.map(k => ({ ...k, isApplied: false, applied: false }))
+      );
       
       // Reset editing state
       setIsEditing(false);
@@ -873,17 +878,17 @@ export const useResumeOptimizer = (userId?: string) => {
   return {
     // State
     resumeData,
-    originalText,          // Original AI-optimized text (for reset)
-    optimizedText,         // Current displayed text (either original or edited)
-    editedText,            // Text being edited in edit mode
-    originalAtsScore,      // Original AI score (for reset)
-    currentAtsScore,       // Current/edited score
+    originalText,
+    optimizedText,
+    editedText,
+    originalAtsScore,
+    currentAtsScore,
     suggestions,
     keywords,
     isEditing,
     selectedTemplate,
-    contentModified,       // Whether content has unsaved changes
-    scoreModified,         // Whether score has unsaved changes (NEW)
+    contentModified,
+    scoreModified,
     isLoading,
     isSaving,
     isResetting,
@@ -904,15 +909,15 @@ export const useResumeOptimizer = (userId?: string) => {
     getAppliedKeywords,
     hasUnsavedChanges,
     calculateCompletionScore,
-    shouldEnableSaveButton, // NEW: Helper for UI components
+    shouldEnableSaveButton,
     
     // Direct state setters (use with caution)
-    setOptimizedText,
+    setOptimizedText,        // Make sure this is included
     setCurrentAtsScore,
     setSuggestions,
     setKeywords,
     setContentModified,
-    setScoreModified       // NEW: Direct setter for score modified state
+    setScoreModified
   };
 };
 
