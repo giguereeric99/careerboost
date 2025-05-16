@@ -1,90 +1,61 @@
 /**
- * Main API Route for Resume Optimization
+ * Resume Optimization API Route
  * 
- * This unified route handles all resume optimization operations:
- * - Initial optimization with AI services (OpenAI, Gemini, Claude)
- * - Extraction of text from various file formats
- * - Language detection
- * - Support for resetting last_saved_text on new uploads
+ * This route acts as a proxy between the client and Supabase Edge Functions to avoid CORS issues.
+ * It handles:
+ * - File uploads and text extraction
+ * - Resume optimization via AI (OpenAI, Gemini, Claude)
+ * - Database storage of optimization results
+ * - Proper error handling and client responses
  * 
- * The route implements a cascading strategy for AI services:
- * 1. Tries OpenAI first (usually best quality)
- * 2. Falls back to Gemini if OpenAI fails
- * 3. Falls back to Claude as a last resort
- * 4. Uses a fallback generator if all services fail
- * 
- * Improvements:
- * - Unified API endpoint for all optimization operations
- * - Modular service architecture for better maintainability
- * - Improved error handling with consistent response format
- * - Better file handling with proper cleanup
- * - Added support for resetting last_saved_text on new uploads
- * - Fixed timeout handling to prevent unhandled rejections
- * - Added handling for RETRY_UPLOAD errors from OpenAI parsing
- * - Ensures all suggestions and keywords have valid IDs when returned
+ * Flow:
+ * 1. Receives request from client
+ * 2. Extracts and processes file/text
+ * 3. Calls Supabase functions for AI optimization
+ * 4. Stores results in database
+ * 5. Returns formatted response to client
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { getAdminClient } from '@/lib/supabase-admin';
 import { extractTextFromFile } from './services/extraction';
 import { detectLanguage } from './services/language';
-import { optimizeResume } from './services/optimization';
-import { generateFallbackOptimization } from './services/optimization/fallback';
-import { getSupabaseUuid } from './services/userMapping';
 import { cleanupTempFile } from './services/fileHandler';
-import { OptimizationResult, OptimizationOptions } from './types';
+import { getSupabaseUuid } from './services/userMapping';
+import { ResumeData, KeywordWithId } from './types';
 
-// API timeout duration in milliseconds (60 seconds)
+// Create regular Supabase client for Edge Function calls
+const supabaseClient = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// API timeout duration (60 seconds)
 const API_TIMEOUT = 60000;
-
-// Define interface for database resume data
-interface ResumeData {
-  id: string;
-  user_id: string;
-  auth_user_id: string;
-  supabase_user_id: string;
-  original_text: string;
-  optimized_text: string;
-  last_saved_text: string | null;
-  language: string;
-  ats_score: number;
-  file_url: string | null;
-  file_name: string | null;
-  file_type: string | null;
-  file_size: number | null;
-  ai_provider: string;
-  [key: string]: any; // Allow for additional properties
-}
-
-// Interface for keywords with IDs for frontend consumption
-interface KeywordWithId {
-  id: string;
-  text: string;
-  isApplied: boolean;
-}
 
 /**
  * POST handler for resume optimization
+ * Handles file processing, AI optimization, and database storage
  */
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
+  
   // Create an AbortController to handle timeout
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
   try {
-    // Extract data from request
+    // Extract data from the request
     const formData = await req.formData();
     const fileUrl = formData.get("fileUrl") as string | null;
     const rawText = formData.get("rawText") as string | null;
     const userId = formData.get("userId") as string | null;
     const fileName = formData.get("fileName") as string | null;
     const fileType = formData.get("fileType") as string | null;
-    
-    // Check if we should reset last_saved_text
     const resetLastSavedText = formData.get("resetLastSavedText") === "true";
 
-    // Validate input
+    // Validate required fields
     if (!userId) {
       clearTimeout(timeoutId);
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
@@ -97,15 +68,16 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Handle optimization flow
-    console.log(`New optimization for user ${userId}`);
+    // Log the optimization request
+    console.log(`New optimization request for user ${userId}`);
     
-    // Get text content from file or rawText
+    // Initialize variables for text content and file size
     let resumeText = '';
     let fileSize: number | null = null;
 
+    // Extract text from file or use provided raw text
     if (fileUrl) {
-      // Extract text from uploaded file - FIXED: Now passing fileType to properly handle DOCX files
+      console.log(`Processing file URL: ${fileUrl}`);
       const extractionResult = await extractTextFromFile(fileUrl, fileType || undefined);
       
       if (extractionResult.error) {
@@ -123,7 +95,7 @@ export async function POST(req: NextRequest) {
         
         return NextResponse.json({ 
           error: userMessage 
-        }, { status: 422 }); // Using 422 Unprocessable Entity instead of 500 for better semantics
+        }, { status: 422 });
       }
       
       resumeText = extractionResult.text;
@@ -145,91 +117,69 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Detect language
+    // Detect language of resume text
     const language = await detectLanguage(resumeText);
     console.log(`Detected language: ${language}`);
 
-    // Optimize resume with cascade of AI services
-    let optimizationResult: OptimizationResult & { keywords?: KeywordWithId[] } = {
+    // Call Supabase Edge Function for optimization
+    // This proxy approach avoids CORS issues with direct client-to-Function calls
+    console.log("Calling Supabase optimize-resume function...");
+    const { data: optimizationData, error: optimizationError } = await supabaseClient.functions.invoke(
+      'optimize-resume',
+      {
+        body: { 
+          resumeText, 
+          language,
+          fileName,
+          fileType 
+        }
+      }
+    );
+
+    // Handle optimization errors
+    if (optimizationError) {
+      clearTimeout(timeoutId);
+      console.error("Optimization error:", optimizationError);
+      
+      // Clean up temporary file
+      if (tempFilePath) {
+        cleanupTempFile(tempFilePath);
+      }
+      
+      return NextResponse.json({ 
+        error: optimizationError.message || "Failed to optimize resume" 
+      }, { status: 500 });
+    }
+
+    // Process optimization result
+    const optimizationResult = optimizationData || {
       optimizedText: '',
       suggestions: [],
       keywordSuggestions: [],
-      atsScore: 0,
-      provider: ''
+      atsScore: 65,
+      provider: 'fallback'
     };
     
-    try {
-      // Create options object with only properties that exist in OptimizationOptions
-      // Using type assertion to avoid TypeScript errors related to signal
-      const options = {
-        // Add any properties that are actually in your OptimizationOptions interface
-        // For example:
-        // language: language,
-        // customInstructions: []
-      } as OptimizationOptions;
-      
-      // Call optimizeResume without passing the abort signal
-      // Since it's not supported in your OptimizationOptions interface
-      optimizationResult = await optimizeResume(resumeText, language, options);
-      console.log(`Optimization successful using ${optimizationResult.provider}`);
-    } catch (error: any) {
-      // Check if this is a RETRY_UPLOAD error from OpenAI parsing
-      if (error.message === 'RETRY_UPLOAD') {
-        console.error("OpenAI response parsing failed, requesting file re-upload");
-        clearTimeout(timeoutId);
-        
-        // Clean up temporary file
-        if (tempFilePath) {
-          cleanupTempFile(tempFilePath);
-        }
-        
-        return NextResponse.json({ 
-          success: false,
-          error: "RETRY_UPLOAD",
-          message: "An error occurred while analyzing your resume. Please try uploading the file again."
-        }, { status: 422 }); // 422 Unprocessable Entity
-      }
-      
-      // Check if this is an abort error from our timeout
-      if (error.name === 'AbortError') {
-        console.error("Optimization request timed out after", API_TIMEOUT, "ms");
-        clearTimeout(timeoutId);
-        
-        // Clean up temporary file
-        if (tempFilePath) {
-          cleanupTempFile(tempFilePath);
-        }
-        
-        return NextResponse.json({ 
-          error: "Optimization request timed out. Please try again with a smaller file or less text." 
-        }, { status: 504 });
-      }
-      
-      console.error("All optimization attempts failed, using fallback:", error);
-      
-      // Generate a fallback optimization if all services fail
-      optimizationResult = generateFallbackOptimization(resumeText, language);
-      console.log("Generated fallback optimization");
-    }
+    console.log(`Optimization successful using ${optimizationResult.provider}`);
 
-    // Initialize keywords property if needed
-    // This ensures type safety for later operations
+    // Initialize keywords array if not present
     if (!optimizationResult.keywords) {
       optimizationResult.keywords = [];
     }
 
-    // Save results to database if user ID is provided
+    // Save results to database
     let resumeData: ResumeData | null = null;
     if (userId) {
       try {
-        // Get Supabase admin client
+        // Get Supabase admin client for database operations
         const supabaseAdmin = getAdminClient();
         
         // Get or create Supabase UUID for user
         const supabaseUserId = await getSupabaseUuid(supabaseAdmin, userId);
         
-        // Insert into database
-        // NOTE: last_saved_text is explicitly set to null for new uploads
+        console.log(`Using Supabase user ID: ${supabaseUserId} for auth user ID: ${userId}`);
+        
+        // Insert resume into database
         const { data: insertedResumeData, error } = await supabaseAdmin
           .from('resumes')
           .insert({
@@ -238,7 +188,7 @@ export async function POST(req: NextRequest) {
             supabase_user_id: supabaseUserId,
             original_text: resumeText,
             optimized_text: optimizationResult.optimizedText,
-            // Explicitly set last_saved_text to null for new uploads
+            // Explicitly set last_saved_text to null for new uploads if requested
             last_saved_text: resetLastSavedText ? null : undefined,
             language: language,
             ats_score: optimizationResult.atsScore || 65,
@@ -258,40 +208,38 @@ export async function POST(req: NextRequest) {
           console.log("Resume saved successfully with ID:", resumeData.id);
           optimizationResult.resumeId = resumeData.id;
           
-          // Save keywords if present
+          // Save keywords to database if present
           if (optimizationResult.keywordSuggestions?.length > 0) {
-            // Prepare keywords with resume ID reference
+            // Map keywords to database format
             const keywordsToInsert = optimizationResult.keywordSuggestions.map((keyword: string) => ({
               resume_id: resumeData!.id,
               keyword: keyword,
               is_applied: false
             }));
             
-            // Insert keywords and retrieve the created records with their IDs
+            // Insert keywords and retrieve generated IDs
             const { data: insertedKeywords, error: keywordsError } = await supabaseAdmin
               .from('resume_keywords')
               .insert(keywordsToInsert)
-              .select(); // Important: this returns inserted records with generated IDs
+              .select();
             
             if (keywordsError) {
               console.error("Error inserting keywords:", keywordsError);
             } else if (insertedKeywords) {
-              // Create a properly formatted keywords array with IDs for the response
-              // This ensures all keywords have a valid ID from the database
-              // We use the extended type definition to ensure type safety
+              // Format keywords with IDs for frontend
               optimizationResult.keywords = insertedKeywords.map(k => ({
                 id: k.id,
                 text: k.keyword,
-                isApplied: k.is_applied // Convert snake_case to camelCase for frontend
+                isApplied: k.is_applied
               }));
               
-              console.log("Keywords saved with IDs:", insertedKeywords.length);
+              console.log(`${insertedKeywords.length} keywords saved with IDs`);
             }
           }
           
-          // Save suggestions if present
+          // Save suggestions to database if present
           if (optimizationResult.suggestions?.length > 0) {
-            // Prepare suggestions with resume ID reference
+            // Map suggestions to database format
             const suggestionsToInsert = optimizationResult.suggestions.map((suggestion: any) => ({
               resume_id: resumeData!.id,
               type: suggestion.type || "general",
@@ -300,26 +248,25 @@ export async function POST(req: NextRequest) {
               is_applied: false
             }));
             
-            // Insert suggestions and retrieve the created records with their IDs
+            // Insert suggestions and retrieve generated IDs
             const { data: insertedSuggestions, error: suggestionsError } = await supabaseAdmin
               .from('resume_suggestions')
               .insert(suggestionsToInsert)
-              .select(); // Important: this returns inserted records with generated IDs
+              .select();
             
             if (suggestionsError) {
               console.error("Error inserting suggestions:", suggestionsError);
             } else if (insertedSuggestions) {
-              // Replace suggestions in optimization result with those having valid IDs
-              // This ensures all suggestions have an ID from the database
+              // Format suggestions with IDs for frontend
               optimizationResult.suggestions = insertedSuggestions.map(s => ({
-                id: s.id, // Database-generated ID
+                id: s.id,
                 text: s.text,
                 type: s.type,
                 impact: s.impact,
-                isApplied: s.is_applied // Convert snake_case to camelCase for frontend
+                isApplied: s.is_applied
               }));
               
-              console.log("Suggestions saved with IDs:", insertedSuggestions.length);
+              console.log(`${insertedSuggestions.length} suggestions saved with IDs`);
             }
           }
         }
@@ -329,7 +276,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Clean up temporary file
+    // Clean up temporary file if present
     if (tempFilePath) {
       cleanupTempFile(tempFilePath);
     }
@@ -337,13 +284,11 @@ export async function POST(req: NextRequest) {
     // Clear the timeout since we're done
     clearTimeout(timeoutId);
 
-    // Return successful response with properly ID'd suggestions and keywords
+    // Return successful response with properly formatted data
     return NextResponse.json({
       success: true,
       ...optimizationResult,
-      // Ensure suggestions and keywords are included with their IDs
       suggestions: optimizationResult.suggestions || [],
-      // Use the keywords property we've already ensured exists and is typed correctly
       keywords: optimizationResult.keywords || [],
       data: {
         rawText: resumeText,
@@ -361,33 +306,47 @@ export async function POST(req: NextRequest) {
     // Clear the timeout
     clearTimeout(timeoutId);
     
-    console.error("Unexpected error:", error);
+    console.error("Unexpected error in optimization API:", error);
     
     // Clean up temporary file in case of error
     if (tempFilePath) {
       cleanupTempFile(tempFilePath);
     }
     
-    // Check if this is a RETRY_UPLOAD error
+    // Handle specific error cases
     if (error.message === 'RETRY_UPLOAD') {
       return NextResponse.json({ 
         success: false,
         error: "RETRY_UPLOAD",
         message: "An error occurred while analyzing your resume. Please try uploading the file again."
-      }, { status: 422 }); // 422 Unprocessable Entity
+      }, { status: 422 });
     }
     
-    // Check if this is an abort error from our timeout
     if (error.name === 'AbortError') {
       return NextResponse.json({ 
         error: "Request timed out. Please try again with a smaller file or less text." 
       }, { status: 504 });
     }
     
-    // Return error response
+    // Return general error response
     return NextResponse.json(
       { error: error.message || "An unexpected error occurred" },
       { status: 500 }
     );
   }
+}
+
+/**
+ * OPTIONS handler to support CORS preflight requests
+ * This is useful for local development but may not be needed in production
+ */
+export async function OPTIONS(req: NextRequest) {
+  return NextResponse.json({}, { 
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  });
 }

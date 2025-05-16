@@ -11,7 +11,6 @@
  * 
  * This combined approach centralizes all resume-related operations
  * while maintaining clear separation of concerns and robust error handling.
- * Enhanced with support for the last_saved_score_ats field to track edited resume scores.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -242,12 +241,21 @@ export async function GET(req: NextRequest) {
  * POST handler for saving resume content and score
  * Updates the last_saved_text field of a resume and last_saved_score_ats fields
  * Enhanced with support for saving ATS score alongside the resume content
+ * FIX: Ensures score is properly rounded to an integer to match database schema
  */
 export async function POST(req: NextRequest) {
   try {
     // Parse request body
     const body = await req.json();
     const { resumeId, content, userId, atsScore } = body;
+    
+    // Log the received data for debugging
+    console.log(`POST request received for resume ID ${resumeId}:`, { 
+      contentLength: content?.length, 
+      userId, 
+      atsScore,
+      atsScoreType: typeof atsScore
+    });
     
     // Validate request body
     if (!resumeId || !content) {
@@ -286,22 +294,35 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
     
-    // Validate ATS score if provided
+    // Validate and format ATS score - FIX: Always convert to integer
     let validatedAtsScore = null;
-    if (atsScore !== undefined) {
-      // Convert to number if it's a string
-      const scoreValue = typeof atsScore === 'string' ? parseInt(atsScore, 10) : atsScore;
-      
-      // Check if it's a valid number in range 0-100
-      if (!isNaN(scoreValue) && scoreValue >= 0 && scoreValue <= 100) {
-        validatedAtsScore = scoreValue;
-        console.log(`Saving resume ID ${resumeId} with ATS score: ${validatedAtsScore}`);
+    if (atsScore !== undefined && atsScore !== null) {
+      // For string representation, parse to float first, then round to integer
+      if (typeof atsScore === 'string') {
+        const parsedScore = parseFloat(atsScore);
+        if (!isNaN(parsedScore) && parsedScore >= 0 && parsedScore <= 100) {
+          // Round to nearest integer to match database schema
+          validatedAtsScore = Math.round(parsedScore);
+          console.log(`Parsed and rounded ATS score from "${atsScore}" to ${validatedAtsScore}`);
+        } else {
+          console.warn(`Invalid ATS score string: "${atsScore}". Will not save score.`);
+        }
+      } 
+      // For numeric values, just round to integer
+      else if (typeof atsScore === 'number') {
+        if (atsScore >= 0 && atsScore <= 100) {
+          // Round to nearest integer to match database schema
+          validatedAtsScore = Math.round(atsScore);
+          console.log(`Rounded ATS score from ${atsScore} to ${validatedAtsScore}`);
+        } else {
+          console.warn(`Invalid ATS score range: ${atsScore}. Will not save score.`);
+        }
       } else {
-        console.warn(`Invalid ATS score provided: ${atsScore}. Will not save score.`);
+        console.warn(`Unsupported ATS score type: ${typeof atsScore}. Will not save score.`);
       }
     }
     
-    console.log(`Saving resume ID ${resumeId} with content length: ${sanitizedContent.length}`);
+    console.log(`Saving resume ID ${resumeId} with content length: ${sanitizedContent.length} and score: ${validatedAtsScore}`);
     
     // Get Supabase admin client
     const supabaseAdmin = getAdminClient();
@@ -348,6 +369,9 @@ export async function POST(req: NextRequest) {
       updateObject.last_saved_score_ats = validatedAtsScore;
     }
     
+    // Log the update object for debugging
+    console.log("Update object to be sent to database:", updateObject);
+    
     // Update the resume with sanitized content and score
     const { data: updatedResume, error: updateError } = await supabaseAdmin
       .from("resumes")
@@ -382,12 +406,19 @@ export async function POST(req: NextRequest) {
  * PUT handler for updating resume properties
  * Updates various fields of a resume record
  * Enhanced to support last_saved_score_ats and other fields
+ * FIX: Ensures score values are properly formatted as integers
  */
 export async function PUT(req: NextRequest) {
   try {
     // Parse request body
     const body = await req.json();
     const { resumeId, updates, userId } = body;
+    
+    // Log the update request for debugging
+    console.log(`PUT request for resume ID ${resumeId}:`, { 
+      updatesKeys: Object.keys(updates || {}),
+      userId
+    });
     
     // Validate request
     if (!resumeId || !updates || Object.keys(updates).length === 0) {
@@ -447,6 +478,9 @@ export async function PUT(req: NextRequest) {
     
     // Add updated_at timestamp
     sanitizedUpdates.updated_at = new Date().toISOString();
+    
+    // Log sanitized updates for debugging
+    console.log("Sanitized updates to be sent to database:", sanitizedUpdates);
     
     // Update resume
     const { data: updatedResume, error: updateError } = await supabaseAdmin
@@ -583,6 +617,9 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
     const { resumeId, userId, action, resetScore } = body;
     
+    // Log PATCH request for debugging
+    console.log(`PATCH request for resume ID ${resumeId}:`, { action, resetScore, userId });
+    
     // Validate request parameters
     if (!resumeId || action !== 'reset') {
       return NextResponse.json({ 
@@ -653,6 +690,9 @@ export async function PATCH(req: NextRequest) {
     if (resetScore !== false) {
       updateObject.last_saved_score_ats = null;
     }
+    
+    // Log reset operation for debugging
+    console.log(`Resetting resume ${resumeId} with:`, updateObject);
     
     // Reset the resume by setting last_saved_text and optionally last_saved_score_ats to null
     const { data: updatedResume, error: updateError } = await supabaseAdmin
@@ -732,21 +772,6 @@ async function getOrCreateSupabaseUuid(supabaseAdmin: any, clerkUserId: string):
 
 /**
  * Sanitizes HTML content to prevent XSS attacks using DOMPurify with JSDOM
- * Enhanced version for server-side use
- * 
- * @param html - Raw HTML content from the client
- * @returns Sanitized HTML content
- */
-/**
- * Sanitizes HTML content to prevent XSS attacks using DOMPurify with JSDOM
- * Enhanced version for server-side use with ID preservation
- * 
- * @param html - Raw HTML content from the client
- * @returns Sanitized HTML content
- */
-/**
- * Sanitizes HTML content to prevent XSS attacks using DOMPurify with JSDOM
- * Enhanced version for server-side use that preserves IDs with hooks
  * 
  * @param html - Raw HTML content from the client
  * @returns Sanitized HTML content
@@ -773,10 +798,6 @@ function sanitizeHtml(html: string): string {
         .replace(/\son\w+\s*=\s*["']?[^"']*["']?/gi, '') // Remove event handlers
         .replace(/javascript:/gi, ''); // Remove javascript: protocol
     }
-    
-    // Sample HTML before sanitization for debugging (log just the first 100 chars)
-    const sampleBefore = html.substring(0, 100).replace(/</g, '&lt;');
-    console.log(`HTML before sanitization (sample): ${sampleBefore}...`);
     
     // Extract the IDs before sanitization for comparison
     const originalIdRegex = /id=["']([^"']+)["']/g;
@@ -875,10 +896,6 @@ function sanitizeHtml(html: string): string {
     // Remove the temporary hook after use
     DOMPurify.removeHook('afterSanitizeAttributes');
     
-    // Sample HTML after sanitization for debugging (log just the first 100 chars)
-    const sampleAfter = sanitizedHtml.substring(0, 100).replace(/</g, '&lt;');
-    console.log(`HTML after sanitization (sample): ${sampleAfter}...`);
-    
     // Extract the IDs after sanitization to check if they've been preserved correctly
     const sanitizedIdRegex = /id=["']([^"']+)["']/g;
     const sanitizedIds: string[] = [];
@@ -941,6 +958,7 @@ function sanitizeHtml(html: string): string {
 /**
  * Sanitizes object of updates to prevent unwanted field modifications
  * Updated to allow last_saved_score_ats field in updates
+ * FIX: Ensures score values are properly formatted as integers
  * 
  * @param updates - Object containing fields to update
  * @returns Sanitized updates object
@@ -950,7 +968,7 @@ function sanitizeUpdates(updates: any): any {
   const allowedFields = [
     'optimized_text', 'last_saved_text', 'ats_score', 'last_saved_score_ats',
     'language', 'file_name', 'file_type', 'file_url', 'file_size',
-    'ai_provider'
+    'ai_provider', 'selected_template'
   ];
   
   // Filter out unwanted fields
@@ -967,19 +985,48 @@ function sanitizeUpdates(updates: any): any {
       else if ((field === 'ats_score' || field === 'last_saved_score_ats') && 
               updates[field] !== null) {
         // Validate score is in range 0-100
-        const scoreValue = typeof updates[field] === 'string' ? 
-          parseInt(updates[field], 10) : updates[field];
-        
-        if (!isNaN(scoreValue) && scoreValue >= 0 && scoreValue <= 100) {
-          sanitized[field] = scoreValue;
+        // FIX: Properly handle both string and number representations, always convert to integer
+        if (typeof updates[field] === 'string') {
+          // For string values, parse to float first then round to nearest integer
+          const scoreValue = parseFloat(updates[field]);
+          if (!isNaN(scoreValue) && scoreValue >= 0 && scoreValue <= 100) {
+            sanitized[field] = Math.round(scoreValue);
+            console.log(`Sanitized ${field} from string "${updates[field]}" to integer ${sanitized[field]}`);
+          } else {
+            console.warn(`Invalid score value for ${field}: ${updates[field]}. Skipping.`);
+          }
+        } else if (typeof updates[field] === 'number') {
+          // For number values, just round to nearest integer
+          if (updates[field] >= 0 && updates[field] <= 100) {
+            sanitized[field] = Math.round(updates[field]);
+            console.log(`Sanitized ${field} from number ${updates[field]} to integer ${sanitized[field]}`);
+          } else {
+            console.warn(`Invalid score value for ${field}: ${updates[field]}. Skipping.`);
+          }
         } else {
-          console.warn(`Invalid score value for ${field}: ${updates[field]}. Skipping.`);
+          console.warn(`Unexpected type for ${field}: ${typeof updates[field]}. Skipping.`);
         }
       } else {
+        // For other fields, use as-is
         sanitized[field] = updates[field];
       }
     }
   }
   
   return sanitized;
+}
+
+/**
+ * OPTIONS handler to support CORS preflight requests
+ * This is helpful for local development environment
+ */
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  });
 }

@@ -125,12 +125,13 @@ export async function parseResume(filePath: string): Promise<{ data: ResumeData 
 
 /**
  * Optimizes a resume using AI to improve content and ATS compatibility
- * Processes structured resume data through AI enhancement
+ * Now uses the Next.js API route instead of direct Supabase Edge Function call
+ * to avoid CORS issues in development and production
  * 
  * @param resumeData - Structured resume data to optimize
  * @returns Optimized data, suggestions, and any error
  */
-export async function optimizeResume(resumeData: ResumeData): Promise<{ 
+export async function optimizeResume(resumeData: any): Promise<{ 
   optimizedData: ResumeData | null; 
   optimizedText: string | null;
   suggestions: Suggestion[];
@@ -142,17 +143,27 @@ export async function optimizeResume(resumeData: ResumeData): Promise<{
     // Show optimization status toast for user feedback
     const toastId = toast.loading("Optimizing your resume with AI...");
 
-    // Call Supabase Edge Function to optimize resume
-    const { data, error } = await supabase.functions.invoke('optimize-resume', {
-      body: { resumeData },
+    // Use the Next.js API route instead of direct Supabase Edge Function call
+    const response = await fetch('/api/optimize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(resumeData),
     });
 
-    // Handle API errors
-    if (error) {
+    // Handle HTTP errors
+    if (!response.ok) {
+      const errorData = await response.json();
       toast.dismiss(toastId);
-      toast.error("Optimization failed", { description: error.message });
-      throw error;
+      toast.error("Optimization failed", { 
+        description: errorData.error || "Failed to optimize resume" 
+      });
+      throw new Error(errorData.error || "Failed to optimize resume");
     }
+    
+    // Parse the successful response
+    const data = await response.json();
     
     // Show success message with ATS score
     toast.dismiss(toastId);
