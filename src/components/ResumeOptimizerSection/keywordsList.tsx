@@ -1,16 +1,17 @@
 /**
- * Enhanced KeywordsList Component
- * 
- * This component displays recommended keywords to improve resume ATS compatibility
- * with advanced impact analysis, categorization, and real-time score preview.
- * 
- * Features:
- * - Categorized keywords by type (technical, soft skills, etc.)
- * - Single impact preview integrated within the component
- * - Disabled keyword application when not in edit mode
- * - Visual indicators for applied keywords
- * - Tooltip descriptions for each keyword category
- */
+* Enhanced KeywordsList Component
+* 
+* This component displays recommended keywords to improve resume ATS compatibility
+* with advanced impact analysis, categorization, and real-time score preview.
+* 
+* Features:
+* - Categorized keywords by type (technical, soft skills, etc.)
+* - Integrated impact preview showing cumulative effect of applied keywords
+* - Disabled keyword application when not in edit mode
+* - Visual indicators for applied keywords and impact levels
+* - Detailed tooltip descriptions for each keyword category
+* - Integration with useResumeScore for accurate impact calculations
+*/
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
@@ -38,8 +39,48 @@ import {
 } from '@/constants/suggestions';
 
 /**
- * Props interface for KeywordsList component
- */
+* Map numeric impact score to impact level enum
+* Converts a raw impact score (0.0-1.0) to a categorical level
+* 
+* @param impact - Impact score between 0.0 and 1.0
+* @returns ImpactLevel enum value
+*/
+const getImpactLevel = (impact: number): ImpactLevel => {
+  if (impact >= 0.8) return ImpactLevel.CRITICAL;
+  if (impact >= 0.6) return ImpactLevel.HIGH;
+  if (impact >= 0.4) return ImpactLevel.MEDIUM;
+  return ImpactLevel.LOW;
+};
+
+/**
+* Gets the appropriate color class for an impact level
+* Used for visual indicators throughout the component
+* 
+* @param level - Impact level or numeric score
+* @returns CSS class string for the impact level
+*/
+const getImpactColor = (level: ImpactLevel | number): string => {
+  // Convert numeric impact to level if needed
+  const impactLevel = typeof level === 'number' ? getImpactLevel(level) : level;
+  
+  // Return the appropriate color class based on the impact level
+  switch (impactLevel) {
+    case ImpactLevel.CRITICAL:
+      return 'text-red-600 bg-red-50 border-red-200';
+    case ImpactLevel.HIGH:
+      return 'text-orange-600 bg-orange-50 border-orange-200';
+    case ImpactLevel.MEDIUM:
+      return 'text-blue-600 bg-blue-50 border-blue-200';
+    case ImpactLevel.LOW:
+    default:
+      return 'text-gray-600 bg-gray-50 border-gray-200';
+  }
+};
+
+/**
+* Props interface for KeywordsList component
+* Enhanced with useResumeScore integration
+*/
 interface KeywordsListProps {
   keywords: Keyword[];                                // Available keywords
   onKeywordApply: (index: number) => void;            // Handler for applying keywords
@@ -48,41 +89,55 @@ interface KeywordsListProps {
   needsRegeneration?: boolean;                        // Whether changes need regeneration
   currentScore?: number;                              // Current ATS score
   isEditing?: boolean;                                // Whether the resume is in edit mode
-  simulateKeywordImpact?: (index: number) => {        // Function to simulate impact
+ 
+  // Function to simulate impact - enhanced with level property from useResumeScore
+  simulateKeywordImpact?: (index: number) => {
     newScore: number;                                 // Projected new score
     pointImpact: number;                              // Point impact
     description: string;                              // Impact description
+    level?: ImpactLevel;                              // Impact level category
   };
+ 
+  // New props for useResumeScore integration
+  appliedKeywordPoints?: number;                      // Total points from applied keywords
+  potentialKeywordPoints?: number;                    // Total potential points from all keywords
+  cumulativeImpactValues?: any;                       // Score breakdown from useResumeScore
 }
 
 /**
- * KeywordsList component displays recommended keywords
- * with impact analysis and categorization
- */
+* KeywordsList component displays recommended keywords
+* with impact analysis and categorization
+* Enhanced with useResumeScore integration
+*/
 const KeywordsList: React.FC<KeywordsListProps> = ({ 
   keywords, 
   onKeywordApply, 
   resumeContent = "",
-  showImpactDetails = false,
+  showImpactDetails = true,
   needsRegeneration = false,
   currentScore = 0,
   isEditing = false,
-  simulateKeywordImpact
+  simulateKeywordImpact,
+  // Default values for useResumeScore integration props
+  appliedKeywordPoints,
+  potentialKeywordPoints,
+  cumulativeImpactValues
 }) => {
   // Define impact data structure for type safety
   interface ImpactData {
     newScore: number;
     pointImpact: number;
     description: string;
+    level?: ImpactLevel;
   }
-  
+
   // State for keyword impacts - pre-calculated for performance
   const [keywordImpacts, setKeywordImpacts] = useState<ImpactData[]>([]);
-  
+
   /**
-   * Calculate keyword impacts on mount and when dependencies change
-   * This avoids recalculating impacts on every render
-   */
+    * Calculate keyword impacts on mount and when dependencies change
+    * This avoids recalculating impacts on every render
+    */
   useEffect(() => {
     if (!simulateKeywordImpact || keywords.length === 0) return;
     
@@ -95,11 +150,29 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
   }, [keywords, simulateKeywordImpact]);
   
   /**
-   * Calculate cumulative impact of all applied keywords
-   * This shows the total effect of all applied keywords combined
-   */
+    * Calculate cumulative impact of all applied keywords
+    * Prioritizes data from useResumeScore if available for more accurate calculations
+    */
   const cumulativeImpact = useMemo(() => {
-    // Skip calculation if no impacts are available
+    // If we have direct data from useResumeScore, use that
+    if (cumulativeImpactValues && typeof appliedKeywordPoints === 'number') {
+      // Only create impact if there are applied keywords
+      const appliedCount = keywords.filter(k => k.isApplied || k.applied).length;
+      if (appliedCount === 0) return null;
+      
+      // Get impact level based on points
+      const impactLevel = getImpactLevel(appliedKeywordPoints / 10);
+      
+      return {
+        newScore: Math.min(100, currentScore),
+        pointImpact: appliedKeywordPoints,
+        description: `Applying ${appliedCount} keyword${appliedCount !== 1 ? 's' : ''} improves your resume's ATS compatibility.`,
+        appliedCount,
+        impactLevel
+      };
+    }
+    
+    // Fallback to local calculation if useResumeScore data not available
     if (!keywordImpacts.length) return null;
     
     // Find all keywords that have been applied
@@ -121,60 +194,25 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
     // Calculate the new score, capped at 100
     const newScore = Math.min(100, currentScore + totalPointImpact);
     
+    // Get impact level based on total impact
+    const impactLevel = getImpactLevel(totalPointImpact / 10);
+    
     // Return the cumulative impact data
     return {
       newScore,
       pointImpact: totalPointImpact,
       description: `Applying ${appliedKeywords.length} keyword${appliedKeywords.length !== 1 ? 's' : ''} improves your resume's ATS compatibility.`,
-      appliedCount: appliedKeywords.length
+      appliedCount: appliedKeywords.length,
+      impactLevel
     };
-  }, [keywords, keywordImpacts, currentScore]);
+  }, [keywords, keywordImpacts, currentScore, cumulativeImpactValues, appliedKeywordPoints]);
   
   /**
-   * Map numeric impact score to impact level enum
-   * Converts a raw impact score (0.0-1.0) to a categorical level
-   * 
-   * @param impact - Impact score between 0.0 and 1.0
-   * @returns ImpactLevel enum value
-   */
-  const getImpactLevel = (impact: number): ImpactLevel => {
-    if (impact >= 0.8) return ImpactLevel.CRITICAL;
-    if (impact >= 0.6) return ImpactLevel.HIGH;
-    if (impact >= 0.4) return ImpactLevel.MEDIUM;
-    return ImpactLevel.LOW;
-  };
-  
-  /**
-   * Gets the appropriate color class for an impact level
-   * Used for visual indicators throughout the component
-   * 
-   * @param level - Impact level or numeric score
-   * @returns CSS class string for the impact level
-   */
-  const getImpactColor = (level: ImpactLevel | number): string => {
-    // Convert numeric impact to level if needed
-    const impactLevel = typeof level === 'number' ? getImpactLevel(level) : level;
-    
-    // Return the appropriate color class based on the impact level
-    switch (impactLevel) {
-      case ImpactLevel.CRITICAL:
-        return 'text-red-600 bg-red-50 border-red-200';
-      case ImpactLevel.HIGH:
-        return 'text-orange-600 bg-orange-50 border-orange-200';
-      case ImpactLevel.MEDIUM:
-        return 'text-blue-600 bg-blue-50 border-blue-200';
-      case ImpactLevel.LOW:
-      default:
-        return 'text-gray-600 bg-gray-50 border-gray-200';
-    }
-  };
-  
-  /**
-   * Handle clicking a keyword button
-   * Only applies the keyword if in edit mode
-   * 
-   * @param index - Index of the keyword to apply
-   */
+    * Handle clicking a keyword button
+    * Only applies the keyword if in edit mode
+    * 
+    * @param index - Index of the keyword to apply
+    */
   const handleKeywordClick = (index: number) => {
     // Only allow applying keywords in edit mode
     if (isEditing) {
@@ -183,43 +221,47 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
   };
   
   /**
-   * Group keywords by category for better organization
-   * Creates a dictionary with category keys and arrays of keywords
-   */
-  const groupedKeywords = keywords.reduce<Record<string, Keyword[]>>(
-    (groups, keyword) => {
-      // Use the keyword's category or default to 'general'
-      const category = keyword.category || 'general';
-      
-      // Initialize the category array if it doesn't exist
-      if (!groups[category]) {
-        groups[category] = [];
-      }
-      
-      // Add the keyword to its category group
-      groups[category].push(keyword);
-      return groups;
-    }, 
-    {}
-  );
+    * Group keywords by category for better organization
+    * Creates a dictionary with category keys and arrays of keywords
+    */
+  const groupedKeywords = useMemo(() => {
+    return keywords.reduce<Record<string, Keyword[]>>(
+      (groups, keyword) => {
+        // Use the keyword's category or default to 'general'
+        const category = keyword.category || 'general';
+        
+        // Initialize the category array if it doesn't exist
+        if (!groups[category]) {
+          groups[category] = [];
+        }
+        
+        // Add the keyword to its category group
+        groups[category].push(keyword);
+        return groups;
+      }, 
+      {}
+    );
+  }, [keywords]);
   
   /**
-   * Sort group keys by priority order
-   * This ensures the most important categories appear first
-   */
-  const sortedGroupKeys = Object.keys(groupedKeywords).sort((a, b) => {
-    // Get the priority index for each category
-    const indexA = KEYWORD_PRIORITY_ORDER.indexOf(a);
-    const indexB = KEYWORD_PRIORITY_ORDER.indexOf(b);
-    
-    // Handle categories not in the priority list
-    if (indexA === -1 && indexB === -1) return a.localeCompare(b);
-    if (indexA === -1) return 1;
-    if (indexB === -1) return -1;
-    
-    // Sort by priority index
-    return indexA - indexB;
-  });
+    * Sort group keys by priority order
+    * This ensures the most important categories appear first
+    */
+  const sortedGroupKeys = useMemo(() => {
+    return Object.keys(groupedKeywords).sort((a, b) => {
+      // Get the priority index for each category
+      const indexA = KEYWORD_PRIORITY_ORDER.indexOf(a);
+      const indexB = KEYWORD_PRIORITY_ORDER.indexOf(b);
+      
+      // Handle categories not in the priority list
+      if (indexA === -1 && indexB === -1) return a.localeCompare(b);
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      
+      // Sort by priority index
+      return indexA - indexB;
+    });
+  }, [groupedKeywords]);
   
   // If no keywords available, show a message
   if (keywords.length === 0) {
@@ -284,12 +326,19 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
             currentScore={currentScore}
             newScore={cumulativeImpact.newScore}
             pointImpact={cumulativeImpact.pointImpact}
-            impactLevel={getImpactLevel(cumulativeImpact.pointImpact / 10)}
+            impactLevel={cumulativeImpact.impactLevel || getImpactLevel(cumulativeImpact.pointImpact / 10)}
             description={cumulativeImpact.description}
             isApplied={true}
             // No button needed since this shows cumulative impact
             showApplyButton={false}
           />
+        </div>
+      )}
+      
+      {/* Regeneration notice for content changes - based on useResumeScore */}
+      {needsRegeneration && (
+        <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+          <p>Content has been modified. Keyword impacts may need to be recalculated.</p>
         </div>
       )}
       
@@ -332,8 +381,8 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
                   const isKeywordApplied = keyword.isApplied || keyword.applied;
                   
                   // Get impact level from keyword or calculate it
-                  const impactValue = keyword.impact || (impact?.pointImpact ? impact.pointImpact / 2 : 0.5);
-                  const impactLevel = getImpactLevel(impactValue);
+                  // Use impact.level from useResumeScore if available
+                  const impactLevel = impact?.level || getImpactLevel(keyword.impact || (impact?.pointImpact ? impact.pointImpact / 2 : 0.5));
                   
                   return (
                     <div key={categoryIndex} className="relative">
@@ -417,6 +466,16 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
           );
         })}
       </div>
+      
+      {/* Potential improvement indicator from useResumeScore */}
+      {potentialKeywordPoints && potentialKeywordPoints > 0 && (
+        <div className="mt-3 text-xs text-blue-600 bg-blue-50 p-2 rounded-lg border border-blue-200">
+          <div className="flex items-center">
+            <BarChart2 className="h-3 w-3 mr-1" />
+            <span>Potential improvement: +{potentialKeywordPoints.toFixed(1)} points from remaining keywords</span>
+          </div>
+        </div>
+      )}
       
       {/* Instructions when not in edit mode */}
       {!isEditing && (

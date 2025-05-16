@@ -46,13 +46,14 @@ import {
 // Import custom section ID preservation extension
 import { SectionNode } from '@/services/tipTapExtensions';
 
-// Import the suggestion and keyword types
+// Import correct types from their respective files
 import { 
   TipTapResumeEditorProps,
   IsActiveFunction,
-  EditorAttributes,
-  Suggestion
+  EditorAttributes
 } from '@/types/resumeTypes';
+// Import Suggestion from suggestionTypes
+import { OptimizationSuggestion as Suggestion } from '@/types/suggestionTypes';
 
 /**
  * Enhanced TipTapResumeEditor Component

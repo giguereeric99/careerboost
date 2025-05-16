@@ -10,10 +10,16 @@
  * 
  * The service handles interaction with backend storage and AI processing while
  * providing appropriate error handling and user feedback.
+ * 
+ * IMPORTANT: All database operations are performed through API routes instead
+ * of direct Supabase access to ensure proper authentication and avoid RLS issues.
  */
 
 import { supabase } from "@/lib/supabase-client";
-import { ResumeData, Suggestion } from "@/types/resumeTypes";
+import { ResumeData } from "@/types/resumeTypes";
+// Import Suggestion from suggestionTypes instead of resumeTypes
+import { OptimizationSuggestion as Suggestion } from "@/types/suggestionTypes";
+import { Keyword } from "@/types/keywordTypes";
 import { toast } from "sonner";
 import { parseOptimizedText, extractKeywords, calculateAtsScore } from "./resumeParser";
 
@@ -23,6 +29,9 @@ export { parseOptimizedText, extractKeywords, calculateAtsScore };
 /**
  * Uploads a resume file to Supabase storage
  * Handles file naming, upload process, and user feedback
+ * 
+ * Note: This operation uses direct Supabase client as it's a storage operation,
+ * which is different from database operations that need to respect RLS
  * 
  * @param file - The resume file to upload
  * @returns Object containing the file path and any error
@@ -64,6 +73,8 @@ export async function uploadResume(file: File): Promise<{ path: string; error: E
 /**
  * Gets the public URL for a file in Supabase storage
  * Converts storage path to accessible URL for frontend use
+ * 
+ * Note: This is a client-side operation that doesn't require API access
  * 
  * @param filePath - Path to the file in storage
  * @returns Public URL of the file
@@ -193,6 +204,7 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
     ats_score: number;
     keywords?: { text: string, applied: boolean }[];
     suggestions?: Suggestion[];
+    last_saved_score_ats?: number; // Added missing field
   } | null;
   error: Error | null;
 }> {
@@ -279,6 +291,14 @@ export async function updateKeywordStatus(
   applied: boolean
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
+    // Validate parameters
+    if (!resumeId || !keyword) {
+      console.error("updateKeywordStatus: Missing required parameters");
+      return { success: false, error: new Error("Missing required parameters") };
+    }
+    
+    console.log(`Updating keyword status for resume ${resumeId}: ${keyword} -> ${applied}`);
+    
     // Call the API to update keyword status
     const response = await fetch('/api/resumes/keywords', {
       method: 'POST',
@@ -289,12 +309,17 @@ export async function updateKeywordStatus(
       })
     });
     
+    // Parse the response to get error details
+    const result = await response.json();
+    
     // Handle API errors
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to update keyword");
+      const errorMessage = result.error || "Failed to update keyword";
+      console.error(`Keyword status update API error:`, errorMessage);
+      throw new Error(errorMessage);
     }
     
+    console.log(`Keyword status update successful for ${keyword}`);
     return { success: true, error: null };
   } catch (error: any) {
     // Log error for debugging and return error object
@@ -318,7 +343,7 @@ export async function updateSuggestionStatus(
   applied: boolean
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
-    // Validation des paramètres
+    // Parameter validation
     if (!resumeId || !suggestionId || applied === undefined) {
       const error = new Error("Missing required parameters: resumeId, suggestionId, and applied status");
       console.error("updateSuggestionStatus validation error:", {
@@ -343,12 +368,17 @@ export async function updateSuggestionStatus(
       body: JSON.stringify({ resumeId, suggestionId, applied })
     });
     
+    // Parse the response to get error details
+    const result = await response.json();
+    
     // Handle API errors
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to update suggestion");
+      const errorMessage = result.error || "Failed to update suggestion";
+      console.error(`Suggestion status update API error:`, errorMessage);
+      throw new Error(errorMessage);
     }
     
+    console.log(`Suggestion status update successful for ${suggestionId}`);
     return { success: true, error: null };
   } catch (error: any) {
     // Log error for debugging and return error object
@@ -448,6 +478,7 @@ export async function saveResumeContent(
       throw new Error(result.error || 'Failed to save resume');
     }
     
+    console.log('Resume content saved successfully');
     // Request successful
     return { success: true, error: null };
   } catch (error) {
@@ -459,57 +490,78 @@ export async function saveResumeContent(
 
 /**
  * Reset resume to original version
- * Removes all applied changes and reverts to the original optimized version
+ * Reverts all applied changes and returns to the original AI-optimized version
+ * Uses the API PATCH endpoint instead of direct Supabase access for better security and reliability
+ * 
+ * Key improvements:
+ * - Uses API route instead of direct database access to avoid RLS issues
+ * - Comprehensive error handling and detailed logging for debugging
+ * - Proper handling of suggestions and keywords reset
+ * - Structured response format consistent with other service functions
  * 
  * @param resumeId - The ID of the resume to reset
- * @returns Success status and any error
+ * @returns Promise with success status and any error
  */
 export async function resetResumeToOriginal(
   resumeId: string
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
-    // Reset resume fields to original state
-    const { error: resumeError } = await supabase
-      .from('resumes')
-      .update({
-        last_saved_text: null,
-        last_saved_score_ats: null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', resumeId);
+    // Log reset attempt for debugging
+    console.log(`Attempting to reset resume with ID: ${resumeId} via API`);
     
-    // Handle resume update errors
-    if (resumeError) throw resumeError;
+    // Validate resumeId to prevent unnecessary API calls
+    if (!resumeId) {
+      console.error("Cannot reset resume: Missing resumeId");
+      return { success: false, error: new Error("Resume ID is required") };
+    }
     
-    // Reset all suggestions to not applied
-    const { error: suggestionsError } = await supabase
-      .from('resume_suggestions')
-      .update({ is_applied: false })
-      .eq('resume_id', resumeId);
+    // Use the PATCH API endpoint instead of direct Supabase access
+    // This ensures proper authorization and consistent data handling
+    const response = await fetch('/api/resumes', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        resumeId,
+        action: 'reset', // Action parameter required by the API
+      }),
+    });
     
-    // Handle suggestions update errors
-    if (suggestionsError) throw suggestionsError;
+    // Parse response JSON for proper error handling
+    const result = await response.json();
+    console.log(`Reset API response status: ${response.status}`, result);
     
-    // Reset all keywords to not applied
-    const { error: keywordsError } = await supabase
-      .from('resume_keywords')
-      .update({ is_applied: false })
-      .eq('resume_id', resumeId);
+    // Handle API errors with detailed logging
+    if (!response.ok) {
+      const errorMessage = result.error || `API error: ${response.status}`;
+      console.error(`Resume reset API error:`, errorMessage);
+      return { 
+        success: false, 
+        error: new Error(errorMessage)
+      };
+    }
     
-    // Handle keywords update errors
-    if (keywordsError) throw keywordsError;
-    
+    // Success case - API call completed successfully
+    console.log("Resume reset API call successful", result);
     return { success: true, error: null };
-  } catch (error) {
-    // Log error for debugging and return error object
-    console.error("Error resetting resume:", error);
-    return { success: false, error: error as Error };
+  } catch (error: any) {
+    // Catch and handle any unexpected errors
+    // This includes network errors or JSON parsing errors
+    console.error("Unexpected error resetting resume:", error);
+    return { 
+      success: false, 
+      error: new Error(`Failed to reset resume: ${error.message}`) 
+    };
   }
 }
 
 /**
  * Update resume template
  * Sets the selected template for a resume
+ * 
+ * UPDATED: Now uses the API route instead of direct Supabase access
+ * to maintain consistent authorization and avoid RLS issues
  * 
  * @param resumeId - The ID of the resume
  * @param templateId - The ID of the template to apply
@@ -520,18 +572,46 @@ export async function updateResumeTemplate(
   templateId: string
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
-    // Update the resume with the selected template
-    const { error } = await supabase
-      .from('resumes')
-      .update({
-        selected_template: templateId,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', resumeId);
+    // Log template update attempt for debugging
+    console.log(`Updating template for resume ID: ${resumeId} to ${templateId}`);
     
-    // Handle update errors
-    if (error) throw error;
+    // Validate parameters
+    if (!resumeId || !templateId) {
+      console.error("updateResumeTemplate: Missing required parameters");
+      return { success: false, error: new Error("Missing required parameters") };
+    }
     
+    // Use the PUT API endpoint instead of direct Supabase access
+    // This ensures proper authorization and consistent data handling
+    const response = await fetch('/api/resumes', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        resumeId,
+        updates: {
+          selected_template: templateId
+        }
+      }),
+    });
+    
+    // Parse response JSON for proper error handling
+    const result = await response.json();
+    console.log(`Template update API response:`, result);
+    
+    // Handle API errors with detailed logging
+    if (!response.ok) {
+      const errorMessage = result.error || `API error: ${response.status}`;
+      console.error(`Template update API error:`, errorMessage);
+      return { 
+        success: false, 
+        error: new Error(errorMessage) 
+      };
+    }
+    
+    // Success case
+    console.log(`Template updated successfully to: ${templateId}`);
     return { success: true, error: null };
   } catch (error) {
     // Log error for debugging and return error object

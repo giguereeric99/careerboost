@@ -19,13 +19,13 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Sparkles, Info, TrendingUp } from "lucide-react";
 import {
-Tooltip,
-TooltipContent,
-TooltipProvider,
-TooltipTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// Import the scoring logic if available
+// Import the scoring logic
 import { ScoreBreakdown } from '@/services/resumeScoreLogic';
 
 // Props interface with detailed documentation
@@ -39,6 +39,9 @@ interface ScoreCardProps {
   initialScore?: number | null;    // Starting score before any optimizations
   showDetails?: boolean;           // Whether to show detailed metrics (default: true)
   isCalculating?: boolean;         // Whether the score is currently being calculated
+  // New props to better show improvement metrics
+  improvementPoints?: number;      // Points improvement from initial score
+  remainingPotentialPoints?: number; // Potential additional points available
 }
 
 /**
@@ -57,8 +60,11 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   potentialScore = null,
   initialScore = null,
   showDetails = true,
-  isCalculating = false
-  }) => {
+  isCalculating = false,
+  // Default values for new props
+  improvementPoints,
+  remainingPotentialPoints
+}) => {
   // =========================================================================
   // State Management
   // =========================================================================
@@ -420,12 +426,17 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   const displayScoreRounded = Math.round(displayScore);
 
   // Calculate improvement metrics for display
-  const improvement = initialScore ? Math.round((processedScore - initialScore) * 10) / 10 : 0;
+  // Use provided improvement points if available, otherwise calculate from initial score
+  const improvement = improvementPoints !== undefined
+    ? improvementPoints
+    : (initialScore ? Math.round((processedScore - initialScore) * 10) / 10 : 0);
 
-  // Calculate potential remaining improvement
-  const remainingPotential = potentialScore && potentialScore > processedScore 
-    ? Math.round((potentialScore - processedScore) * 10) / 10 
-    : 0;
+  // Use provided remaining potential if available, otherwise calculate
+  const remainingPotential = remainingPotentialPoints !== undefined
+    ? remainingPotentialPoints
+    : (potentialScore && potentialScore > processedScore 
+      ? Math.round((potentialScore - processedScore) * 10) / 10 
+      : 0);
 
   // =========================================================================
   // Component Rendering
@@ -551,32 +562,6 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
           </div>
         )}
         
-        {/* Score breakdown by section - only show when not calculating */}
-        {!isCalculating && showDetails && scoreBreakdown && (
-          <div className="mt-3 pt-2 border-t border-gray-200">
-            <h4 className="text-xs font-medium mb-1">Score Breakdown:</h4>
-            <div className="grid grid-cols-1 gap-1">
-              {Object.entries(scoreBreakdown.sectionScores || {}).map(([sectionId, score]) => {
-                // Only show sections with non-zero scores
-                if (score <= 0) return null;
-                
-                // Format section name from ID for better readability
-                // Converts "resume-experience" to "Experience"
-                const sectionName = sectionId
-                  .replace('resume-', '')
-                  .replace(/-/g, ' ')
-                  .replace(/\b\w/g, l => l.toUpperCase());
-                
-                return (
-                  <div key={sectionId} className="flex justify-between text-xs">
-                    <span>{sectionName}:</span>
-                    <span className="font-medium">{score.toFixed(0)}/100</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

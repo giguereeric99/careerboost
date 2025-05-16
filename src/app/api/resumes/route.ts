@@ -794,7 +794,7 @@ function sanitizeHtml(html: string): string {
     // Register a one-time hook for this specific sanitization call
     // This hook will be used just for this call and then removed
     const hookId = `fixIds-${Date.now()}`;
-    DOMPurify.addHook('afterSanitizeAttributes', function(node) {
+    DOMPurify.addHook('afterSanitizeAttributes', function(node: Element) {
       // Only process nodes that have an id attribute
       if (node.hasAttribute('id')) {
         const currentId = node.getAttribute('id');
@@ -809,9 +809,9 @@ function sanitizeHtml(html: string): string {
             const idParts = currentId.split('-');
             
             // Look for resume section patterns
-            if (idParts.some(part => part === 'resume')) {
+            if (idParts.some((part: string) => part === 'resume')) {
               // Find where "resume" appears in the parts
-              const resumeIndex = idParts.findIndex(part => part === 'resume');
+              const resumeIndex = idParts.findIndex((part: string) => part === 'resume');
               
               // Reconstruct original ID, preserving the resume-xxx pattern
               if (resumeIndex >= 0) {

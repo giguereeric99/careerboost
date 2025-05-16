@@ -9,6 +9,7 @@
  * - Categorized suggestions by type
  * - Interactive suggestion application (edit mode only)
  * - Visual feedback on impact levels
+ * - Dynamic impact calculation using useResumeScore hook
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -49,12 +50,18 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
   showImpactScore = true,
   currentScore = 0,
   simulateSuggestionImpact,
-  isEditing = false // Default to false if not provided
+  isEditing = false, // Default to false if not provided
+  // New props for better integration with useResumeScore
+  cumulativeImpactValues = null,
+  appliedImprovements = null
 }) => {
   // State for tracking suggestion impacts
   const [suggestionImpacts, setSuggestionImpacts] = useState<SuggestionImpact[]>([]);
   
-  // Calculate suggestion impacts on mount and when dependencies change
+  /**
+   * Calculate suggestion impacts on mount and when dependencies change
+   * Uses simulateSuggestionImpact function from useResumeScore hook if provided
+   */
   useEffect(() => {
     if (!simulateSuggestionImpact || suggestions.length === 0) return;
     
@@ -66,16 +73,42 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
     setSuggestionImpacts(impacts);
   }, [suggestions, simulateSuggestionImpact]);
   
-  // Calculate cumulative impact of all applied suggestions
+  /**
+   * Calculate cumulative impact of all applied suggestions
+   * This can either use the prop passed from useResumeScore for more accurate calculations,
+   * or calculate it locally for backwards compatibility
+   */
   const cumulativeImpact = useMemo<CumulativeImpact | null>(() => {
+    // If cumulativeImpactValues is provided by useResumeScore, use that
+    if (cumulativeImpactValues && appliedImprovements) {
+      const { suggestionPoints } = appliedImprovements;
+      
+      // Only create impact if there are applied suggestions
+      if (suggestionPoints <= 0) return null;
+      
+      // Get count of applied suggestions
+      const appliedCount = suggestions.filter(s => s.isApplied).length;
+      
+      // Return impact data using values from useResumeScore
+      return {
+        newScore: Math.min(100, currentScore),
+        pointImpact: suggestionPoints,
+        description: `Applying ${appliedCount} suggestion${appliedCount !== 1 ? 's' : ''} improves your resume's ATS compatibility.`,
+        appliedCount
+      };
+    }
+    
+    // Fallback calculation if useResumeScore integration is not available
     if (!suggestionImpacts.length) return null;
     
+    // Find all applied suggestions
     const appliedSuggestions = suggestions.map((s, index) => ({
       suggestion: s,
       index,
       impact: suggestionImpacts[index]
     })).filter(item => item.suggestion.isApplied);
     
+    // If no suggestions have been applied, return null
     if (appliedSuggestions.length === 0) return null;
     
     // Sum up the impact of all applied suggestions
@@ -84,7 +117,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
       0
     );
     
-    // Calculate the new score
+    // Calculate the new score, capped at 100
     const newScore = Math.min(100, currentScore + totalPointImpact);
     
     return {
@@ -93,10 +126,14 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
       description: `Applying ${appliedSuggestions.length} suggestion${appliedSuggestions.length !== 1 ? 's' : ''} improves your resume's ATS compatibility.`,
       appliedCount: appliedSuggestions.length
     };
-  }, [suggestions, suggestionImpacts, currentScore]);
+  }, [suggestions, suggestionImpacts, currentScore, cumulativeImpactValues, appliedImprovements]);
   
   /**
    * Map numeric impact score to impact level enum
+   * Maps raw impact scores to categorical levels for consistent visual representation
+   * 
+   * @param score - Raw impact score (typically 0-10)
+   * @returns Impact level category (CRITICAL, HIGH, MEDIUM, LOW)
    */
   const getImpactLevel = useCallback((score: number): ImpactLevel => {
     if (score >= 8) return ImpactLevel.CRITICAL;
@@ -107,6 +144,9 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
   
   /**
    * Handle applying a suggestion (with edit mode check)
+   * Applies a suggestion only if the resume is in edit mode
+   * 
+   * @param index - Index of the suggestion in the suggestions array
    */
   const handleApplySuggestion = useCallback((index: number) => {
     // Only allow applying suggestions in edit mode
@@ -117,33 +157,43 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
   
   /**
    * Group suggestions by type for better organization
+   * Creates an object with type keys and arrays of suggestions as values
    */
-  const groupedSuggestions = suggestions.reduce<Record<string, OptimizationSuggestion[]>>(
-    (groups, suggestion) => {
-      const type = suggestion.type || 'general';
-      if (!groups[type]) {
-        groups[type] = [];
-      }
-      groups[type].push(suggestion);
-      return groups;
-    }, 
-    {}
-  );
+  const groupedSuggestions = useMemo(() => {
+    return suggestions.reduce<Record<string, OptimizationSuggestion[]>>(
+      (groups, suggestion) => {
+        const type = suggestion.type || 'general';
+        if (!groups[type]) {
+          groups[type] = [];
+        }
+        groups[type].push(suggestion);
+        return groups;
+      }, 
+      {}
+    );
+  }, [suggestions]);
   
-  // Sort groups by priority order from constants
-  const sortedGroupKeys = Object.keys(groupedSuggestions).sort((a, b) => {
-    const indexA = SUGGESTION_PRIORITY_ORDER.indexOf(a);
-    const indexB = SUGGESTION_PRIORITY_ORDER.indexOf(b);
-    
-    if (indexA === -1 && indexB === -1) return a.localeCompare(b);
-    if (indexA === -1) return 1;
-    if (indexB === -1) return -1;
-    
-    return indexA - indexB;
-  });
+  /**
+   * Sort group keys by priority for consistent display
+   * Using predefined priority order from constants file
+   */
+  const sortedGroupKeys = useMemo(() => {
+    return Object.keys(groupedSuggestions).sort((a, b) => {
+      const indexA = SUGGESTION_PRIORITY_ORDER.indexOf(a);
+      const indexB = SUGGESTION_PRIORITY_ORDER.indexOf(b);
+      
+      if (indexA === -1 && indexB === -1) return a.localeCompare(b);
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      
+      return indexA - indexB;
+    });
+  }, [groupedSuggestions]);
 
-  // Get applied suggestions count
-  const appliedSuggestionsCount = suggestions.filter(s => s.isApplied).length;
+  // Get applied suggestions count for badge display
+  const appliedSuggestionsCount = useMemo(() => 
+    suggestions.filter(s => s.isApplied).length,
+  [suggestions]);
 
   return (
     <div className="bg-brand-50 border border-brand-100 rounded-lg p-4">
@@ -178,7 +228,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
         </div>
       </div>
       
-      {/* Integrated impact preview */}
+      {/* Integrated impact preview - Shows the cumulative effect of applied suggestions */}
       {showImpactScore && cumulativeImpact && cumulativeImpact.appliedCount > 0 && (
         <div className="mb-4 bg-white border rounded-lg p-3">
           <div className="flex items-center gap-2 mb-2">
@@ -199,14 +249,15 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
         </div>
       )}
       
+      {/* Loading state */}
       {isOptimizing ? (
         <p className="text-sm text-gray-500">Generating suggestions...</p>
       ) : suggestions && suggestions.length > 0 ? (
+        // Suggestion groups - Categorized by type for better organization
         <div className="space-y-4">
-          {/* Group suggestions by type */}
           {sortedGroupKeys.map(groupKey => {
             const groupSuggestions = groupedSuggestions[groupKey];
-            // Get type info for the group
+            // Get type info for the group from predefined types or create default
             const typeInfo = SUGGESTION_TYPES[groupKey] || {
               type: groupKey,
               title: groupKey.charAt(0).toUpperCase() + groupKey.slice(1),
@@ -218,7 +269,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
             
             return (
               <div key={groupKey} className="bg-white rounded-lg border overflow-hidden">
-                {/* Group header */}
+                {/* Group header with icon and description */}
                 <div className="bg-gray-50 px-4 py-2 border-b">
                   <div className="flex items-center gap-1.5">
                     <TypeIcon className="h-4 w-4 text-brand-600" />
@@ -227,17 +278,20 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
                   <p className="text-xs text-gray-600 mt-0.5">{typeInfo.description}</p>
                 </div>
                 
-                {/* Group suggestions - simplified list without collapsibles */}
+                {/* List of suggestions in this group */}
                 <div className="divide-y">
                   {groupSuggestions.map((suggestion, groupIndex) => {
+                    // Find the global index of this suggestion for consistent reference
                     const suggestionIndex = suggestions.findIndex(s => 
                       s.id === suggestion.id || 
                       (s.text === suggestion.text && s.type === suggestion.type)
                     );
                     
+                    // Get the impact data for this suggestion
                     const impact = suggestionImpacts[suggestionIndex];
                     
                     // Get impact level from score or calculate it
+                    // Use the suggestion's score if available, otherwise calculate from pointImpact
                     const impactScore = suggestion.score || (impact?.pointImpact ? impact.pointImpact * 5 : 5);
                     const impactLevel = getImpactLevel(impactScore);
                     
@@ -256,7 +310,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
                               {suggestion.impact}
                             </p>
                             
-                            {/* Impact badge */}
+                            {/* Impact badge - Shows the point impact with appropriate coloring */}
                             {showImpactScore && impact && (
                               <Badge 
                                 variant="outline"
@@ -272,7 +326,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
                             )}
                           </div>
                           
-                          {/* Apply button */}
+                          {/* Apply button - Disabled when not in edit mode */}
                           <Button 
                             variant={suggestion.isApplied ? "default" : "outline"} 
                             size="sm" 

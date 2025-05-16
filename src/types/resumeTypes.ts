@@ -1,9 +1,8 @@
 /**
- * Resume Type Definitions
+ * Core Resume Type Definitions
  * 
- * This module contains all type definitions related to resume data structures,
- * used throughout the application for handling resume content, optimization,
- * and enhancements.
+ * This module contains the fundamental type definitions used across the application
+ * for handling resume structure, content, and database interactions.
  */
 
 /**
@@ -77,31 +76,6 @@ export interface BasicSection {
 }
 
 /**
- * Suggestion structure
- * Represents an AI-generated improvement recommendation
- */
-export interface Suggestion {
-  id: string;                // Unique identifier for the suggestion
-  text: string;              // The content of the suggestion or recommendation
-  type: string;              // Category of the suggestion (e.g., "summary", "experience", "skills")
-  impact: string;            // Description of how implementing this would improve the resume
-  isApplied: boolean;        // Indicates if the suggestion has been applied to the resume
-  pointImpact?: number;      // Numeric value representing the score impact when applied
-}
-
-/**
- * Keyword structure
- * Represents an industry or job-specific keyword that can enhance resume relevance
- */
-export interface Keyword {
-  id: string;                // Unique identifier for the keyword
-  text: string;              // The keyword or key phrase text
-  isApplied: boolean;        // Whether this keyword has been incorporated into the resume
-  relevance?: number;        // Relevance score for this keyword (0-1)
-  pointImpact?: number;      // Numeric value representing the score impact when applied
-}
-
-/**
  * Database mapping structure for suggestions
  * Used for converting between database and application formats
  */
@@ -168,8 +142,8 @@ export interface OptimizedResumeData {
   file_size?: number;        // File size in bytes
   ats_score: number;         // Original optimization score
   selected_template?: string; // Visual template selection
-  keywords?: Keyword[];      // Recommended keywords
-  suggestions?: Suggestion[]; // Improvement suggestions
+  keywords?: any[];          // Recommended keywords - using any[] to avoid circular imports
+  suggestions?: any[];       // Improvement suggestions - using any[] to avoid circular imports
 }
 
 /**
@@ -212,8 +186,8 @@ export interface TipTapResumeEditorProps {
   onChange: (html: string) => void;     // Callback when content changes
   appliedKeywords?: string[];           // Keywords that can be applied to the resume
   onApplyKeyword?: (keyword: string) => void; // Callback when keyword is applied
-  suggestions?: Suggestion[];           // AI suggestions for improving the resume
-  onApplySuggestion?: (suggestion: Suggestion) => void; // Callback when suggestion is applied
+  suggestions?: any[];                  // AI suggestions for improving the resume - using any[] to avoid circular imports
+  onApplySuggestion?: (suggestion: any) => void; // Callback when suggestion is applied
   readOnly?: boolean;                   // Whether the editor is in read-only mode
   placeholder?: string;                 // Placeholder text when empty
   language?: string;                    // Language of the resume content
@@ -260,16 +234,6 @@ export enum ResumeSection {
   PROJECTS = 'projects',
   CERTIFICATIONS = 'certifications',
   LANGUAGES = 'languages'
-}
-
-/**
- * Suggestion impact levels
- * Categorizes the potential impact of a suggestion on ATS score
- */
-export enum SuggestionImpact {
-  HIGH = 'high',
-  MEDIUM = 'medium',
-  LOW = 'low'
 }
 
 /**
@@ -322,66 +286,6 @@ function guessTypeFromId(id: string): string {
  * Data mapper functions for converting between database and application formats
  */
 export const DataMappers = {
-  /**
-   * Maps a suggestion record from database format to application format
-   * 
-   * @param record - Database suggestion record
-   * @returns Application suggestion object
-   */
-  mapSuggestionFromDB: (record: SuggestionRecord): Suggestion => ({
-    id: record.id,
-    text: record.text,
-    type: record.type,
-    impact: record.impact,
-    isApplied: record.is_applied,
-    pointImpact: record.point_impact
-  }),
-
-  /**
-   * Maps a keyword record from database format to application format
-   * 
-   * @param record - Database keyword record
-   * @returns Application keyword object
-   */
-  mapKeywordFromDB: (record: KeywordRecord): Keyword => ({
-    id: record.id,
-    text: record.text,
-    isApplied: record.is_applied,
-    relevance: record.relevance
-  }),
-
-  /**
-   * Maps a suggestion from application format to database format
-   * 
-   * @param suggestion - Application suggestion object
-   * @param resumeId - Resume ID to associate with
-   * @returns Database suggestion record
-   */
-  mapSuggestionToDB: (suggestion: Suggestion, resumeId: string): SuggestionRecord => ({
-    id: suggestion.id,
-    resume_id: resumeId,
-    text: suggestion.text,
-    type: suggestion.type,
-    impact: suggestion.impact,
-    is_applied: suggestion.isApplied,
-    point_impact: suggestion.pointImpact
-  }),
-
-  /**
-   * Maps a keyword from application format to database format
-   * 
-   * @param keyword - Application keyword object
-   * @param resumeId - Resume ID to associate with
-   * @returns Database keyword record
-   */
-  mapKeywordToDB: (keyword: Keyword, resumeId: string): KeywordRecord => ({
-    id: keyword.id,
-    resume_id: resumeId,
-    text: keyword.text,
-    is_applied: keyword.isApplied,
-    relevance: keyword.relevance
-  }),
-
   /**
    * Maps API response data to OptimizedResumeData format
    * Converts from API format to application format

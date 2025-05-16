@@ -312,7 +312,7 @@ export function evaluateResumeSections(resumeContent: string): { [key: string]: 
     Object.entries(SECTION_WEIGHTS).forEach(([sectionId, weight]) => {
       // Check if the section ID appears in the content as a marker
       const sectionExists = resumeContent.includes(`id="${sectionId}"`) || 
-                           resumeContent.includes(`data-section="${sectionId}"`);
+      resumeContent.includes(`data-section="${sectionId}"`);
       
       sectionScores[sectionId] = sectionExists ? 70 : 0; // Default score if section exists
     });

@@ -2,8 +2,10 @@
  * ResumeOptimizer Component
  * 
  * Main component that manages the resume optimization workflow.
- * Uses custom hooks for separation of concerns between uploading and editing.
- * Centralized UI state management for loading views and toasts.
+ * Uses custom hooks for separation of concerns: 
+ * - useResumeOptimizer for general state management
+ * - useResumeScore for score-related calculations
+ * - useUploadSection for file upload and parsing
  * 
  * Key functionality:
  * - File upload and parsing
@@ -12,6 +14,7 @@
  * - Application of AI suggestions and keywords
  * - Template selection and preview
  * - Saving and resetting functionality
+ * - Advanced ATS score calculations
  */
 
 'use client';
@@ -20,7 +23,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button"; // Import Button from UI components
+import { Button } from "@/components/ui/button";
 
 // Import UI components
 import UploadSection from '@/components/ResumeOptimizerSection/uploadSection';
@@ -37,17 +40,53 @@ import { resumeTemplates } from '@/constants/resumeTemplates';
 // Import custom hooks for state management
 import useResumeOptimizer from '@/hooks/optimizer/useResumeOptimizer';
 import useUploadSection from '@/hooks/optimizer/useUploadSection';
+import useResumeScore from '@/hooks/optimizer/useResumeScore';
 
-// Import types for type safety
-import { Suggestion, Keyword, OptimizedResumeData } from '@/types/resumeTypes';
-import { SuggestionImpact } from '@/types/suggestionTypes';
+// Import types for type safety - Corrected imports
+import { OptimizationSuggestion, SuggestionImpact } from '@/types/suggestionTypes';
+import { Keyword } from '@/types/keywordTypes';
+import { ImpactLevel } from '@/services/resumeScoreLogic';
 
 /**
- * EmptyPreviewStateProps interface based on error messages
- * Props for the empty state component when no resume is available
+ * Creates a deterministic ID based on text content
+ * This ensures the same content always gets the same ID
+ * 
+ * @param prefix - Prefix to use for the ID
+ * @param text - Text content to derive the ID from
+ * @returns Deterministic ID string
  */
-interface EmptyPreviewStateProps {
-  onGoToUpload: () => void;  // Action to navigate to upload section
+function createDeterministicId(prefix: string, text: string): string {
+  // Create a simple hash from the text
+  let hash = 0;
+  if (text.length === 0) return `${prefix}-empty`;
+  
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  
+  // Use the hash as part of the ID - ensure it's positive
+  return `${prefix}-${Math.abs(hash)}`;
+}
+
+/**
+ * Counter for ensuring unique IDs even when created in the same millisecond
+ */
+let idCounter = 0;
+
+/**
+ * Generates a unique ID with a prefix
+ * Uses a combination of timestamp, counter, and index to ensure uniqueness
+ * 
+ * @param prefix - Prefix to use for the ID
+ * @param index - Index of the item in its collection
+ * @returns Unique ID string
+ */
+function generateUniqueId(prefix: string, index: number): string {
+  const timestamp = Date.now();
+  const uniqueCount = idCounter++;
+  return `${prefix}-${index}-${timestamp}-${uniqueCount}`;
 }
 
 /**
@@ -58,30 +97,37 @@ interface EmptyPreviewStateProps {
  * @param index - Index for fallback ID generation
  * @returns Normalized suggestion with consistent property names
  */
-function normalizeSuggestion(suggestion: any, index: number): Suggestion {
+function normalizeSuggestion(suggestion: any, index: number): OptimizationSuggestion {
   // Generate debug output for suggestions without ID
   if (!suggestion.id) {
     console.warn(`Suggestion without ID at index ${index}:`, suggestion);
   }
 
+  // Create a deterministic ID if text is available
+  const text = suggestion.text || suggestion.original_text || '';
+  const deterministicId = text ? createDeterministicId('suggestion', text) : null;
+
   return {
-    // Ensure ID exists with fallbacks
-    id: suggestion.id || suggestion.suggestion_id || `suggestion-${index}-${Date.now()}`,
+    // Ensure ID exists with fallbacks - try deterministic ID first if available
+    id: suggestion.id || suggestion.suggestion_id || deterministicId || generateUniqueId('suggestion', index),
     // Ensure text property exists
-    text: suggestion.text || suggestion.original_text || '',
+    text: text,
     // Provide defaults for optional properties
     type: suggestion.type || 'general',
     impact: suggestion.impact || '',
     // Handle both naming conventions
     isApplied: suggestion.isApplied || suggestion.is_applied || false,
     // Include pointImpact for score calculations
-    pointImpact: suggestion.pointImpact || suggestion.point_impact || 2
+    pointImpact: suggestion.pointImpact || suggestion.point_impact || 2,
+    // Add score property if available for better impact calculations
+    score: suggestion.score 
   };
 }
 
 /**
  * Normalizes a keyword object to ensure consistent structure
  * Handles different property naming conventions and formats
+ * Uses deterministic IDs for better consistency across sessions
  * 
  * @param keyword - Keyword to normalize (string or object)
  * @param index - Index for fallback ID generation
@@ -90,28 +136,43 @@ function normalizeSuggestion(suggestion: any, index: number): Suggestion {
 function normalizeKeyword(keyword: any, index: number): Keyword {
   // Handle case where keyword is just a string
   if (typeof keyword === 'string') {
+    // Create a deterministic ID based on the text content
+    const deterministicId = createDeterministicId('keyword', keyword);
+    
     return {
-      id: `keyword-${index}-${Date.now()}`,
+      id: deterministicId,
       text: keyword,
       isApplied: false,
       relevance: 1,
-      pointImpact: 1
+      pointImpact: 1,
+      category: 'general',
+      impact: 0.5
     };
   }
+  
+  // Get text from the keyword object for ID generation
+  const text = keyword.text || keyword.keyword || '';
   
   // Generate debug output for keywords without ID
   if (!keyword.id) {
     console.warn(`Keyword object without ID at index ${index}:`, keyword);
   }
   
+  // Create a deterministic ID if text is available
+  const deterministicId = text ? createDeterministicId('keyword', text) : null;
+  
   // Handle keyword as an object with potential varying property names
   return {
-    id: keyword.id || keyword.keyword_id || `keyword-${index}-${Date.now()}`,
-    text: keyword.text || keyword.keyword || '',
+    // Use deterministic ID if possible, fall back to other options
+    id: keyword.id || keyword.keyword_id || deterministicId || generateUniqueId('keyword', index),
+    text: text,
     // Support all possible variations of the applied property
     isApplied: keyword.isApplied || keyword.is_applied || keyword.applied || false,
     relevance: keyword.relevance || 1,
-    pointImpact: keyword.pointImpact || keyword.point_impact || 1
+    pointImpact: keyword.pointImpact || keyword.point_impact || 1,
+    // Add category and impact for better score calculations
+    category: keyword.category || 'general',
+    impact: keyword.impact || 0.5
   };
 }
 
@@ -123,6 +184,7 @@ function normalizeKeyword(keyword: any, index: number): Keyword {
  * - Rendering preview with template selection
  * - Managing suggestions and keywords
  * - Saving and resetting user changes
+ * - ATS score calculations and impact analysis
  */
 const ResumeOptimizer: React.FC = () => {
   // Get user authentication state from Clerk
@@ -133,6 +195,12 @@ const ResumeOptimizer: React.FC = () => {
   
   // State to track if welcome toast has been shown
   const welcomeToastShownRef = useRef(false);
+  
+  // State for UI loading
+  const [showLoadingState, setShowLoadingState] = useState(false);
+  
+  // Reset confirmation dialog state
+  const [showResetDialog, setShowResetDialog] = useState(false);
   
   // Use the main optimizer hook to handle resume optimization state and actions
   const {
@@ -147,27 +215,38 @@ const ResumeOptimizer: React.FC = () => {
     isEditing,          // Whether user is in edit mode
     selectedTemplate,   // Currently selected visual template
     contentModified,    // Whether text content has been modified
-    scoreModified,      // Whether score has been modified (NEW)
-    isLoading,          // Loading initial data - IMPORTANT: Used to show LoadingState during initial load
+    scoreModified,      // Whether score has been modified
+    isLoading,          // Loading initial data
     isSaving,           // Saving changes to database
     isResetting,        // Resetting to original state
     hasResume,          // Whether user has any resume
     activeTab,          // Currently active tab
     
     // Actions
-    setActiveTab,             // Change active tab
-    setIsEditing,             // Toggle edit mode
-    loadLatestResume,         // Load latest resume data
-    saveResume,               // Save user changes
-    resetResume,              // Reset to AI-optimized version
-    handleContentEdit,        // Handle content changes
-    handleApplySuggestion,    // Apply a suggestion to content
-    handleKeywordApply,       // Apply a keyword to content
-    updateResumeWithOptimizedData,  // Update state with optimization results
-    updateSelectedTemplate,    // Update template selection
-    setContentModified,        // Set content modified state
-    setScoreModified          // Set score modified state
+    setActiveTab,                    // Change active tab
+    setIsEditing,                    // Toggle edit mode
+    loadLatestResume,                // Load latest resume data
+    saveResume,                      // Save user changes
+    resetResume,                     // Reset to AI-optimized version
+    handleContentEdit,               // Handle content changes
+    handleApplySuggestion,           // Apply a suggestion to content
+    handleKeywordApply,              // Apply a keyword to content
+    updateResumeWithOptimizedData,   // Update state with optimization results
+    updateSelectedTemplate,          // Update template selection
+    setContentModified,              // Set content modified state
+    setScoreModified,                // Set score modified state
+    
+    // Score-related functionality from useResumeScore integration
+    simulateSuggestionImpact,        // Calculate impact of applying a suggestion
+    simulateKeywordImpact,           // Calculate impact of applying a keyword
+    generateScoreBreakdown,          // Generate detailed score breakdown
+    getImprovementMetrics            // Get improvement metrics for display
   } = useResumeOptimizer(user?.id);
+  
+  // Get scoring details including applied and potential improvements
+  // These can be passed to the ScoreCard for more detailed display
+  const scoreBreakdown = generateScoreBreakdown();
+  const improvementMetrics = getImprovementMetrics;
   
   // Use the upload section hook to handle file upload and initial optimization
   const {
@@ -195,12 +274,12 @@ const ResumeOptimizer: React.FC = () => {
       
       // Normalize suggestions to ensure consistent structure
       const normalizedSuggestions = Array.isArray(suggestionsData)
-        ? suggestionsData.map(normalizeSuggestion)
+        ? suggestionsData.map((s, i) => normalizeSuggestion(s, i))
         : [];
       
       // Normalize keywords to ensure consistent structure
       const normalizedKeywords = Array.isArray(keywordsData)
-        ? keywordsData.map(normalizeKeyword)
+        ? keywordsData.map((k, i) => normalizeKeyword(k, i))
         : [];
         
       console.log("Normalized data for UI:", {
@@ -219,6 +298,9 @@ const ResumeOptimizer: React.FC = () => {
       
       // Change tab after processing is complete
       setActiveTab('preview');
+      
+      // Hide loading state
+      setShowLoadingState(false);
       
       // Show success toast
       toast.success("Resume optimized successfully!", {
@@ -291,7 +373,6 @@ const ResumeOptimizer: React.FC = () => {
    * Handle analysis start - show loading state
    * Called when the AI optimization process begins
    */
-  const [showLoadingState, setShowLoadingState] = useState(false);
   const handleAnalysisStart = useCallback(() => {
     setShowLoadingState(true);
   }, []);
@@ -321,12 +402,6 @@ const ResumeOptimizer: React.FC = () => {
   const appliedKeywordsArray = keywords
     .filter(keyword => keyword.isApplied)
     .map(keyword => keyword.text);
-  
-  /**
-   * Handle reset dialog confirmation
-   * Controls visibility of the reset confirmation dialog
-   */
-  const [showResetDialog, setShowResetDialog] = useState(false);
   
   /**
    * Handle resume download
@@ -391,21 +466,28 @@ const ResumeOptimizer: React.FC = () => {
       console.warn(`Suggestion without ID in mapping (index ${index}):`, s);
     }
     
+    // Generate a deterministic ID if text is available
+    const text = s.text || '';
+    const deterministicId = text ? createDeterministicId('mapped-suggestion', text) : null;
+    
     return {
-      // Ensure ID with fallback
-      id: s.id || `mapped-suggestion-${index}-${Date.now()}`,
+      // Ensure ID with fallback - try deterministic ID first if available
+      id: s.id || deterministicId || `mapped-suggestion-${index}-${Date.now()}`,
       text: s.text || '',
       type: s.type || 'general',
       impact: s.impact || '',
       // Handle both naming conventions
       isApplied: s.isApplied || false,
-      pointImpact: s.pointImpact || 2
+      pointImpact: s.pointImpact || 2,
+      // Add score for better impact calculation
+      score: s.score
     };
   });
   
   /**
    * Maps the database-format keywords to component-format keywords
    * Adding the 'applied' property required by KeywordsList component
+   * Now uses deterministic IDs for more consistent behavior
    */
   const mappedKeywords = keywords.map((k, index) => {
     // Log warning for keywords without ID
@@ -413,21 +495,28 @@ const ResumeOptimizer: React.FC = () => {
       console.warn(`Keyword without ID in mapping (index ${index}):`, k);
     }
     
+    // Generate a deterministic ID if text is available
+    const text = k.text || '';
+    const deterministicId = text ? createDeterministicId('mapped-keyword', text) : null;
+    
     return {
-      // Ensure ID with fallback
-      id: k.id || `mapped-keyword-${index}-${Date.now()}`,
-      text: k.text || '',
+      // Ensure ID with fallback - try deterministic ID first if available
+      id: k.id || deterministicId || `mapped-keyword-${index}-${Date.now()}`,
+      text: text,
       isApplied: k.isApplied || false,
       // Add the 'applied' property required by the component
       applied: k.isApplied || false,
       relevance: k.relevance || 1,
-      pointImpact: k.pointImpact || 1
+      pointImpact: k.pointImpact || 1,
+      // Add category and impact for better score calculations
+      category: k.category || 'general',
+      impact: k.impact || 0.5
     };
   });
   
   /**
    * Enhanced adapter function for onKeywordApply
-   * Converts index-based calls to id-based calls and updates modification state
+   * Converts index-based calls to id-based calls using useResumeScore for impact calculations
    * 
    * @param index - Index of keyword in the array
    */
@@ -447,47 +536,51 @@ const ResumeOptimizer: React.FC = () => {
         return;
       }
       
-      // Apply the keyword using the hook's handler
+      // Apply the keyword using the hook's handler with useResumeScore integration
       handleKeywordApply(keyword.id, !keyword.isApplied);
       
-      // Explicitly mark score as modified when applying keyword
-      // This ensures the save button is enabled after keyword application
-      setScoreModified(true);
-      setContentModified(true);
-      
+      // Content modified is now managed by useResumeOptimizer and useResumeScore
     } else if (!isEditing) {
-      // Optionally notify user that editing is required to apply keywords
+      // Notify user that editing is required to apply keywords
       toast.info("Enter edit mode to apply keywords");
     } else {
       console.error(`Invalid keyword index: ${index}. Max: ${mappedKeywords.length - 1}`);
     }
-  }, [isEditing, mappedKeywords, handleKeywordApply, setScoreModified, setContentModified]);
+  }, [isEditing, mappedKeywords, handleKeywordApply]);
   
   /**
    * Adapter function for simulateKeywordImpact
-   * Returns the expected object structure for impact calculation
+   * Uses useResumeScore to calculate accurate impact values
    * 
    * @param index - Index of keyword in the array
    * @returns Impact calculation object
    */
   const simulateKeywordImpactAdapter = useCallback((index: number) => {
-    // Default impact values
-    const pointImpact = 1;
-    const currentScore = atsScore || 0;
-    const newScore = Math.min(100, currentScore + pointImpact);
+    // Use useResumeScore hook for accurate impact calculation 
+    if (index >= 0 && index < mappedKeywords.length) {
+      const result = simulateKeywordImpact(index);
+      
+      // Return in the format expected by KeywordsList component
+      return {
+        newScore: result.newScore,
+        pointImpact: result.pointImpact,
+        description: result.description,
+        level: result.level || ImpactLevel.MEDIUM
+      };
+    }
     
-    // Return the expected object structure
+    // Fallback with default values if index is invalid
     return {
-      newScore,
-      pointImpact,
-      description: "Adding this keyword will improve your ATS compatibility score."
+      newScore: Math.min(100, atsScore + 1),
+      pointImpact: 1,
+      description: "Adding this keyword will improve your ATS compatibility score.",
+      level: ImpactLevel.LOW
     };
-  }, [atsScore]);
+  }, [atsScore, mappedKeywords, simulateKeywordImpact]);
   
   /**
    * Enhanced adapter function for applying suggestions
-   * Converts index-based calls to id-based calls, includes validation
-   * and updates modification state
+   * Uses useResumeScore for accurate impact calculations
    * 
    * @param index - The index of the suggestion in the suggestions array
    * @returns Boolean indicating if operation started successfully
@@ -516,29 +609,8 @@ const ResumeOptimizer: React.FC = () => {
         return false;
       }
       
-      // Validate the resume data exists and has an ID
-      if (!resumeData?.id) {
-        console.error("Cannot apply suggestion: Missing resume ID");
-        toast.error("Cannot apply suggestion: Resume not found");
-        return false;
-      }
-      
-      // Log the operation for debugging
-      console.log("Applying suggestion:", {
-        resumeId: resumeData.id,
-        suggestionId: suggestion.id, 
-        suggestion: suggestion.text,
-        currentState: suggestion.isApplied,
-        newState: !suggestion.isApplied
-      });
-      
-      // Call the parent handler with suggestion ID and toggle applied state
+      // Apply the suggestion with useResumeScore integration for accurate scoring
       handleApplySuggestion(suggestion.id, !suggestion.isApplied);
-      
-      // Explicitly mark score as modified when applying suggestion
-      // This ensures the save button is enabled after suggestion application
-      setScoreModified(true);
-      setContentModified(true);
       
       return true;
     } else if (!isEditing) {
@@ -550,28 +622,37 @@ const ResumeOptimizer: React.FC = () => {
       console.error("Invalid suggestion index:", index, "Max:", mappedSuggestions.length - 1);
       return false;
     }
-  }, [isEditing, mappedSuggestions, resumeData, handleApplySuggestion, setScoreModified, setContentModified]);
+  }, [isEditing, mappedSuggestions, handleApplySuggestion]);
   
   /**
    * Adapter function for simulate suggestion impact
-   * Returns the expected impact object structure
+   * Uses useResumeScore for accurate impact analysis
    * 
    * @param index - Index of suggestion in array
    * @returns Impact calculation object
    */
   const simulateSuggestionImpactAdapter = useCallback((index: number): SuggestionImpact => {
-    // Default impact values
-    const pointImpact = 2;
-    const currentScore = atsScore || 0;
-    const newScore = Math.min(100, currentScore + pointImpact);
+    // Use useResumeScore hook for accurate impact calculation
+    if (index >= 0 && index < mappedSuggestions.length) {
+      const result = simulateSuggestionImpact(index);
+      
+      // Return in the format expected by SuggestionsList component
+      return {
+        newScore: result.newScore,
+        pointImpact: result.pointImpact,
+        description: result.description,
+        level: result.level || ImpactLevel.MEDIUM
+      };
+    }
     
-    // Return the expected object structure
+    // Fallback with default values if index is invalid
     return {
-      newScore,
-      pointImpact,
-      description: "This suggestion will improve your resume's clarity and impact."
+      newScore: Math.min(100, atsScore + 2),
+      pointImpact: 2,
+      description: "This suggestion will improve your resume's clarity and impact.",
+      level: ImpactLevel.MEDIUM
     };
-  }, [atsScore]);
+  }, [atsScore, mappedSuggestions, simulateSuggestionImpact]);
   
   /**
    * Adapter for file upload to match expected signature
@@ -595,17 +676,12 @@ const ResumeOptimizer: React.FC = () => {
    * @returns Promise resolving to the save result
    */
   const handleSaveWithUpdates = useCallback(async (content: string) => {
-    // Call the original save method
+    // Call the original save method which now includes atomic saving
+    // of content, suggestions, and keywords
     const result = await saveResume(content);
     
-    // If save was successful, reset modification states
-    if (result) {
-      setContentModified(false);
-      setScoreModified(false);
-    }
-    
     return result;
-  }, [saveResume, setContentModified, setScoreModified]);
+  }, [saveResume]);
 
   // Check for previous toast shown in session storage
   useEffect(() => {
@@ -629,6 +705,9 @@ const ResumeOptimizer: React.FC = () => {
   useEffect(() => {
     handleLoadingStateChange();
   }, [handleLoadingStateChange]);
+
+  // Get improvement metrics from useResumeScore for the ScoreCard
+  const { improvementPoints, remainingPotential } = improvementMetrics;
 
   return (
     <div className="py-8">
@@ -675,7 +754,6 @@ const ResumeOptimizer: React.FC = () => {
         
         {/* Upload tab */}
         <TabsContent value="upload" className="space-y-4">
-          {/* Using the UploadSection component with required props */}
           <UploadSection 
             isUploading={isUploading}
             isParsing={isOptimizing}
@@ -690,11 +768,11 @@ const ResumeOptimizer: React.FC = () => {
             onAnalysisComplete={(optimizedText, resumeId, atsScore, suggestions, keywords) => {
               // Normalize suggestions and keywords before updating
               const normalizedSuggestions = Array.isArray(suggestions) 
-                ? suggestions.map(normalizeSuggestion)
+                ? suggestions.map((s, i) => normalizeSuggestion(s, i))
                 : [];
                 
               const normalizedKeywords = Array.isArray(keywords)
-                ? keywords.map(normalizeKeyword)
+                ? keywords.map((k, i) => normalizeKeyword(k, i))
                 : [];
               
               // Update state with normalized data
@@ -705,23 +783,17 @@ const ResumeOptimizer: React.FC = () => {
                 normalizedSuggestions,
                 normalizedKeywords
               );
-              
+
               // Hide loading state when complete
               setShowLoadingState(false);
             }}
-            checkingForExistingResumes={isLoading} // Pass isLoading to the checkingForExistingResumes prop
+            checkingForExistingResumes={isLoading}
           />
         </TabsContent>
         
         {/* Preview tab with optimized loading state handling */}
         <TabsContent value="preview" className="space-y-6">
-          {/* 
-           * Display appropriate content based on state:
-           * 1. Show loading spinner during initial data load
-           * 2. Show loading spinner during analysis
-           * 3. Show empty state when no content exists
-           * 4. Show content when available
-           */}
+          {/* Display appropriate content based on state */}
           {isLoading || showLoadingState || isOptimizing ? (
             <LoadingState />
           ) : !displayContent ? (
@@ -749,28 +821,31 @@ const ResumeOptimizer: React.FC = () => {
                     language={resumeData?.language || "English"}
                     onEditModeChange={setIsEditing}
                     onReset={() => setShowResetDialog(true)}
-                    // Pass the editing state explicitly
                     isEditing={isEditing}
-                    // Pass scoreModified state - make sure ResumePreview expects this prop
                     scoreModified={scoreModified}
+                    contentModified={contentModified} // Pass contentModified state from parent
+                    resumeData={resumeData}
                   />
                 </div>
 
                 {/* Sidebar with optimization controls - takes 2 columns */}
                 <div className="col-span-2 flex flex-col gap-4">
-                  {/* ATS Score card */}
+                  {/* ATS Score card with enhanced metrics from useResumeScore */}
                   <ScoreCard 
                     optimizationScore={atsScore || 0}
                     resumeContent={displayContent}
                     suggestionsApplied={suggestions.filter(s => s.isApplied).length}
                     keywordsApplied={keywords.filter(k => k.isApplied).length}
-                    scoreBreakdown={null}
-                    potentialScore={100}
-                    initialScore={65}
+                    scoreBreakdown={scoreBreakdown}
+                    potentialScore={scoreBreakdown?.potential || null}
+                    initialScore={originalAtsScore}
                     isCalculating={isOptimizing}
+                    // Enhanced props from useResumeScore
+                    improvementPoints={improvementPoints}
+                    remainingPotentialPoints={remainingPotential}
                   />
 
-                  {/* AI Suggestions - Now passing isEditing state */}
+                  {/* AI Suggestions with useResumeScore integration */}
                   <SuggestionsList
                     suggestions={mappedSuggestions}
                     isOptimizing={isOptimizing}
@@ -778,17 +853,26 @@ const ResumeOptimizer: React.FC = () => {
                     resumeContent={displayContent}
                     currentScore={atsScore || 0}
                     simulateSuggestionImpact={simulateSuggestionImpactAdapter}
-                    isEditing={isEditing} // Pass the editing state to control when suggestions can be applied
+                    isEditing={isEditing}
+                    // Enhanced props from useResumeScore integration
+                    cumulativeImpactValues={scoreBreakdown}
+                    appliedImprovements={{
+                      suggestionPoints: scoreBreakdown?.suggestions || 0,
+                      keywordPoints: scoreBreakdown?.keywords || 0,
+                      totalPoints: (scoreBreakdown?.suggestions || 0) + (scoreBreakdown?.keywords || 0)
+                    }}
                   />
                   
-                  {/* Keywords - Now passing isEditing state */}
+                  {/* Keywords with useResumeScore integration */}
                   <KeywordsList
                     keywords={mappedKeywords}
                     onKeywordApply={handleKeywordApplyAdapter}
                     showImpactDetails={true}
                     currentScore={atsScore || 0}
                     simulateKeywordImpact={simulateKeywordImpactAdapter}
-                    isEditing={isEditing} // Pass the editing state to control when keywords can be applied
+                    isEditing={isEditing}
+                    // Enhanced props from useResumeScore integration
+                    needsRegeneration={contentModified && !scoreModified}
                   />
 
                   {/* Template selection gallery */}
@@ -798,29 +882,6 @@ const ResumeOptimizer: React.FC = () => {
                     onTemplateSelect={updateSelectedTemplate}
                   />
                   
-                  {/* Save button for changes made outside editing mode */}
-                  {!isEditing && (contentModified || scoreModified) && (
-                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-4">
-                      <h3 className="text-sm font-medium text-amber-800 mb-2">Unsaved Changes</h3>
-                      <p className="text-xs text-amber-700 mb-3">
-                        You have unsaved changes to your resume. Save now to keep your progress.
-                      </p>
-                      <Button 
-                        onClick={() => handleSaveWithUpdates(displayContent)}
-                        disabled={isSaving}
-                        className="w-full bg-amber-600 hover:bg-amber-700"
-                      >
-                        {isSaving ? (
-                          <>
-                            <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                            Saving...
-                          </>
-                        ) : (
-                          'Save Changes'
-                        )}
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
             </>
