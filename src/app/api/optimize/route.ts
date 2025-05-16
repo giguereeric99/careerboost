@@ -41,32 +41,6 @@ import {
 // API timeout duration in milliseconds (60 seconds)
 const API_TIMEOUT = 60000;
 
-// Define interface for database resume data
-interface ResumeData {
-  id: string;
-  user_id: string;
-  auth_user_id: string;
-  supabase_user_id: string;
-  original_text: string;
-  optimized_text: string;
-  last_saved_text: string | null;
-  language: string;
-  ats_score: number;
-  file_url: string | null;
-  file_name: string | null;
-  file_type: string | null;
-  file_size: number | null;
-  ai_provider: string;
-  [key: string]: any; // Allow for additional properties
-}
-
-// Interface for keywords with IDs for frontend consumption
-interface KeywordWithId {
-  id: string;
-  text: string;
-  isApplied: boolean;
-}
-
 /**
  * POST handler for resume optimization
  */

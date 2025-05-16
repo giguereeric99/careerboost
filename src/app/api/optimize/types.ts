@@ -91,7 +91,7 @@ export interface FallbackParams {
 }
 
 // Resume data interface for database operations
-interface ResumeData {
+export interface ResumeData {
   id: string;
   user_id: string;
   auth_user_id: string;
@@ -110,7 +110,7 @@ interface ResumeData {
 }
 
 // Keyword interface with ID for frontend consumption
-interface KeywordWithId {
+export interface KeywordWithId {
   id: string;
   text: string;
   isApplied: boolean;

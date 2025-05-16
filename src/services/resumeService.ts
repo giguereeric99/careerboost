@@ -460,6 +460,7 @@ export async function saveResumeContent(
 /**
  * Reset resume to original version
  * Removes all applied changes and reverts to the original optimized version
+ * Uses the API route instead of direct database access
  * 
  * @param resumeId - The ID of the resume to reset
  * @returns Success status and any error
@@ -468,37 +469,40 @@ export async function resetResumeToOriginal(
   resumeId: string
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
-    // Reset resume fields to original state
-    const { error: resumeError } = await supabase
-      .from('resumes')
-      .update({
-        last_saved_text: null,
-        last_saved_score_ats: null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', resumeId);
+    // Log the reset operation
+    console.log(`Resetting resume ID ${resumeId} to original version`);
     
-    // Handle resume update errors
-    if (resumeError) throw resumeError;
+    // Validate input
+    if (!resumeId) {
+      console.error('resetResumeToOriginal: Missing required resumeId parameter');
+      return { success: false, error: new Error('Missing required parameter: resumeId') };
+    }
+
+    // Call the PATCH API endpoint to reset the resume
+    // Using the PATCH API endpoint which is already implemented in api/resumes/route.ts
+    const response = await fetch('/api/resumes', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        resumeId,
+        action: 'reset'  // This matches what your PATCH handler expects
+      }),
+    });
+
+    // Parse the response
+    const result = await response.json();
     
-    // Reset all suggestions to not applied
-    const { error: suggestionsError } = await supabase
-      .from('resume_suggestions')
-      .update({ is_applied: false })
-      .eq('resume_id', resumeId);
+    // Check if the API returned an error
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to reset resume');
+    }
     
-    // Handle suggestions update errors
-    if (suggestionsError) throw suggestionsError;
+    // Log success
+    console.log(`Resume ${resumeId} successfully reset to original version`);
     
-    // Reset all keywords to not applied
-    const { error: keywordsError } = await supabase
-      .from('resume_keywords')
-      .update({ is_applied: false })
-      .eq('resume_id', resumeId);
-    
-    // Handle keywords update errors
-    if (keywordsError) throw keywordsError;
-    
+    // Request successful - return the success status
     return { success: true, error: null };
   } catch (error) {
     // Log error for debugging and return error object
