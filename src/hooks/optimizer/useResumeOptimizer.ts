@@ -111,6 +111,9 @@ export const useResumeOptimizer = (userId?: string) => {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   
+  // Track initial score for accurate improvement calculation
+  const initialScoreRef = useRef<number | null>(null);
+  
   // UI state
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('basic');
@@ -238,7 +241,14 @@ export const useResumeOptimizer = (userId?: string) => {
         }
         
         // Set the original and current scores
-        setOriginalAtsScore(optimizedData.ats_score || 65);
+        const baseScore = optimizedData.ats_score || 65;
+        setOriginalAtsScore(baseScore);
+        
+        // Store initial score in ref for consistent improvement calculations
+        if (initialScoreRef.current === null) {
+          initialScoreRef.current = baseScore;
+          console.log(`Setting initial score reference to ${baseScore}`);
+        }
         
         // Safely update the current ATS score
         const effectiveScore = isDefined(optimizedData.last_saved_score_ats) 
@@ -278,8 +288,9 @@ export const useResumeOptimizer = (userId?: string) => {
       setIsLoading(false);
     }
   }, [userId]);
+
   
-  /**
+/**
    * Save the edited resume content, score, and applied enhancements
    * Updates the database with all current changes via service
    * 
@@ -441,14 +452,23 @@ export const useResumeOptimizer = (userId?: string) => {
     const currentAppliedSuggestions = suggestions.filter(s => s.isApplied).length;
     const currentAppliedKeywords = keywords.filter(k => k.isApplied).length;
     
-    // Simple scoring formula that could be enhanced with real content analysis
-    const baseScore = originalAtsScore || 65;
-    const suggestionsBonus = currentAppliedSuggestions * 2; // Each suggestion worth 2 points
-    const keywordsBonus = currentAppliedKeywords * 1; // Each keyword worth 1 point
-    const newScore = Math.min(100, baseScore + suggestionsBonus + keywordsBonus);
+    // Get total point impact from suggestions
+    const suggestionPoints = suggestions
+      .filter(s => s.isApplied)
+      .reduce((total, s) => total + (s.pointImpact || 2), 0);
+      
+    // Get total point impact from keywords
+    const keywordPoints = keywords
+      .filter(k => k.isApplied)
+      .reduce((total, k) => total + (k.pointImpact || 1), 0);
+    
+    // Calculate score using base + exact point impacts
+    const baseScore = initialScoreRef.current || originalAtsScore || 65;
+    const newScore = Math.min(100, baseScore + suggestionPoints + keywordPoints);
     
     // Update the score and mark it as modified if it changed
     if (newScore !== currentAtsScore) {
+      console.log(`Recalculating score: ${baseScore} + ${suggestionPoints} + ${keywordPoints} = ${newScore}`);
       setCurrentAtsScore(newScore);
       setScoreModified(true);
     }
@@ -457,7 +477,7 @@ export const useResumeOptimizer = (userId?: string) => {
   /**
    * Apply or unapply a suggestion - LOCAL STATE ONLY
    * Updates ONLY local suggestion state and recalculates ATS score
-   * No longer makes individual API calls - changes will be saved atomically later
+   * Uses the exact point impact from the suggestion for accurate score updates
    * 
    * @param suggestionId - ID of the suggestion to apply/unapply
    * @param applyState - Optional boolean to force specific state (true/false)
@@ -468,7 +488,9 @@ export const useResumeOptimizer = (userId?: string) => {
     console.log("handleApplySuggestion called with:", { 
       suggestionId, 
       applyState, 
-      resumeId: resumeData?.id 
+      resumeId: resumeData?.id,
+      currentScore: currentAtsScore,
+      originalScore: originalAtsScore
     });
     
     if (!resumeData?.id) {
@@ -499,11 +521,16 @@ export const useResumeOptimizer = (userId?: string) => {
         )
       );
       
-      // Update score locally
-      const scoreDelta = newIsApplied ? 2 : -2; // Each suggestion is worth 2 points
+      // Get the exact point impact from the suggestion, with fallback to default
+      const exactPointImpact = suggestion.pointImpact || 2;
+      
+      // Update score locally with exact point impact
+      const scoreDelta = newIsApplied ? exactPointImpact : -exactPointImpact;
+      
       setCurrentAtsScore(prevScore => {
-        if (!prevScore) return originalAtsScore || 65;
+        if (!prevScore) return initialScoreRef.current || originalAtsScore || 65;
         const newScore = prevScore + scoreDelta;
+        console.log(`Score update: ${prevScore} ${newIsApplied ? '+' : '-'} ${exactPointImpact} = ${newScore}`);
         return Math.min(100, Math.max(0, newScore)); // Ensure score stays between 0-100
       });
       
@@ -525,7 +552,7 @@ export const useResumeOptimizer = (userId?: string) => {
   /**
    * Apply or unapply a keyword - LOCAL STATE ONLY
    * Updates ONLY local keyword state and recalculates ATS score
-   * No longer makes individual API calls - changes will be saved atomically later
+   * Uses the exact point impact from the keyword for accurate score updates
    * 
    * @param keywordId - ID of the keyword to apply/unapply
    * @param applyState - Optional boolean to force specific state (true/false)
@@ -536,7 +563,9 @@ export const useResumeOptimizer = (userId?: string) => {
     console.log("handleKeywordApply called with:", { 
       keywordId, 
       applyState, 
-      resumeId: resumeData?.id 
+      resumeId: resumeData?.id,
+      currentScore: currentAtsScore,
+      originalScore: originalAtsScore
     });
     
     if (!resumeData?.id) {
@@ -563,15 +592,20 @@ export const useResumeOptimizer = (userId?: string) => {
       // Update local state ONLY - no API call
       setKeywords(prevKeywords => 
         prevKeywords.map(k => 
-          k.id === keywordId ? { ...k, isApplied: newIsApplied } : k
+          k.id === keywordId ? { ...k, isApplied: newIsApplied, applied: newIsApplied } : k
         )
       );
       
-      // Update score locally
-      const scoreDelta = newIsApplied ? 1 : -1; // Each keyword is worth 1 point
+      // Get the exact point impact from the keyword, with fallback to default
+      const exactPointImpact = keyword.pointImpact || 1;
+      
+      // Update score locally with exact point impact
+      const scoreDelta = newIsApplied ? exactPointImpact : -exactPointImpact;
+      
       setCurrentAtsScore(prevScore => {
-        if (!prevScore) return originalAtsScore || 65;
+        if (!prevScore) return initialScoreRef.current || originalAtsScore || 65;
         const newScore = prevScore + scoreDelta;
+        console.log(`Score update: ${prevScore} ${newIsApplied ? '+' : '-'} ${exactPointImpact} = ${newScore}`);
         return Math.min(100, Math.max(0, newScore)); // Ensure score stays between 0-100
       });
       
@@ -644,9 +678,15 @@ export const useResumeOptimizer = (userId?: string) => {
     setOptimizedText(optimizedTextContent);
     setEditedText(optimizedTextContent);
     
-    // Update score state
+    // Update score state and track initial score for future reference
     setOriginalAtsScore(scoreValue);
     setCurrentAtsScore(scoreValue);
+    
+    // Set initial score reference for accurate improvement calculations
+    if (initialScoreRef.current === null) {
+      initialScoreRef.current = scoreValue;
+      console.log(`Setting initial score reference to ${scoreValue}`);
+    }
     
     // Update enhancements state with normalized data
     setSuggestions(normalizedSuggestions);

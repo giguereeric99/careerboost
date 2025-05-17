@@ -14,7 +14,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Check, BarChart2, Lock, Save } from "lucide-react";
+import { Sparkles, Check, BarChart2, Lock, Save, Info } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -268,14 +268,6 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
                           s.type === suggestion.type)
                     );
 
-                    const impact = suggestionImpacts[suggestionIndex];
-
-                    // Get impact level from score or calculate it
-                    const impactScore =
-                      suggestion.score ||
-                      (impact?.pointImpact ? impact.pointImpact * 5 : 5);
-                    const impactLevel = getImpactLevel(impactScore);
-
                     return (
                       <div key={groupIndex} className="px-4 py-3">
                         <div className="flex justify-between items-start">
@@ -291,23 +283,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
                               {suggestion.impact}
                             </p>
 
-                            {/* Impact badge */}
-                            {showImpactScore && impact && (
-                              <Badge
-                                variant="outline"
-                                className={`mt-2 text-xs ${
-                                  impactLevel === ImpactLevel.CRITICAL
-                                    ? "bg-red-50 text-red-600 border-red-200"
-                                    : impactLevel === ImpactLevel.HIGH
-                                    ? "bg-orange-50 text-orange-600 border-orange-200"
-                                    : impactLevel === ImpactLevel.MEDIUM
-                                    ? "bg-blue-50 text-blue-600 border-blue-200"
-                                    : "bg-gray-50 text-gray-600 border-gray-200"
-                                }`}
-                              >
-                                +{impact.pointImpact.toFixed(1)} points
-                              </Badge>
-                            )}
+                            {/* Removed individual impact badges */}
                           </div>
 
                           {/* Apply button */}

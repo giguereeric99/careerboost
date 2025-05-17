@@ -523,9 +523,9 @@ const ResumeOptimizer: React.FC = () => {
   });
 
   /**
-   * Enhanced adapter function for onKeywordApply
+   * Enhanced adapter function for applying keywords
    * Updates only local state without saving to database immediately
-   * Now follows the atomic save approach where all changes are saved together
+   * Uses the exact point impact from the keyword for accurate score updates
    *
    * @param index - Index of keyword in the array
    */
@@ -546,6 +546,17 @@ const ResumeOptimizer: React.FC = () => {
           return;
         }
 
+        // Get the exact point impact from the keyword, with fallback to default
+        const exactPointImpact = keyword.pointImpact || 1;
+
+        // Log the operation with impact details
+        console.log("Applying keyword with impact:", {
+          keywordId: keyword.id,
+          keyword: keyword.text,
+          pointImpact: exactPointImpact,
+          currentScore: atsScore,
+        });
+
         // Apply the keyword using the hook's handler - now only updates local state
         handleKeywordApply(keyword.id, !keyword.isApplied);
 
@@ -565,6 +576,7 @@ const ResumeOptimizer: React.FC = () => {
     [
       isEditing,
       mappedKeywords,
+      atsScore,
       handleKeywordApply,
       setScoreModified,
       setContentModified,
@@ -572,34 +584,48 @@ const ResumeOptimizer: React.FC = () => {
   );
 
   /**
-   * Adapter function for simulateKeywordImpact
-   * Returns the expected object structure for impact calculation
+   * Adapter function for simulate keyword impact
+   * Returns the expected impact object structure with accurate values
    *
-   * @param index - Index of keyword in the array
+   * @param index - Index of keyword in array
    * @returns Impact calculation object
    */
   const simulateKeywordImpactAdapter = useCallback(
     (index: number) => {
-      // Default impact values
-      const pointImpact = 1;
-      const currentScore = atsScore || 0;
+      // Find the keyword to get its exact point impact
+      const keyword =
+        index >= 0 && index < mappedKeywords.length
+          ? mappedKeywords[index]
+          : null;
+
+      // Use the exact point impact from the keyword if available, or fallback to default
+      const pointImpact = keyword?.pointImpact || 1;
+
+      // Use current score as base, fallback to original score or default
+      const currentScore = atsScore || originalAtsScore || 65;
+
+      // Calculate new score capped at 100
       const newScore = Math.min(100, currentScore + pointImpact);
 
-      // Return the expected object structure
+      // Log the calculation for debugging
+      console.log(
+        `Simulating keyword impact: ${currentScore} + ${pointImpact} = ${newScore}`
+      );
+
+      // Return the expected object structure with accurate values
       return {
         newScore,
         pointImpact,
-        description:
-          "Adding this keyword will improve your ATS compatibility score.",
+        description: `Adding this keyword will improve your resume's ATS compatibility by ${pointImpact} point.`,
       };
     },
-    [atsScore]
+    [atsScore, originalAtsScore, mappedKeywords]
   );
 
   /**
    * Enhanced adapter function for applying suggestions
    * Updates only local state without saving to database immediately
-   * Now follows the atomic save approach where all changes are saved together
+   * Uses the exact point impact from the suggestion for accurate score updates
    *
    * @param index - The index of the suggestion in the suggestions array
    * @returns Boolean indicating if operation was successful
@@ -639,6 +665,9 @@ const ResumeOptimizer: React.FC = () => {
           return false;
         }
 
+        // Get the exact point impact from the suggestion, with fallback to default
+        const exactPointImpact = suggestion.pointImpact || 2;
+
         // Log the operation for debugging
         console.log("Applying suggestion (local state only):", {
           resumeId: resumeData.id,
@@ -646,6 +675,7 @@ const ResumeOptimizer: React.FC = () => {
           suggestion: suggestion.text,
           currentState: suggestion.isApplied,
           newState: !suggestion.isApplied,
+          pointImpact: exactPointImpact,
         });
 
         // Call the parent handler with suggestion ID and toggle applied state
@@ -685,27 +715,41 @@ const ResumeOptimizer: React.FC = () => {
 
   /**
    * Adapter function for simulate suggestion impact
-   * Returns the expected impact object structure
+   * Returns the expected impact object structure with accurate values
    *
    * @param index - Index of suggestion in array
    * @returns Impact calculation object
    */
   const simulateSuggestionImpactAdapter = useCallback(
     (index: number): SuggestionImpact => {
-      // Default impact values
-      const pointImpact = 2;
-      const currentScore = atsScore || 0;
+      // Find the suggestion to get its exact point impact
+      const suggestion =
+        index >= 0 && index < mappedSuggestions.length
+          ? mappedSuggestions[index]
+          : null;
+
+      // Use the exact point impact from the suggestion if available, or fallback to default
+      const pointImpact = suggestion?.pointImpact || 2;
+
+      // Use current score as base, fallback to original score or default
+      const currentScore = atsScore || originalAtsScore || 65;
+
+      // Calculate new score capped at 100
       const newScore = Math.min(100, currentScore + pointImpact);
 
-      // Return the expected object structure
+      // Log the calculation for debugging
+      console.log(
+        `Simulating suggestion impact: ${currentScore} + ${pointImpact} = ${newScore}`
+      );
+
+      // Return the expected object structure with accurate values
       return {
         newScore,
         pointImpact,
-        description:
-          "This suggestion will improve your resume's clarity and impact.",
+        description: `This suggestion will improve your resume's ATS compatibility by ${pointImpact} points.`,
       };
     },
-    [atsScore]
+    [atsScore, originalAtsScore, mappedSuggestions]
   );
 
   /**

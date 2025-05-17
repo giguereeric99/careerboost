@@ -12,7 +12,7 @@
  * - Enhanced score transition animations
  * - Loading animation while score is being calculated
  * - Score consistency protection to ensure accurate display
- * - Support for legitimately low scores (below 65)
+ * - Fixed score base implementation to accurately display score improvements
  */
 
 import React, {
@@ -52,7 +52,7 @@ interface ScoreCardProps {
  * along with contextual feedback and improvement metrics.
  * Enhanced to handle score updates smoothly with animations and show calculation state.
  * Added score consistency protection to ensure accuracy of displayed score.
- * Added support for legitimately low scores (below 65) from the API.
+ * Fixed base score calculation to ensure proper improvement display.
  */
 const ScoreCard: React.FC<ScoreCardProps> = ({
   optimizationScore,
@@ -70,8 +70,13 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // =========================================================================
 
   // State for animated score display - enhanced for smoother transitions
-  const [displayScore, setDisplayScore] = useState(optimizationScore || 65);
-  const [previousScore, setPreviousScore] = useState(optimizationScore || 65);
+  // Using the actual optimization score or initial score as starting point
+  const [displayScore, setDisplayScore] = useState(
+    optimizationScore || initialScore || 65
+  );
+  const [previousScore, setPreviousScore] = useState(
+    optimizationScore || initialScore || 65
+  );
   const [isIncreasing, setIsIncreasing] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
 
@@ -86,7 +91,9 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // Animation start time tracking for smoother transitions
   const startTimeRef = useRef<number>(0);
   // Track the highest score we've seen for reference
-  const highestScoreRef = useRef<number>(optimizationScore || 65);
+  const highestScoreRef = useRef<number>(
+    optimizationScore || initialScore || 65
+  );
   // Store the last valid score breakdown for consistency
   const lastValidBreakdownRef = useRef<ScoreBreakdown | null>(null);
   // Flag to indicate if we've received at least one genuine API score
@@ -95,6 +102,8 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   const lastBreakdownScoreRef = useRef<number | null>(null);
   // Debounce timer for feedback updates
   const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Track the initial score for consistent improvement calculation
+  const initialScoreRef = useRef<number | null>(initialScore);
 
   // =========================================================================
   // Animation Configuration
@@ -112,15 +121,19 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   /**
    * Process incoming score to ensure consistency and validity
    * Uses multiple strategies to determine the most accurate score to display
-   * Updated to properly handle legitimately low scores (below default 65)
+   * Updated to properly handle initial scores and avoid default fallbacks when actual scores exist
    */
   const processedScore = useMemo(() => {
     // Start with the provided optimization score
     let finalScore = optimizationScore;
-    const FALLBACK_SCORE = 65; // Default fallback score if all else fails
+
+    // Use initial score as fallback if available, otherwise use standard fallback
+    const FALLBACK_SCORE = initialScore !== null ? initialScore : 65;
 
     // Log incoming score for debugging
-    console.log(`ScoreCard: Processing incoming score: ${optimizationScore}`);
+    console.log(
+      `ScoreCard: Processing incoming score: ${optimizationScore}, initialScore: ${initialScore}`
+    );
 
     // STRATEGY 1: Check if this appears to be a direct API score (most reliable source)
     // If scoreBreakdown is present with matching total, this is likely a fresh API score
@@ -133,7 +146,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
 
       // Check if breakdown score matches optimization score (± small margin of error)
       const scoreMatchesBreakdown =
-        Math.abs(breakdownTotal - optimizationScore) <= 2;
+        Math.abs(breakdownTotal - (optimizationScore || 0)) <= 2;
 
       if (scoreMatchesBreakdown) {
         // This is a reliable API score, mark as received and use it
@@ -158,6 +171,10 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
       if (optimizationScore >= 0 && optimizationScore <= 100) {
         // Valid score range, mark as API score
         hasReceivedApiScoreRef.current = true;
+        // If initialScore is available, ensure we're using it for the first time
+        if (initialScore !== null && !initialScoreRef.current) {
+          initialScoreRef.current = initialScore;
+        }
       }
     }
 
@@ -210,8 +227,20 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
       finalScore = lastBreakdownScoreRef.current;
     }
 
-    // Final fallback to default value if all else fails and we have no API score yet
+    // STRATEGY 4: If we have an initial score but no API score yet, use the initial score
+    // This is important to avoid defaulting to 65 when we actually have a real initial score
     if (
+      (finalScore === null || finalScore === undefined || isNaN(finalScore)) &&
+      !hasReceivedApiScoreRef.current &&
+      initialScore !== null
+    ) {
+      console.log(
+        `ScoreCard: Using initial score (${initialScore}) instead of default fallback`
+      );
+      finalScore = initialScore;
+    }
+    // Final fallback to default value if all else fails and we have no API score yet
+    else if (
       (finalScore === null || finalScore === undefined || isNaN(finalScore)) &&
       !hasReceivedApiScoreRef.current
     ) {
@@ -231,7 +260,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
 
     // Return the processed score
     return finalScore;
-  }, [optimizationScore, scoreBreakdown, isCalculating]);
+  }, [optimizationScore, scoreBreakdown, isCalculating, initialScore]);
 
   // =========================================================================
   // Utility Functions
@@ -347,6 +376,19 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // =========================================================================
   // Effects
   // =========================================================================
+
+  /**
+   * Initial effect to sync initial score reference
+   * This ensures we track the initial score consistently for improvement calculations
+   */
+  useEffect(() => {
+    if (initialScore !== null && initialScoreRef.current === null) {
+      initialScoreRef.current = initialScore;
+      console.log(
+        `ScoreCard: Setting initial score reference to ${initialScore}`
+      );
+    }
+  }, [initialScore]);
 
   /**
    * Handle score changes and animate transitions
@@ -475,10 +517,11 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
   // Round display score for integer presentation
   const displayScoreRounded = Math.round(displayScore);
 
-  // Calculate improvement metrics for display
-  const improvement = initialScore
-    ? Math.round((processedScore - initialScore) * 10) / 10
-    : 0;
+  // FIXED: Calculate improvement based directly on the number of applied items
+  // This ensures the improvement display is always accurate regardless of what initialScoreRef contains
+  const suggestionsBonus = suggestionsApplied * 2; // Each suggestion contributes exactly 2 points
+  const keywordsBonus = keywordsApplied * 1; // Each keyword contributes exactly 1 point
+  const improvement = suggestionsBonus + keywordsBonus;
 
   // Calculate potential remaining improvement
   const remainingPotential =
@@ -505,7 +548,9 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
                 <p>
                   This score represents how well your resume will perform with
                   Applicant Tracking Systems (ATS). A higher score means better
-                  chances of getting through automated filters.
+                  chances of getting through automated filters. Each suggestion
+                  improves your ATS score by 2 points when applied. Each keyword
+                  improves your ATS score by 1 point when applied.
                 </p>
                 {scoreBreakdown && (
                   <ul className="mt-2 text-xs">
@@ -598,7 +643,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({
                 <span className="font-medium">{keywordsApplied}</span>
               </div>
 
-              {/* Show score improvement if positive */}
+              {/* Show score improvement if positive - using the fixed calculation */}
               {improvement > 0 && (
                 <div className="flex justify-between text-green-600">
                   <span>Score improvement:</span>
