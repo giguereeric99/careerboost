@@ -1,25 +1,35 @@
 /**
- * Custom Resume Preview Modal Component
- * 
- * A completely custom modal implementation to avoid issues with the built-in Dialog component
- * Shows a preview of the resume with the selected template applied
+ * Resume Preview Modal Component
+ *
+ * A clean, modern lightbox implementation for resume preview.
+ * Features:
+ * - Single scrollbar design (only iframe content scrolls)
+ * - Fullscreen preview with proper template application
+ * - Download options for HTML and PDF
+ * - Responsive layout for all screen sizes
+ * - Keyboard accessibility (Escape to close)
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { FileText, File, X } from "lucide-react";
-import { createPreviewUrl, createCompleteHtml } from '@/utils/templateUtils';
-import { ResumeTemplateType } from '@/types/resumeTemplateTypes';
+import { createCompleteHtml } from "@/utils/templateUtils";
+import { ResumeTemplateType } from "@/types/resumeTemplateTypes";
+import { toast } from "sonner";
 
+/**
+ * Props interface for the ResumePreviewModal component
+ */
 interface ResumePreviewModalProps {
-  open: boolean;
-  onClose: () => void;
-  resumeContent: string;
-  selectedTemplate: ResumeTemplateType;
+  open: boolean; // Whether the modal is visible
+  onClose: () => void; // Function to call when modal is closed
+  resumeContent: string; // HTML content of the resume to preview
+  selectedTemplate: ResumeTemplateType; // Template to apply to the resume
 }
 
 /**
- * CustomResumePreviewModal component
- * Uses a completely custom modal implementation without relying on Dialog
+ * ResumePreviewModal component
+ *
+ * Modern lightbox implementation for resume preview with only one scrollbar
  */
 const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
   open,
@@ -27,56 +37,119 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
   resumeContent,
   selectedTemplate,
 }) => {
-  // State for storing the preview URL
-  const [previewUrl, setPreviewUrl] = useState<string>('');
-  
-  // State to track PDF generation
+  // Reference to the iframe element for content management
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // State to track PDF generation process
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  
-  // Effect to prevent scrolling of the background when modal is open
+
+  // State to track loading status
+  const [isLoading, setIsLoading] = useState(true);
+
+  /**
+   * Prevent scrolling of the background when modal is open
+   */
   useEffect(() => {
     if (open) {
-      document.body.style.overflow = 'hidden';
+      // Disable scrolling on the body when modal is open
+      document.body.style.overflow = "hidden";
     } else {
-      document.body.style.overflow = '';
+      // Restore scrolling when modal is closed
+      document.body.style.overflow = "";
     }
-    
+
+    // Cleanup function to ensure scrolling is restored
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = "";
     };
   }, [open]);
-  
-  // Generate preview URL when content or template changes
+
+  /**
+   * Handle iframe content loading
+   * Sets up the content in the iframe when modal is opened
+   */
   useEffect(() => {
-    if (open && resumeContent && selectedTemplate) {
-      try {
-        const url = createPreviewUrl(selectedTemplate, resumeContent);
-        setPreviewUrl(url);
-        
-        // Clean up URL when component unmounts
-        return () => {
-          if (url) URL.revokeObjectURL(url);
-        };
-      } catch (error) {
-        console.error('Error creating preview URL:', error);
-      }
+    if (!open || !resumeContent || !selectedTemplate) return;
+
+    // Start loading process
+    setIsLoading(true);
+
+    try {
+      // Get complete HTML with template applied
+      const html = createCompleteHtml(
+        selectedTemplate,
+        resumeContent,
+        "Resume Preview"
+      );
+
+      // Reference to the iframe element
+      const iframe = iframeRef.current;
+      if (!iframe) return;
+
+      // Set a timeout to ensure the iframe is ready
+      setTimeout(() => {
+        // Access the iframe document
+        const iframeDoc =
+          iframe.contentDocument || iframe.contentWindow?.document;
+
+        if (iframeDoc) {
+          // Clear the document
+          iframeDoc.open();
+
+          // Write the HTML content
+          iframeDoc.write(html);
+
+          // Close the document
+          iframeDoc.close();
+
+          // Add custom styles to ensure content fits well and is scrollable
+          const style = iframeDoc.createElement("style");
+          style.textContent = `
+            html, body {
+              padding: 20px;
+              margin: 0;
+              height: auto;
+              background: white;
+              overflow-y: auto !important;
+            }
+            
+            /* Ensure print styles don't affect preview */
+            @media print {
+              body {
+                padding: 20px !important;
+                margin: 0 !important;
+              }
+            }
+          `;
+          iframeDoc.head.appendChild(style);
+
+          // End loading state
+          setIsLoading(false);
+        }
+      }, 100);
+    } catch (error) {
+      console.error("Error setting up preview:", error);
+      toast.error("Failed to generate preview");
+      setIsLoading(false);
     }
   }, [open, resumeContent, selectedTemplate]);
-  
-  // Handle escape key press
+
+  /**
+   * Listen for Escape key press to close the modal
+   */
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
     };
-    
+
     if (open) {
-      window.addEventListener('keydown', handleEscape);
+      window.addEventListener("keydown", handleEscape);
     }
-    
+
     return () => {
-      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener("keydown", handleEscape);
     };
   }, [open, onClose]);
 
@@ -85,126 +158,132 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
    */
   const handleDownloadHtml = () => {
     try {
+      // Create complete HTML document with template
       const html = createCompleteHtml(
         selectedTemplate,
         resumeContent,
-        'My Resume'
+        "My Resume"
       );
-      
+
       // Create and download the HTML file
-      const blob = new Blob([html], { type: 'text/html' });
+      const blob = new Blob([html], { type: "text/html" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = 'resume.html';
+      a.download = "resume.html";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      toast.success("Resume downloaded as HTML");
     } catch (error) {
-      console.error('Error downloading HTML:', error);
-      // Show error notification here
+      console.error("Error downloading HTML:", error);
+      toast.error("Failed to download resume as HTML");
     }
   };
-  
+
   /**
    * Download the resume as PDF
    */
   const handleDownloadPdf = () => {
-    // Set loading state
     setIsGeneratingPdf(true);
-    
-    // Mock PDF generation with a timeout
+
     setTimeout(() => {
       try {
-        // Get the HTML content
         const html = createCompleteHtml(
           selectedTemplate,
           resumeContent,
-          'My Resume'
+          "My Resume"
         );
-        
-        // Create a mock PDF download
-        const blob = new Blob([html], { type: 'text/html' });
+
+        // Mock PDF download (in production, use a real PDF library)
+        const blob = new Blob([html], { type: "text/html" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
-        a.download = 'resume.pdf';
+        a.download = "resume.pdf";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
-        // Reset loading state
+
         setIsGeneratingPdf(false);
+        toast.success("Resume downloaded as PDF");
       } catch (error) {
-        console.error('Error generating PDF:', error);
+        console.error("Error generating PDF:", error);
+        toast.error("Failed to generate PDF");
         setIsGeneratingPdf(false);
       }
     }, 1000);
   };
-  
+
   // If modal is not open, don't render anything
   if (!open) return null;
-  
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      {/* Modal container */}
-      <div className="relative w-[95vw] md:w-[90vw] lg:w-[85vw] xl:w-[1400px] max-h-[95vh] bg-white rounded-lg shadow-xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex justify-between items-center border-b p-4">
-          <h2 className="text-lg font-semibold">Resume Preview</h2>
-          <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={handleDownloadHtml}
-              className="flex items-center gap-1"
-            >
-              <FileText className="h-4 w-4" />
-              <span>HTML</span>
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={handleDownloadPdf}
-              disabled={isGeneratingPdf}
-              className="flex items-center gap-1"
-            >
-              <File className="h-4 w-4" />
-              <span>{isGeneratingPdf ? 'Generating...' : 'PDF'}</span>
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={onClose}
-            >
-              Close
-            </Button>
-          </div>
+    // Backdrop with centered content - NO OVERFLOW/SCROLL here
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex flex-col overflow-hidden">
+      {/* Modal header - fixed position */}
+      <div className="w-full bg-white p-4 shadow-md z-10 flex justify-between items-center">
+        <h2 className="text-lg font-semibold">
+          Resume Preview - {selectedTemplate.name} Template
+        </h2>
+
+        <div className="flex gap-2">
+          {/* HTML Download Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadHtml}
+            className="flex items-center gap-1"
+          >
+            <FileText className="h-4 w-4" />
+            <span className="hidden sm:inline">HTML</span>
+          </Button>
+
+          {/* PDF Download Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+            className="flex items-center gap-1"
+          >
+            <File className="h-4 w-4" />
+            <span className="hidden sm:inline">
+              {isGeneratingPdf ? "Generating..." : "PDF"}
+            </span>
+          </Button>
+
+          {/* Close Button */}
+          <Button variant="ghost" size="sm" onClick={onClose} className="ml-2">
+            <X className="h-5 w-5" />
+            <span className="sr-only">Close</span>
+          </Button>
         </div>
-        
-        {/* Preview content */}
-        <div className="flex-1 overflow-auto p-4 bg-gray-100">
-          {previewUrl ? (
-            <div className="w-full h-full flex justify-center">
-              <iframe
-                src={previewUrl}
-                className="w-full max-w-[800px] lg:max-w-[900px] h-[95vh] border rounded shadow-lg bg-white"
-                title="Resume Preview"
-                style={{ 
-                  minHeight: '800px'
-                }}
-              />
-            </div>
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="animate-pulse flex flex-col items-center">
-                <div className="h-10 w-10 bg-gray-200 rounded-full mb-4"></div>
-                <p className="text-gray-500">Loading preview...</p>
+      </div>
+
+      {/* Content area - NO OVERFLOW/SCROLL here either */}
+      <div className="flex-1 bg-gray-100 flex justify-center items-start p-6 overflow-hidden">
+        {/* Centered content container */}
+        <div className="w-full max-w-4xl bg-white shadow-lg mx-auto relative h-full">
+          {/* Loading overlay */}
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+              <div className="flex flex-col items-center">
+                <div className="h-10 w-10 rounded-full border-4 border-t-transparent border-blue-500 animate-spin mb-4"></div>
+                <p className="text-gray-700">Loading preview...</p>
               </div>
             </div>
           )}
+
+          {/* Resume content iframe - THIS is the ONLY element that should scroll */}
+          <iframe
+            ref={iframeRef}
+            className="w-full border-0 h-full"
+            title="Resume Preview"
+          ></iframe>
         </div>
       </div>
     </div>

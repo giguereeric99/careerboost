@@ -11,6 +11,7 @@
  * - Reset to original version (always visible in preview mode)
  * - Real-time updates when applying suggestions and keywords
  * - Updated to work with atomic save approach
+ * - Support for full preview in modal with template applied
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
@@ -45,6 +46,9 @@ import { Section } from "@/types/resumeTypes";
 
 // Import TipTap editor
 import TipTapResumeEditor from "@/components/ResumeOptimizerSection/tipTapResumeEditor";
+
+// Import UI components
+import ResumePreviewModal from "./resumePreviewModal";
 
 // Import helper components
 import {
@@ -124,6 +128,9 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
   // Track if content has ever been modified
   const [hasBeenModified, setHasBeenModified] = useState(false);
+
+  // State for controlling the preview modal visibility
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
   // Determine the current edit mode - if isEditing is provided by parent, use it
   // Otherwise use our local state
@@ -616,21 +623,22 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   ]);
 
   /**
-   * Open preview in new window
+   * Open preview in modal
+   * Updated to use the ResumePreviewModal component instead of opening in a new window
    */
   const openPreview = useCallback(() => {
     try {
-      const template = getTemplateById(selectedTemplate);
+      // Get the content to preview (different if in edit mode)
       const contentToUse = editMode
         ? combineAllSections()
         : previewContent || optimizedText;
-      const completeHtml = createCompleteHtml(template, contentToUse);
 
-      const previewWindow = window.open("", "_blank");
-      if (previewWindow) {
-        previewWindow.document.write(completeHtml);
-        previewWindow.document.close();
-      }
+      // Open the modal instead of a new window
+      setIsPreviewModalOpen(true);
+
+      // Log the template and content being used for debugging
+      console.log("Opening preview with template:", selectedTemplate);
+      console.log("Content length for preview:", contentToUse.length);
     } catch (error) {
       console.error("Error opening preview:", error);
       toast.error("Failed to open preview");
@@ -642,6 +650,13 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     previewContent,
     optimizedText,
   ]);
+
+  /**
+   * Handle closing the preview modal
+   */
+  const handleClosePreviewModal = useCallback(() => {
+    setIsPreviewModalOpen(false);
+  }, []);
 
   /**
    * Toggle edit mode on/off
@@ -795,6 +810,14 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       {!editMode && appliedKeywords.length > 0 && (
         <AppliedKeywordsList keywords={appliedKeywords} />
       )}
+
+      {/* Resume Preview Modal */}
+      <ResumePreviewModal
+        open={isPreviewModalOpen}
+        onClose={handleClosePreviewModal}
+        resumeContent={editMode ? combineAllSections() : displayedContent}
+        selectedTemplate={template}
+      />
     </div>
   );
 };

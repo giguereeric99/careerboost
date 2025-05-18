@@ -119,20 +119,20 @@ export function createCompleteHtml(
   
   // Create complete HTML document
   return `<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <style>
-    ${template.styles || ''}
-  </style>
-</head>
-<body>
-  ${formattedContent}
-</body>
-</html>`;
-}
+  <html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+    <style>
+      ${template.styles || ''}
+    </style>
+  </head>
+  <body>
+    ${formattedContent}
+  </body>
+  </html>`;
+  }
 
 /**
  * Generate PDF from template content
