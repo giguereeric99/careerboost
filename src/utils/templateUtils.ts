@@ -3,6 +3,7 @@
  * Functions for working with resume templates and content
  */
 import { ResumeTemplateType, TemplateContentSections } from '../types/resumeTemplateTypes';
+import { STANDARD_SECTIONS, ALTERNATIVE_SECTION_IDS } from '../constants/sections';
 
 /**
  * Extract content from HTML by section ID
@@ -19,14 +20,20 @@ export function extractSections(html: string): TemplateContentSections {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     
-    // Find all sections (either section tags or divs with section class)
-    const sections = doc.querySelectorAll('section, div.section');
+    // Find all sections (either section tags or divs with section class or id)
+    const sections = doc.querySelectorAll('section, div.section, div[id^="resume-"], div.section-creative');
     const result: TemplateContentSections = {};
     
     // Extract content from each section
     sections.forEach((section) => {
       if (section.id) {
-        result[section.id] = section.innerHTML;
+        if (section.id.startsWith('resume-')) {
+          result[section.id] = section.innerHTML;
+        } else if (ALTERNATIVE_SECTION_IDS[section.id as keyof typeof ALTERNATIVE_SECTION_IDS]) {
+          // Convert alternative IDs to standard IDs
+          const standardId = ALTERNATIVE_SECTION_IDS[section.id as keyof typeof ALTERNATIVE_SECTION_IDS];
+          result[standardId] = section.innerHTML;
+        }
       }
     });
     
@@ -54,11 +61,119 @@ export function extractSections(html: string): TemplateContentSections {
       });
     }
     
+    // Second fallback: try to identify sections by headings (h2, h3)
+    if (Object.keys(result).length === 0) {
+      const headings = doc.querySelectorAll('h1, h2, h3');
+      
+      let lastSectionId: string | null = null;
+      let lastHeadingContent = '';
+      
+      for (let i = 0; i < headings.length; i++) {
+        const heading = headings[i];
+        const headingText = heading.textContent?.trim() || '';
+        
+        // Skip if no text
+        if (!headingText) continue;
+        
+        // First heading is treated as the header
+        if (i === 0 && heading.tagName === 'H1') {
+          // Extract the header section
+          let headerContent = heading.outerHTML;
+          let currentNode = heading.nextElementSibling;
+          
+          // Add content until next heading
+          while (
+            currentNode && 
+            !['H1', 'H2', 'H3'].includes(currentNode.tagName)
+          ) {
+            headerContent += currentNode.outerHTML;
+            currentNode = currentNode.nextElementSibling;
+          }
+          
+          result['resume-header'] = headerContent;
+          continue;
+        }
+        
+        // Try to identify the section type based on the heading text
+        const sectionId = identifySectionType(headingText);
+        
+        if (sectionId) {
+          // If we found a previous section, store its content before starting a new one
+          if (lastSectionId && lastHeadingContent) {
+            result[lastSectionId] = lastHeadingContent;
+          }
+          
+          lastSectionId = sectionId;
+          lastHeadingContent = heading.outerHTML;
+        } else if (lastSectionId) {
+          // If we're inside a section, add the content
+          lastHeadingContent += heading.outerHTML;
+        }
+        
+        // Get content until next heading
+        let currentNode = heading.nextElementSibling;
+        while (
+          currentNode && 
+          !['H1', 'H2', 'H3'].includes(currentNode.tagName)
+        ) {
+          if (lastHeadingContent) {
+            lastHeadingContent += currentNode.outerHTML;
+          }
+          currentNode = currentNode.nextElementSibling;
+        }
+      }
+      
+      // Add the last section if any
+      if (lastSectionId && lastHeadingContent) {
+        result[lastSectionId] = lastHeadingContent;
+      }
+    }
+    
     return result;
   } catch (error) {
     console.error('Error extracting sections:', error);
     return {};
   }
+}
+
+/**
+ * Identifies the section type based on the heading text
+ * 
+ * @param headingText - The text of the heading to analyze
+ * @returns The standard section ID or null if not identified
+ */
+function identifySectionType(headingText: string): string | null {
+  const text = headingText.toLowerCase();
+  
+  if (text.includes('summary') || text.includes('profile') || text.includes('about')) {
+    return 'resume-summary';
+  } else if (text.includes('experience') || text.includes('work') || text.includes('employment')) {
+    return 'resume-experience';
+  } else if (text.includes('education') || text.includes('studies') || text.includes('formation')) {
+    return 'resume-education';
+  } else if (text.includes('skill') || text.includes('competence') || text.includes('expertise')) {
+    return 'resume-skills';
+  } else if (text.includes('language') || text.includes('langue')) {
+    return 'resume-languages';
+  } else if (text.includes('certification') || text.includes('credential')) {
+    return 'resume-certifications';
+  } else if (text.includes('project') || text.includes('portfolio')) {
+    return 'resume-projects';
+  } else if (text.includes('award') || text.includes('achievement') || text.includes('honor')) {
+    return 'resume-awards';
+  } else if (text.includes('volunteer') || text.includes('community')) {
+    return 'resume-volunteering';
+  } else if (text.includes('publication') || text.includes('article') || text.includes('paper')) {
+    return 'resume-publications';
+  } else if (text.includes('interest') || text.includes('hobby') || text.includes('activity')) {
+    return 'resume-interests';
+  } else if (text.includes('reference') || text.includes('recommendation')) {
+    return 'resume-references';
+  } else if (text.includes('additional') || text.includes('other')) {
+    return 'resume-additional';
+  }
+  
+  return null;
 }
 
 /**
@@ -87,7 +202,15 @@ export function applyTemplateToContent(
     // Replace each section placeholder with actual content
     Object.entries(sections).forEach(([sectionId, content]) => {
       const placeholder = `{{${sectionId}}}`;
-      result = result.replace(placeholder, content);
+      result = result.replace(placeholder, content || '');
+    });
+    
+    // Handle any remaining placeholders - replace with empty string
+    STANDARD_SECTIONS.forEach(section => {
+      const placeholder = `{{${section.id}}}`;
+      if (result.includes(placeholder)) {
+        result = result.replace(new RegExp(placeholder, 'g'), '');
+      }
     });
     
     return result;
@@ -132,7 +255,7 @@ export function createCompleteHtml(
     ${formattedContent}
   </body>
   </html>`;
-  }
+}
 
 /**
  * Generate PDF from template content
@@ -148,9 +271,6 @@ export async function generatePDF(
 ): Promise<Blob> {
   // This is a placeholder for PDF generation
   // You would integrate with a library like html2pdf.js, jsPDF, or similar
-  
-  // Example using html2pdf.js (you would need to install this package)
-  // import html2pdf from 'html2pdf.js';
   
   const completeHtml = createCompleteHtml(template, content);
   
