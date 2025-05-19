@@ -31,6 +31,10 @@ interface PromptOptions {
   targetRole?: string;
   /** Whether to focus on specific section improvements */
   focusSections?: string[];
+  /** Industry sector for more targeted keywords (new option) */
+  industrySector?: string;
+  /** Job description text to better match keywords (new option) */
+  jobDescriptionText?: string;
 }
 
 /**
@@ -58,14 +62,16 @@ const DEFAULT_OPTIONS: PromptOptions = {
   includeAtsInstructions: true,
   customInstructions: [],
   targetRole: "",
-  focusSections: []
+  focusSections: [],
+  industrySector: "",
+  jobDescriptionText: ""
 };
 
 /**
- * Mapping of section IDs to human-readable section names
- * This ensures consistent naming across the application
+ * Mapping of section IDs to human-readable section names in English
+ * This serves as the base for all languages - section IDs remain constant across languages
  */
-export const RESUME_SECTION_NAMES: Record<string, string> = {
+export const RESUME_SECTION_NAMES_EN: Record<string, string> = {
   'resume-header': 'Personal Information',
   'resume-summary': 'Professional Summary',
   'resume-experience': 'Experience',
@@ -81,6 +87,68 @@ export const RESUME_SECTION_NAMES: Record<string, string> = {
   'resume-additional': 'Additional Information',
   'resume-interests': 'Interests'
 };
+
+/**
+ * Section name translations for French
+ * Maps section IDs to French section names
+ */
+export const RESUME_SECTION_NAMES_FR: Record<string, string> = {
+  'resume-header': 'Informations Personnelles',
+  'resume-summary': 'Profil Professionnel',
+  'resume-experience': 'Expérience Professionnelle',
+  'resume-education': 'Formation',
+  'resume-skills': 'Compétences',
+  'resume-languages': 'Langues',
+  'resume-certifications': 'Certifications',
+  'resume-projects': 'Projets',
+  'resume-awards': 'Prix et Distinctions',
+  'resume-references': 'Références',
+  'resume-publications': 'Publications',
+  'resume-volunteering': 'Bénévolat',
+  'resume-additional': 'Informations Complémentaires',
+  'resume-interests': 'Centres d\'Intérêt'
+};
+
+/**
+ * Section name translations for Spanish
+ * Maps section IDs to Spanish section names
+ */
+export const RESUME_SECTION_NAMES_ES: Record<string, string> = {
+  'resume-header': 'Información Personal',
+  'resume-summary': 'Perfil Profesional',
+  'resume-experience': 'Experiencia Profesional',
+  'resume-education': 'Formación Académica',
+  'resume-skills': 'Habilidades',
+  'resume-languages': 'Idiomas',
+  'resume-certifications': 'Certificaciones',
+  'resume-projects': 'Proyectos',
+  'resume-awards': 'Premios y Reconocimientos',
+  'resume-references': 'Referencias',
+  'resume-publications': 'Publicaciones',
+  'resume-volunteering': 'Voluntariado',
+  'resume-additional': 'Información Adicional',
+  'resume-interests': 'Intereses'
+};
+
+/**
+ * Get section names based on the specified language
+ * 
+ * @param language - The language to retrieve section names for
+ * @returns Record mapping section IDs to localized section names
+ */
+export function getSectionNamesByLanguage(language: string): Record<string, string> {
+  // Normalize language for matching
+  const normalizedLang = language.toLowerCase().trim();
+  
+  if (normalizedLang === 'french' || normalizedLang === 'français' || normalizedLang === 'francais') {
+    return RESUME_SECTION_NAMES_FR;
+  } else if (normalizedLang === 'spanish' || normalizedLang === 'español' || normalizedLang === 'espanol') {
+    return RESUME_SECTION_NAMES_ES;
+  } else {
+    // Default to English for any other language
+    return RESUME_SECTION_NAMES_EN;
+  }
+}
 
 /**
  * Sections with their importance weight for ATS scoring
@@ -102,15 +170,6 @@ export const SECTION_WEIGHTS = {
 };
 
 /**
- * List of resume sections that should be properly identified by the AI
- * Each section has a specific ID that will be used in templates
- */
-const RESUME_SECTIONS = Object.entries(RESUME_SECTION_NAMES).map(([id, name]) => ({
-  id,
-  description: name
-}));
-
-/**
  * Generates a standardized system prompt for resume optimization
  * This sets the overall context and role for the AI
  * 
@@ -120,6 +179,9 @@ const RESUME_SECTIONS = Object.entries(RESUME_SECTION_NAMES).map(([id, name]) =>
 export function generateSystemPrompt(options: PromptOptions = {}): string {
   // Merge default options with provided options
   const config = { ...DEFAULT_OPTIONS, ...options };
+  
+  // Get section names in the appropriate language
+  const sectionNames = getSectionNamesByLanguage(config.language);
   
   // Base role description
   let systemPrompt = `You are an expert resume optimizer who helps improve resumes for ATS compatibility and recruiter appeal in ${config.language}.
@@ -133,10 +195,34 @@ You will format your output as HTML with semantic section IDs to enable proper t
     systemPrompt += `\n\nYou are specifically optimizing this resume for ${config.targetRole} positions, so emphasize relevant skills and experiences accordingly.`;
   }
 
+  // Add industry sector context if provided (new)
+  if (config.industrySector) {
+    systemPrompt += `\n\nYou are optimizing this resume for the ${config.industrySector} industry sector, focusing on high-value keywords and skills specific to this domain.`;
+  }
+
   // Add focused sections if provided
   if (config.focusSections && config.focusSections.length > 0) {
-    systemPrompt += `\n\nPay special attention to improving these sections: ${config.focusSections.map(section => RESUME_SECTION_NAMES[section] || section).join(', ')}.`;
+    systemPrompt += `\n\nPay special attention to improving these sections: ${config.focusSections.map(section => sectionNames[section] || section).join(', ')}.`;
   }
+
+  // CSS classes instructions - important addition for correct class placement
+  systemPrompt += `\n\nIMPORTANT: When formatting the HTML, place the "section-title" class on heading elements (h1, h2), NOT on section elements. Example:
+- Correct: <section id="resume-summary"><h2 class="section-title">${sectionNames['resume-summary']}</h2>...</section>
+- Incorrect: <section id="resume-summary" class="section-title"><h2>${sectionNames['resume-summary']}</h2>...</section>`;
+
+  // Language-specific instructions for section names
+  systemPrompt += `\n\nIMPORTANT: All section titles must be in ${config.language}. Do not use English section names unless ${config.language} is English. Use culturally appropriate section names for the language.`;
+
+  // Enhanced critical instructions for suggestions and keywords (new)
+  systemPrompt += `\n\nCRITICAL INSTRUCTIONS FOR SUGGESTIONS AND KEYWORDS:
+- NEVER suggest improvements or changes that are already implemented in the resume
+- Each suggestion must provide genuinely NEW content or structure that doesn't exist yet
+- Keywords must be highly relevant to the industry/role AND absent from the current resume
+- Before suggesting a keyword, verify that it does NOT appear in any form (singular, plural, hyphenated) in the resume
+- Do not suggest generic skills that are clearly demonstrated throughout the resume
+- Prioritize suggesting specialized or niche skills that would add significant value
+- For technologies or tools already mentioned in the resume, do not suggest them again as keywords
+- Analyze the entire resume content first to identify all existing skills and keywords`;
 
   // Final instructions
   systemPrompt += `\n\nI want all predefined sections to be included in the optimization result even if some are empty of content.
@@ -157,6 +243,9 @@ It is very important to create the resume, the suggestions and the keywords in t
 export function generateResumePrompt(resumeText: string, options: PromptOptions = {}): string {
   // Merge default options with provided options
   const config = { ...DEFAULT_OPTIONS, ...options };
+  
+  // Get section names in the appropriate language
+  const sectionNames = getSectionNamesByLanguage(config.language);
   
   // Build the base prompt with optimization criteria
   let prompt = `TASK: Analyze and optimize the following resume, focusing on these criteria:
@@ -180,7 +269,7 @@ export function generateResumePrompt(resumeText: string, options: PromptOptions 
   // Add detailed ATS instructions if requested
   if (config.includeAtsInstructions) {
     prompt += `\n\nATS OPTIMIZATION TIPS:
-- Use standard section headings (e.g., "Experience", "Education", "Skills")
+- Use standard section headings in ${config.language} (e.g., "${sectionNames['resume-experience']}", "${sectionNames['resume-education']}", "${sectionNames['resume-skills']}")
 - Include keywords from the industry and job descriptions
 - Avoid using tables, graphics, or complex formatting
 - Use a clean, simple layout with clear section breaks
@@ -193,27 +282,61 @@ export function generateResumePrompt(resumeText: string, options: PromptOptions 
 
   // Build HTML formatting instructions with explicit section IDs
   // Each section is clearly identified for proper template application
-  prompt += `\n\nIMPORTANT HTML FORMATTING INSTRUCTIONS:
-- Format your response as semantic HTML with the following section IDs:`;
+  // Added specific instructions for class placement
+  prompt += `\n\nCRITICAL HTML FORMATTING INSTRUCTIONS:
+- Format your response with semantic HTML structure following these exact rules:`;
 
-  // List all possible sections with their IDs
-  Object.entries(RESUME_SECTION_NAMES).forEach(([id, name]) => {
-    prompt += `\n  - <section id="${id}" class="section-title"> for ${name}`;
+  // List all possible sections with their IDs and correct class placement
+  // Using language-specific section names
+  Object.entries(sectionNames).forEach(([id, name]) => {
+    prompt += `\n  - Use <section id="${id}"> for ${name} section (without any class on the section tag)`;
+    
+    // Add specific instructions for section headers
+    if (id === 'resume-header') {
+      prompt += `\n    - Add class="section-title" to the <h1> element (not the section)
+    - Add class="name" to the heading with the person's name: <h1 class="section-title name">Person Name</h1>
+    - Add appropriate classes to personal information:
+      • class="email" for email addresses: <span class="email">email@example.com</span>
+      • class="phone" for phone numbers: <span class="phone">123-456-7890</span>
+      • class="address" for postal addresses: <span class="address">123 Street, City</span>
+      • class="linkedin" for LinkedIn URLs: <span class="linkedin">linkedin.com/in/username</span>`;
+    } else {
+      prompt += `\n    - Add class="section-title" to the section title: <h2 class="section-title">${name}</h2>`;
+    }
   });
 
   prompt += `\n
+- Important: Always add the class "section-title" to the HEADING tags (h1, h2), NOT to the section tags
 - Create proper sections for ALL applicable categories from the resume
+- Use the section titles in ${config.language}, not in English (unless ${config.language} is English)
 - Even if references only say "Available upon request," place this in a properly formatted resume-references section
 - Use appropriate HTML tags (h1, h2, h3, p, ul, li) for proper structure within each section
 - Make sure the HTML is well-formed and valid
 - Do not include any CSS or styling
-- Use descriptive headers for each section that match common industry standards`;
+- Any time there's an email address, phone number, address or LinkedIn URL in the header, wrap it in a span with the appropriate class`;
 
   // Add the resume content to be optimized
   prompt += `\n\nResume to optimize:
 ${resumeText}`;
 
-  // Add output format instructions for the AI response
+  // Add job description context if available (new)
+  if (config.jobDescriptionText) {
+    prompt += `\n\nJob Description to match against:
+${config.jobDescriptionText}
+The above job description should be used to identify relevant keywords and tailor suggestions.`;
+  }
+
+  // Enhanced instructions for keywords and suggestions (new)
+  prompt += `\n\nKEYWORD AND SUGGESTION GENERATION INSTRUCTIONS:
+- First, CAREFULLY analyze the resume to identify ALL skills, terms, and concepts that are ALREADY PRESENT
+- For each potential keyword or suggestion, check the entire resume to ensure it's not already mentioned
+- Create an internal list of EXISTING keywords to avoid suggesting them again
+- Only suggest keywords that are 100% ABSENT from the resume in ANY form (including plurals, hyphenations, or variations)
+- For suggestions, focus on recommending genuinely new content that would significantly enhance the resume
+- Prioritize suggesting skills, achievements, or structural improvements that are missing entirely
+- Each suggestion should offer something that cannot be inferred from the existing content`;
+
+  // Add output format instructions for the AI response - KEEPING THE ORIGINAL FORMAT
   prompt += `\n\nIMPORTANT: Your response must be a valid JSON object with exactly these fields:
 {
   "optimizedText": "The complete HTML-formatted improved resume content",
@@ -251,7 +374,10 @@ For each suggestion implemented, the score should increase by approximately:
 - Format the optimizedText as HTML with section IDs as specified above
 - Ensure EVERY applicable section has proper identification with the correct section ID
 - Ensure the optimized text maintains all relevant information from the original
-- Do not include ANY explanatory text, code blocks, or other content outside the JSON structure`;
+- Do not include ANY explanatory text, code blocks, or other content outside the JSON structure
+- CRITICAL: The 'section-title' class must be on the h1/h2 tags, NOT on the section tags
+- CRITICAL: The section titles in the output HTML must be in ${config.language}, not in English
+- CRITICAL: Double-check that suggestions and keywords don't recommend what's already in the resume`;
 
   return prompt;
 }
@@ -267,19 +393,24 @@ For each suggestion implemented, the score should increase by approximately:
 export function generateClaudePrompt(resumeText: string, options: PromptOptions = {}): string {
   const basePrompt = generateResumePrompt(resumeText, options);
   
-  // Add Claude-specific instructions with emphasis on proper section handling
+  // Add Claude-specific instructions with enhanced focus on avoiding duplicate suggestions (updated)
   return `${basePrompt}
 
 IMPORTANT CLAUDE-SPECIFIC INSTRUCTIONS:
 - Your response must be ONLY valid JSON - no explanatory text outside the JSON object
 - For the "optimizedText" field, include properly escaped HTML with section IDs
 - Make sure to create proper <section> elements with appropriate IDs for ALL content
+- Keep <section> tags clean without any classes: <section id="resume-header"> (NOT <section id="resume-header" class="section-title">)
+- Add class="section-title" only to heading elements (h1, h2) within each section
 - Pay special attention to newer sections like publications, volunteering, awards, and interests - they must have proper IDs
 - If references only mention "available upon request," still create a proper references section
 - Do not include \`\`\`json and \`\`\` around your response
 - When escaping HTML in JSON, replace " with \\" inside HTML attributes
 - Verify that your JSON is valid before responding
-- Ensure all section IDs exactly match the specified format (e.g., 'resume-header', 'resume-skills')`;
+- Ensure all section IDs exactly match the specified format (e.g., 'resume-header', 'resume-skills')
+- Make sure all section titles are in ${options.language || DEFAULT_OPTIONS.language}, not in English (unless the language is English)
+- CRITICALLY IMPORTANT: Before suggesting a keyword, verify it is COMPLETELY ABSENT from the resume in ALL forms
+- Only suggest genuinely new content in suggestions, not repetitions of what's already there`;
 }
 
 /**
@@ -386,6 +517,52 @@ export function calculateSuggestionImpact(suggestion: {
   
   // Return the adjusted score (1-10 range)
   return Math.max(1, Math.min(10, baseScore + impactModifier));
+}
+
+/**
+ * Check if a keyword is already present in the resume content
+ * Accounts for variations like plurals, hyphenations, etc.
+ * 
+ * @param keyword - The keyword to check
+ * @param resumeContent - The resume content to search in
+ * @returns Boolean indicating if the keyword is already present
+ */
+export function isKeywordAlreadyPresent(keyword: string, resumeContent: string): boolean {
+  // Normalize content and keyword for comparison
+  const normalizedContent = resumeContent.toLowerCase();
+  const normalizedKeyword = keyword.toLowerCase();
+  
+  // Check for exact match
+  if (normalizedContent.includes(normalizedKeyword)) {
+    return true;
+  }
+  
+  // Check for plural variations
+  const singularKeyword = normalizedKeyword.endsWith('s') 
+    ? normalizedKeyword.slice(0, -1) 
+    : normalizedKeyword;
+  const pluralKeyword = normalizedKeyword.endsWith('s')
+    ? normalizedKeyword
+    : normalizedKeyword + 's';
+    
+  if (normalizedContent.includes(singularKeyword) || normalizedContent.includes(pluralKeyword)) {
+    return true;
+  }
+  
+  // Check for hyphenated variations
+  if (normalizedKeyword.includes('-')) {
+    const withoutHyphen = normalizedKeyword.replace(/-/g, ' ');
+    if (normalizedContent.includes(withoutHyphen)) {
+      return true;
+    }
+  } else if (normalizedKeyword.includes(' ')) {
+    const withHyphen = normalizedKeyword.replace(/ /g, '-');
+    if (normalizedContent.includes(withHyphen)) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 /**

@@ -5,6 +5,7 @@
  * - Structured HTML generation from plain text
  * - Section ID management
  * - Default styling application
+ * - Addition of required CSS classes for templates
  */
 
 /**
@@ -117,13 +118,15 @@ export function convertTextToHTML(text: string): string {
       
       // Start new section with standard ID
       html += `<section id="${standardId}">`;
-      html += `<h2>${trimmedLine}</h2>`;
+      // Add section-title class to h2 element
+      html += `<h2 class="section-title">${trimmedLine}</h2>`;
       currentSection = standardId;
     } 
     // Handle name/contact at the beginning (assuming first lines are the header)
     else if (index === 0) {
       html += `<section id="resume-header">`;
-      html += `<h1>${trimmedLine}</h1>`;
+      // First h1 in header is name, use section-title class
+      html += `<h1 class="section-title name">${trimmedLine}</h1>`;
       currentSection = 'resume-header';
     }
     // Handle subtitle in header
@@ -291,7 +294,6 @@ export function enhanceHTML(html: string): string {
     }
   });
   
-  // Return the improved HTML
   return doc.body.innerHTML;
 }
 
@@ -326,43 +328,88 @@ export function applyDefaultStyling(html: string): string {
   // Skip if empty
   if (!html) return html;
   
-  // For server-side, we can't use DOM directly
-  // This is a simple regex-based approach
-  
-  // Add classes to headings
-  let styledHtml = html
-    .replace(/<h1>/g, '<h1 class="text-2xl font-bold text-gray-800 mb-1">')
-    .replace(/<h2>/g, '<h2 class="text-xl font-semibold text-gray-700 mb-2 mt-4 uppercase border-b pb-1">')
-    .replace(/<h3>/g, '<h3 class="text-lg font-medium text-gray-700 mb-1">');
-  
-  // Style sections
-  styledHtml = styledHtml.replace(
-    /<section id="([^"]+)">/g, 
-    '<section id="$1" class="mb-4 pb-2">'
-  );
-  
-  // Special handling for specific sections
-  styledHtml = styledHtml
-    .replace(
-      /<section id="resume-header"/g, 
-      '<section id="resume-header" class="mb-6 text-center"'
-    )
-    .replace(
-      /<section id="resume-summary"/g, 
-      '<section id="resume-summary" class="mb-6 bg-gray-50 p-3 rounded"'
-    )
-    .replace(
-      /<section id="resume-skills"/g, 
-      '<section id="resume-skills" class="mb-6"'
-    );
-  
-  // Style lists
-  styledHtml = styledHtml.replace(
-    /<ul>/g, 
-    '<ul class="list-disc pl-5 mb-2">'
-  );
-  
-  return styledHtml;
+  try {
+    // Use DOM approach for more reliable class handling
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Style headings
+    doc.querySelectorAll('h1').forEach(el => {
+      el.classList.add('text-2xl', 'font-bold', 'text-gray-800', 'mb-1');
+    });
+    
+    doc.querySelectorAll('h2').forEach(el => {
+      el.classList.add('text-xl', 'font-semibold', 'text-gray-700', 'mb-2', 'mt-4', 'uppercase', 'border-b', 'pb-1');
+    });
+    
+    doc.querySelectorAll('h3').forEach(el => {
+      el.classList.add('text-lg', 'font-medium', 'text-gray-700', 'mb-1');
+    });
+    
+    // Style sections
+    doc.querySelectorAll('section').forEach(el => {
+      el.classList.add('mb-4', 'pb-2');
+    });
+    
+    // Special section styling
+    const headerSection = doc.querySelector('section#resume-header');
+    if (headerSection) {
+      headerSection.classList.add('mb-6', 'text-center');
+    }
+    
+    const summarySection = doc.querySelector('section#resume-summary');
+    if (summarySection) {
+      summarySection.classList.add('mb-6', 'bg-gray-50', 'p-3', 'rounded');
+    }
+    
+    const skillsSection = doc.querySelector('section#resume-skills');
+    if (skillsSection) {
+      skillsSection.classList.add('mb-6');
+    }
+    
+    // Style lists
+    doc.querySelectorAll('ul').forEach(el => {
+      el.classList.add('list-disc', 'pl-5', 'mb-2');
+    });
+    
+    // Style personal info classes
+    doc.querySelectorAll('.email').forEach(el => {
+      el.classList.add('text-blue-600');
+    });
+    
+    doc.querySelectorAll('.phone').forEach(el => {
+      el.classList.add('text-blue-600');
+    });
+    
+    doc.querySelectorAll('.address').forEach(el => {
+      el.classList.add('text-gray-600');
+    });
+    
+    doc.querySelectorAll('.linkedin').forEach(el => {
+      el.classList.add('text-blue-600');
+    });
+    
+    return doc.body.innerHTML;
+  } catch (error) {
+    console.error('Error applying default styling with DOM:', error);
+    
+    // Fallback to regex-based approach if DOM manipulation fails
+    let styledHtml = html
+      .replace(/<h1[^>]*>/g, '<h1 class="text-2xl font-bold text-gray-800 mb-1">')
+      .replace(/<h2[^>]*>/g, '<h2 class="text-xl font-semibold text-gray-700 mb-2 mt-4 uppercase border-b pb-1">')
+      .replace(/<h3[^>]*>/g, '<h3 class="text-lg font-medium text-gray-700 mb-1">')
+      .replace(/<section[^>]*>/g, '<section class="mb-4 pb-2">')
+      .replace(/<section[^>]*id="resume-header"[^>]*>/g, '<section id="resume-header" class="mb-6 text-center">')
+      .replace(/<section[^>]*id="resume-summary"[^>]*>/g, '<section id="resume-summary" class="mb-6 bg-gray-50 p-3 rounded">')
+      .replace(/<section[^>]*id="resume-skills"[^>]*>/g, '<section id="resume-skills" class="mb-6">')
+      .replace(/<ul[^>]*>/g, '<ul class="list-disc pl-5 mb-2">')
+      .replace(/<span class="email"[^>]*>/g, '<span class="email text-blue-600">')
+      .replace(/<span class="phone"[^>]*>/g, '<span class="phone text-blue-600">')
+      .replace(/<span class="address"[^>]*>/g, '<span class="address text-gray-600">')
+      .replace(/<span class="linkedin"[^>]*>/g, '<span class="linkedin text-blue-600">');
+    
+    return styledHtml;
+  }
 }
 
 /**
@@ -397,16 +444,134 @@ export function extractSectionsFromHtml(html: string): Record<string, string> {
 /**
  * Process and prepare optimized text for the editor
  * Main entry point for handling AI-generated content
+ * Direct DOM-based approach to ensure correct class placement
  * 
  * @param optimizedText Text from AI (plain or HTML)
  * @returns Properly formatted HTML ready for the editor
  */
 export function prepareOptimizedTextForEditor(optimizedText: string): string {
-  // Process the content to ensure proper HTML
-  const processedHtml = processAIResponse(optimizedText);
+  // Skip if empty
+  if (!optimizedText) return '';
   
-  // Apply default styling
-  const styledHtml = applyDefaultStyling(processedHtml);
-  
-  return styledHtml;
+  try {
+    // First convert to proper HTML if needed
+    let processedHtml = processAIResponse(optimizedText);
+    
+    // Create a temporary document to work with
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(processedHtml, 'text/html');
+    
+    // Step 1: Process each section to fix classes
+    doc.querySelectorAll('section').forEach(section => {
+      // Remove section-title class from the section itself
+      section.classList.remove('section-title');
+      
+      // Find the first h1 or h2 in the section
+      const heading = section.querySelector('h1, h2');
+      
+      // If a heading is found, add section-title class to it
+      if (heading) {
+        heading.classList.add('section-title');
+      }
+    });
+    
+    // Step 2: Process header section for name/email/phone/etc classes
+    const headerSection = doc.querySelector('section#resume-header');
+    if (headerSection) {
+      // Add name class to h1
+      const nameHeading = headerSection.querySelector('h1');
+      if (nameHeading) {
+        nameHeading.classList.add('name');
+      }
+      
+      // Process paragraphs for contact info
+      headerSection.querySelectorAll('p').forEach(p => {
+        const text = p.innerHTML;
+        
+        // Add email span
+        const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+        if (emailRegex.test(text)) {
+          p.innerHTML = text.replace(emailRegex, '<span class="email">$1</span>');
+        }
+        
+        // Add phone span
+        const phoneRegex = /((?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/g;
+        if (phoneRegex.test(text)) {
+          p.innerHTML = text.replace(phoneRegex, '<span class="phone">$1</span>');
+        }
+        
+        // Add address span for paragraphs that look like addresses
+        if (
+          text.match(/[A-Z][0-9][A-Z]\s?[0-9][A-Z][0-9]/i) || // Canadian postal code
+          (text.match(/,/g) || []).length >= 2 || // Multiple commas
+          text.includes("app.") || // Apartment indicator
+          text.match(/Quebec|Québec|Montreal|Montréal/i) // City names
+        ) {
+          if (!text.includes('<span class="')) {
+            p.innerHTML = `<span class="address">${text}</span>`;
+          }
+        }
+      });
+    }
+    
+    // Step 3: Get the updated HTML
+    processedHtml = doc.body.innerHTML;
+    
+    // Step 4: Apply default styling
+    const styledHtml = applyDefaultStyling(processedHtml);
+    
+    return styledHtml;
+  } catch (error) {
+    console.error('Error in DOM processing:', error);
+    
+    // Fallback to manual string replacement if DOM processing fails
+    try {
+      // Process the content to ensure proper HTML
+      let processedHtml = processAIResponse(optimizedText);
+      
+      // Remove section-title class from all sections
+      processedHtml = processedHtml.replace(
+        /<section([^>]*)class="([^"]*)section-title([^"]*)"([^>]*)>/g, 
+        '<section$1class="$2$3"$4>'
+      );
+      
+      // Add section-title class to all h1 and h2 elements inside sections
+      processedHtml = processedHtml.replace(
+        /(<section[^>]*>[\s\S]*?)(<h([12])[^>]*)(class="([^"]*)")?([^>]*>)/g,
+        (match, before, tagStart, level, classAttr, classes, tagEnd) => {
+          if (classAttr) {
+            if (!classes.includes('section-title')) {
+              return `${before}${tagStart}class="${classes} section-title"${tagEnd}`;
+            }
+            return match;
+          } else {
+            return `${before}${tagStart} class="section-title"${tagEnd}`;
+          }
+        }
+      );
+      
+      // Process header section for name
+      processedHtml = processedHtml.replace(
+        /(<section[^>]*id="resume-header"[^>]*>[\s\S]*?)(<h1[^>]*)(class="([^"]*)")?([^>]*>)/g,
+        (match, before, tagStart, classAttr, classes, tagEnd) => {
+          if (classAttr) {
+            if (!classes.includes('name')) {
+              return `${before}${tagStart}class="${classes} name"${tagEnd}`;
+            }
+            return match;
+          } else {
+            return `${before}${tagStart} class="name"${tagEnd}`;
+          }
+        }
+      );
+      
+      // Apply default styling
+      const styledHtml = applyDefaultStyling(processedHtml);
+      
+      return styledHtml;
+    } catch (fallbackError) {
+      console.error('Fallback processing also failed:', fallbackError);
+      return optimizedText; // Return original input as last resort
+    }
+  }
 }
