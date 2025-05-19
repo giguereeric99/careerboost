@@ -157,6 +157,7 @@ const ResumeOptimizer: React.FC = () => {
     isResetting,
     hasResume,
     activeTab,
+    templateModified,
 
     // Actions
     setActiveTab,
@@ -171,12 +172,14 @@ const ResumeOptimizer: React.FC = () => {
     updateSelectedTemplate,
     setContentModified,
     setScoreModified,
+    setTemplateModified,
 
     // These are the state setters you'll need to access directly
     setOptimizedText,
     setCurrentAtsScore,
     setSuggestions,
     setKeywords,
+    setSelectedTemplate,
   } = useResumeOptimizer(user?.id);
 
   // Use the upload section hook to handle file upload and initial optimization
@@ -380,6 +383,11 @@ const ResumeOptimizer: React.FC = () => {
             setOptimizedText(data.optimized_text || "");
             setCurrentAtsScore(data.ats_score || 65);
 
+            // Update the selected template
+            if (data.selected_template) {
+              setSelectedTemplate(data.selected_template);
+            }
+
             // Reset suggestions to their original non-applied state
             if (Array.isArray(data.suggestions)) {
               const normalizedSuggestions = data.suggestions.map((s, i) =>
@@ -402,7 +410,7 @@ const ResumeOptimizer: React.FC = () => {
             );
 
             // Show success toast
-            // toast.success("Resume reset to original version");
+            toast.success("Resume reset to original version");
           }
         });
       }
@@ -414,6 +422,7 @@ const ResumeOptimizer: React.FC = () => {
     setCurrentAtsScore,
     setSuggestions,
     setKeywords,
+    setSelectedTemplate,
   ]);
 
   /**
@@ -772,6 +781,7 @@ const ResumeOptimizer: React.FC = () => {
   /**
    * Enhanced save handler that handles all changes in a single atomic transaction
    * Collects all applied suggestions and keywords and saves them with the content
+   * Now also includes the selected template in the save operation
    *
    * @param content - Content to save
    * @returns Promise resolving to the save result
@@ -784,23 +794,25 @@ const ResumeOptimizer: React.FC = () => {
       // Show processing state to user with the ID
       toast.loading("Saving all changes...", {
         id: toastId,
-        description: "Saving resume content, keywords, and suggestions.",
+        description:
+          "Saving resume content, keywords, suggestions, and template.",
       });
 
-      // Call the atomic save method from the hook
-      const result = await saveResume(content);
+      // Call the atomic save method from the hook with the selected template
+      const result = await saveResume(content, selectedTemplate);
 
       // If save was successful
       if (result) {
         // Reset modification states
         setContentModified(false);
         setScoreModified(false);
+        setTemplateModified(false);
 
         // Update the toast to show success using the same ID
         toast.success("All changes saved successfully", {
           id: toastId,
           description:
-            "Your resume, keywords, and suggestions have been updated.",
+            "Your resume, keywords, suggestions, and template have been updated.",
         });
       } else {
         // Update the toast to show error using the same ID
@@ -813,7 +825,49 @@ const ResumeOptimizer: React.FC = () => {
 
       return result;
     },
-    [saveResume, setContentModified, setScoreModified]
+    [
+      saveResume,
+      selectedTemplate,
+      setContentModified,
+      setScoreModified,
+      setTemplateModified,
+    ]
+  );
+
+  /**
+   * Handle template selection
+   * Updates the selected template and marks content as modified
+   *
+   * @param templateId - ID of the selected template
+   */
+  const handleTemplateSelection = useCallback(
+    (templateId: string) => {
+      // Only allow template selection in edit mode
+      if (!isEditing) {
+        toast.info("Switch to Edit mode to change templates");
+        return;
+      }
+
+      // Check if the template is already selected
+      if (templateId === selectedTemplate) {
+        return;
+      }
+
+      // Find the template
+      const template = resumeTemplates.find((t) => t.id === templateId);
+
+      // Update the template locally
+      updateSelectedTemplate(templateId);
+
+      // Mark content as modified to enable the save button
+      setTemplateModified(true);
+
+      // Show confirmation toast
+      toast.success(`${template?.name || "Template"} selected`, {
+        description: "Remember to save your changes to apply this template.",
+      });
+    },
+    [isEditing, selectedTemplate, updateSelectedTemplate, setTemplateModified]
   );
 
   // Check for previous toast shown in session storage
@@ -979,6 +1033,7 @@ const ResumeOptimizer: React.FC = () => {
                     isEditing={isEditing}
                     // Pass scoreModified state - make sure ResumePreview expects this prop
                     scoreModified={scoreModified}
+                    templateModified={templateModified}
                   />
                 </div>
 
@@ -1023,7 +1078,8 @@ const ResumeOptimizer: React.FC = () => {
                   <TemplateGallery
                     templates={resumeTemplates}
                     selectedTemplate={selectedTemplate}
-                    onTemplateSelect={updateSelectedTemplate}
+                    onTemplateSelect={handleTemplateSelection}
+                    isEditing={isEditing} // Pass the editing state to control when templates can be changed
                   />
                 </div>
               </div>

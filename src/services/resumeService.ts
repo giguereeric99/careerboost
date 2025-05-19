@@ -320,12 +320,25 @@ export function isValidNoResumeState(response: Response, result: any): boolean {
  * @param appliedKeywords - Array of keywords that are applied
  * @returns Success status and any error
  */
+/**
+ * Save resume with all changes in a single atomic transaction
+ * Handles content, score, suggestions, keywords, and template in one operation
+ * 
+ * @param resumeId - ID of the resume to update
+ * @param content - New content to save
+ * @param atsScore - Current ATS score
+ * @param appliedSuggestionIds - Array of applied suggestion IDs
+ * @param appliedKeywords - Array of applied keyword texts
+ * @param selectedTemplate - Selected template ID (optional)
+ * @returns Object with success status and error if any
+ */
 export async function saveResumeComplete(
   resumeId: string,
   content: string,
   atsScore: number,
   appliedSuggestionIds: string[],
-  appliedKeywords: string[]
+  appliedKeywords: string[],
+  selectedTemplate?: string
 ): Promise<{ success: boolean; error: Error | null }> {
   try {
     // Log debugging information
@@ -334,7 +347,8 @@ export async function saveResumeComplete(
       contentLength: content.length,
       atsScore,
       suggestionCount: appliedSuggestionIds.length,
-      keywordCount: appliedKeywords.length
+      keywordCount: appliedKeywords.length,
+      template: selectedTemplate || 'unchanged'
     });
 
     // Validate parameters
@@ -343,16 +357,24 @@ export async function saveResumeComplete(
       return { success: false, error: new Error('Missing required parameters') };
     }
 
+    // Prepare RPC parameters
+    const rpcParams: any = {
+      p_resume_id: resumeId,
+      p_content: content,
+      p_ats_score: atsScore,
+      p_applied_suggestions: appliedSuggestionIds,
+      p_applied_keywords: appliedKeywords
+    };
+    
+    // Add template parameter only if provided
+    if (selectedTemplate) {
+      rpcParams.p_selected_template = selectedTemplate;
+    }
+
     // Call the Supabase RPC function
     const { data, error } = await supabase.rpc(
       'save_resume_complete',
-      {
-        p_resume_id: resumeId,
-        p_content: content,
-        p_ats_score: atsScore,
-        p_applied_suggestions: appliedSuggestionIds,
-        p_applied_keywords: appliedKeywords
-      }
+      rpcParams
     );
 
     if (error) {

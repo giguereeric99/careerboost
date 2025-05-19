@@ -91,6 +91,7 @@ interface ResumePreviewProps {
   needsRegeneration?: boolean; // Whether the content needs regeneration after applying changes
   isEditing?: boolean; // Whether the resume is in edit mode (controlled by parent)
   scoreModified?: boolean; // Whether the score has been modified due to applied suggestions/keywords
+  templateModified?: boolean; // Whether the template has been modified
   resumeData?: OptimizedResumeData; // Full resume data object
 }
 
@@ -116,6 +117,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   needsRegeneration = false,
   isEditing, // Whether the resume is in edit mode (controlled by parent)
   scoreModified = false, // Whether score has been modified (default: false)
+  templateModified = false, // Whether the template has been modified (default: false)
   resumeData,
 }) => {
   // Local state for UI controls
@@ -690,7 +692,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
    * Determine if save button should be enabled
    * Now considering both content modification and score modification
    */
-  const shouldEnableSave = contentModified || scoreModified;
+  const shouldEnableSave = contentModified || scoreModified || templateModified;
 
   /**
    * Main render
@@ -704,7 +706,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         openPreview={openPreview}
         handleSave={handleSave}
         isSaving={isSaving}
-        contentModified={shouldEnableSave} // Use combined state
+        shouldEnableSave={shouldEnableSave} // Use combined state
         optimizedText={optimizedText}
         // Always pass onReset if it exists and we're not in edit mode
         onReset={!editMode && onReset ? handleReset : undefined}

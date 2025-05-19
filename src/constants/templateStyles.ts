@@ -124,9 +124,18 @@ export const professionalStyles = `
   .skills, .languages {
     display: flex;
     flex-wrap: wrap;
+    flex-direction: column;
     gap: 10px;
   }
-  .badge {
+  .skills ul, .languages ul {
+    list-style: none;
+    display: flex;
+    padding: 0;
+    margin: 0;
+  }
+  .badge,
+  .skills ul li,
+  .languages ul li {
     background-color: #003366;
     color: white;
     padding: 5px 10px;

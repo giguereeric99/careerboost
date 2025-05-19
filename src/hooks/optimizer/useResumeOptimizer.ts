@@ -120,6 +120,7 @@ export const useResumeOptimizer = (userId?: string) => {
   const [contentModified, setContentModified] = useState<boolean>(false);
   // New state to track whether score has been modified specifically
   const [scoreModified, setScoreModified] = useState<boolean>(false);
+  const [templateModified, setTemplateModified] = useState<boolean>(false);
   
   // Loading states
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -290,16 +291,20 @@ export const useResumeOptimizer = (userId?: string) => {
   }, [userId]);
 
   
-/**
-   * Save the edited resume content, score, and applied enhancements
+  /**
+   * Save the edited resume content, score, applied enhancements and template
    * Updates the database with all current changes via service
    * 
    * @param newContent - Optional content to save instead of current editedText
+   * @param templateId - Optional template ID to save
    * @returns Boolean indicating if save was successful
    */
-  const saveResume = useCallback(async (newContent?: string) => {
+  const saveResume = useCallback(async (newContent?: string, templateId?: string) => {
     // Use provided content or current edited text
     const contentToSave = newContent || editedText;
+    
+    // Use provided template ID or current selected template
+    const templateToSave = templateId || selectedTemplate;
     
     // Validate required data
     if (!userId || !resumeData?.id || !contentToSave) {
@@ -328,16 +333,18 @@ export const useResumeOptimizer = (userId?: string) => {
         contentLength: contentToSave.length,
         atsScore: currentAtsScore || 0,
         appliedSuggestions: appliedSuggestionIds.length,
-        appliedKeywords: appliedKeywords.length
+        appliedKeywords: appliedKeywords.length,
+        template: templateToSave
       });
       
-      // Use the new atomic save function that handles all changes in a single transaction
+      // Use the updated atomic save function that handles all changes in a single transaction
       const { success, error } = await saveResumeComplete(
         resumeData.id, 
         contentToSave, 
         currentAtsScore || 0,
         appliedSuggestionIds,
-        appliedKeywords
+        appliedKeywords,
+        templateToSave // Pass template ID to save function
       );
       
       // Handle errors from the service
@@ -350,11 +357,15 @@ export const useResumeOptimizer = (userId?: string) => {
       setResumeData({
         ...resumeData,
         last_saved_text: contentToSave,
-        last_saved_score_ats: currentAtsScore
+        last_saved_score_ats: currentAtsScore,
+        selected_template: templateToSave
       });
       
       // Update optimized text to reflect the saved content
       setOptimizedText(contentToSave);
+      
+      // Update selected template with the saved template
+      setSelectedTemplate(templateToSave);
       
       // Mark content and score as no longer modified since they were just saved
       setContentModified(false);
@@ -373,7 +384,7 @@ export const useResumeOptimizer = (userId?: string) => {
       // Always reset the saving state when done
       setIsSaving(false);
     }
-  }, [userId, resumeData, editedText, currentAtsScore, suggestions, keywords]);
+  }, [userId, resumeData, editedText, currentAtsScore, suggestions, keywords, selectedTemplate]);
   
   /**
    * Reset changes to the original optimized version
@@ -424,6 +435,7 @@ export const useResumeOptimizer = (userId?: string) => {
       setIsEditing(false);
       setContentModified(false);
       setScoreModified(false);
+      setTemplateModified(false);
       
       toast.success("Resume reset to original version");
       return true;
@@ -735,34 +747,28 @@ export const useResumeOptimizer = (userId?: string) => {
    * @param templateId - ID of the template to select
    * @returns Boolean indicating if operation was successful
    */
-  const updateSelectedTemplate = useCallback(async (templateId: string) => {
-    if (!resumeData?.id) return false;
-    
+  const updateSelectedTemplate = useCallback((templateId: string) => {
     try {
-      // Call service to update template
-      const { success, error } = await updateResumeTemplate(resumeData.id, templateId);
-      
-      if (!success) throw error;
-      
-      // Update local state only after successful DB update
-      setSelectedTemplate(templateId);
-      
-      // Also update the resume data template if it exists
-      if (resumeData) {
-        setResumeData({
-          ...resumeData,
-          selected_template: templateId
-        });
+      // Skip if template hasn't changed
+      if (templateId === selectedTemplate) {
+        return true;
       }
       
-      toast.success("Template updated successfully");
+      // Update local state only - template will be saved with other changes
+      setSelectedTemplate(templateId);
+      
+      // Mark content as modified to enable save button
+      setContentModified(true);
+      
+      console.log(`Template changed to ${templateId}, content marked as modified`);
+      
       return true;
     } catch (error) {
       console.error("Error updating template:", error);
       toast.error("Failed to update template");
       return false;
     }
-  }, [resumeData]);
+  }, [selectedTemplate]);
   
   /**
    * Check if there are unsaved changes
@@ -915,6 +921,7 @@ export const useResumeOptimizer = (userId?: string) => {
     isResetting,
     hasResume,
     activeTab,
+    templateModified,
     
     // Actions
     setActiveTab,
@@ -938,7 +945,9 @@ export const useResumeOptimizer = (userId?: string) => {
     setSuggestions,
     setKeywords,
     setContentModified,
-    setScoreModified
+    setScoreModified,
+    setSelectedTemplate,
+    setTemplateModified
   };
 };
 

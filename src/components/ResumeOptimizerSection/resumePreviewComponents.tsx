@@ -51,7 +51,7 @@ interface PreviewHeaderProps {
   openPreview: () => void; // Function to open full preview modal
   handleSave: () => void; // Function to save changes
   isSaving: boolean; // Whether save is in progress
-  contentModified: boolean; // Whether content has been modified
+  shouldEnableSave: boolean; // Whether content has been modified
   optimizedText: string; // Current optimized text
   onReset?: () => void; // Optional function to reset to original version
 }
@@ -66,7 +66,7 @@ export const PreviewHeader: React.FC<PreviewHeaderProps> = ({
   openPreview,
   handleSave,
   isSaving,
-  contentModified,
+  shouldEnableSave,
   optimizedText,
   onReset,
 }) => (
@@ -127,7 +127,7 @@ export const PreviewHeader: React.FC<PreviewHeaderProps> = ({
         <Button
           size="sm"
           onClick={handleSave}
-          disabled={isSaving || !contentModified}
+          disabled={isSaving || !shouldEnableSave}
           className="bg-brand-600 hover:bg-brand-700"
           title="Save all changes to resume"
         >
@@ -216,7 +216,7 @@ interface EditorContentProps {
   suggestions: Suggestion[]; // Available suggestions
   handleSave: () => void; // Save function
   isSaving: boolean; // Save in progress
-  contentModified: boolean; // Content modified
+  shouldEnableSave: boolean; // Content modified
   toggleEditMode: () => void; // Toggle edit mode
 }
 
@@ -231,7 +231,7 @@ export const EditorContent: React.FC<EditorContentProps> = ({
   suggestions,
   handleSave,
   isSaving,
-  contentModified,
+  shouldEnableSave,
   toggleEditMode,
 }) => {
   const handleApplyKeyword = (keyword: string) => {
@@ -285,7 +285,7 @@ export const EditorContent: React.FC<EditorContentProps> = ({
         {/* Save button */}
         <Button
           onClick={handleSave}
-          disabled={isSaving || !contentModified}
+          disabled={isSaving || !shouldEnableSave}
           className="bg-brand-600 hover:bg-brand-700"
           title="Save all changes"
         >
