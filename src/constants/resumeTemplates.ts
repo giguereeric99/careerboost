@@ -3,7 +3,7 @@
  * Contains all templates available in the application
  * References styles and structures from separate constants files
  */
-import { ResumeTemplateType, TemplateContentSections } from '../types/resumeTemplateTypes';
+import { ResumeTemplateType, TemplateContentSections, HeaderInfo } from '../types/resumeTemplateTypes';
 import { STANDARD_SECTIONS } from './sections';
 import {
   basicStyles, 
@@ -21,6 +21,7 @@ import {
   technicalTemplate,
   compactTemplate
 } from './templateStructures';
+import { extractHeaderInfo, generateBasicHeader, generateProfessionalHeader } from '../utils/templateUtils';
 
 /**
  * Checks if a contact info string contains any of the specified items
@@ -36,54 +37,48 @@ function containsAny(text: string, items: string[]): boolean {
 
 /**
  * Custom apply function for the basic template
- * Preserves original section titles from the content
+ * Uses structured header generation and section formatting
  * 
  * @param sections - Object containing content for each section by ID
  * @returns Formatted HTML content
  */
 function applyBasicTemplate(sections: TemplateContentSections): string {
+  console.log("Applying basic template to content");
+  
   // Create base HTML structure
   let html = '';
   
-  // Process header content (name and possibly contact info)
+  // Process header content
   if (sections['resume-header']) {
-    // Parse the header to handle name and contact separately
-    const { nameHtml, contactHtml } = processHeaderSection(sections['resume-header']);
+    console.log("Processing resume header section");
     
-    // Add the name part
-    html += nameHtml;
+    // Extract structured information from header
+    const headerInfo = extractHeaderInfo(sections['resume-header']);
     
-    // Add contact info if we extracted it from header
-    if (contactHtml) {
-      html += `<div class="contact">${contactHtml}</div>`;
-    } 
-    // Otherwise, check for a dedicated contact section
-    else if (sections['resume-contact']) {
-      html += `<div class="contact">${sections['resume-contact']}</div>`;
-    }
-    // Fallback to placeholder if no contact info found
-    else {
-      html += `<div class="contact"><p>Email: example@email.com | Phone: (123) 456-7890</p></div>`;
-    }
+    // Generate formatted header HTML
+    html += generateBasicHeader(headerInfo);
   } else {
     // Default header if none provided
-    html += `<h1>Full Name</h1>`;
-    
-    // Add contact info from dedicated section or use placeholder
-    if (sections['resume-contact']) {
-      html += `<div class="contact">${sections['resume-contact']}</div>`;
-    } else {
-      html += `<div class="contact"><p>Email: example@email.com | Phone: (123) 456-7890</p></div>`;
-    }
+    console.log("No header section found, using default");
+    html += generateBasicHeader({
+      name: 'Full Name',
+      phone: '(123) 456-7890',
+      email: 'example@email.com',
+      linkedin: null,
+      portfolio: null,
+      address: 'City, Country',
+      title: null
+    });
   }
   
   // Process each main section
   STANDARD_SECTIONS.forEach(section => {
-    // Skip header and contact sections already handled
-    if (section.id === 'resume-header' || section.id === 'resume-contact') return;
+    // Skip header section already handled
+    if (section.id === 'resume-header') return;
     
     // Only include sections that have content
     if (sections[section.id]) {
+      console.log(`Adding section: ${section.id}`);
       html += `
       <div class="section" id="${section.id}">
         ${sections[section.id]}
@@ -96,45 +91,38 @@ function applyBasicTemplate(sections: TemplateContentSections): string {
 
 /**
  * Custom apply function for professional template
- * Uses the icon-based structure from the example
+ * Uses structured header generation with icon-based layout
  * 
  * @param sections - Object containing content for each section by ID
  * @returns Formatted HTML content
  */
 function applyProfessionalTemplate(sections: TemplateContentSections): string {
-  // Create container
+  console.log("Applying professional template to content");
+  
+  // Create base HTML structure
   let html = '<div class="container">';
   
-  // Handle header (name)
+  // Process header content
   if (sections['resume-header']) {
-    // Extract name and title
-    const { nameHtml, titleHtml } = extractNameAndTitle(sections['resume-header']);
-    html += nameHtml;
+    console.log("Processing resume header section");
     
-    // Start contact info container
-    html += `<div class="contact-info">`;
+    // Extract structured information from header
+    const headerInfo = extractHeaderInfo(sections['resume-header']);
     
-    // Add title if found
-    if (titleHtml) {
-      html += `${titleHtml}<br>`;
-    }
-    
-    // Add contact info
-    if (sections['resume-contact']) {
-      html += sections['resume-contact'];
-    } else {
-      html += 'Email: example@email.com | Phone: (123) 456-7890 | Location: City, Country';
-    }
-    
-    html += `</div>`;
+    // Generate formatted header HTML
+    html += generateProfessionalHeader(headerInfo);
   } else {
-    html += `
-      <h1>Full Name</h1>
-      <div class="contact-info">
-        Professional Title<br>
-        Email: example@email.com | Phone: (123) 456-7890 | Location: City, Country
-      </div>
-    `;
+    // Default header if none provided
+    console.log("No header section found, using default");
+    html += generateProfessionalHeader({
+      name: 'Full Name',
+      phone: '(123) 456-7890',
+      email: 'example@email.com',
+      linkedin: 'linkedin.com/in/username',
+      portfolio: null,
+      address: 'City, Country',
+      title: 'Professional Title'
+    });
   }
   
   // Map section IDs to their icons and titles
@@ -180,35 +168,61 @@ function applyProfessionalTemplate(sections: TemplateContentSections): string {
 }
 
 /**
+ * Generates a creative header HTML structure with icons
+ * 
+ * @param headerInfo - Structured header information
+ * @returns Formatted HTML for the header section
+ */
+function generateCreativeHeader(headerInfo: HeaderInfo): string {
+  return `<div class="creative-header">
+    <h1 class="section-title name">${headerInfo.name}</h1>
+    ${headerInfo.title ? `<div class="creative-title">${headerInfo.title}</div>` : ''}
+    <div class="contact-creative">
+      <div class="contact-icons">
+        ${headerInfo.phone ? `<div class="contact-item"><span class="contact-icon">📱</span> <span class="phone">${headerInfo.phone}</span></div>` : ''}
+        ${headerInfo.email ? `<div class="contact-item"><span class="contact-icon">✉️</span> <span class="email">${headerInfo.email}</span></div>` : ''}
+        ${headerInfo.linkedin ? `<div class="contact-item"><span class="contact-icon">🔗</span> <span class="linkedin">${headerInfo.linkedin}</span></div>` : ''}
+        ${headerInfo.portfolio ? `<div class="contact-item"><span class="contact-icon">🌐</span> <span class="link">${headerInfo.portfolio}</span></div>` : ''}
+        ${headerInfo.address ? `<div class="contact-item"><span class="contact-icon">📍</span> <span class="address">${headerInfo.address}</span></div>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+/**
  * Custom apply function for creative template
- * Uses a more modern and artistic layout
+ * Uses a more modern and artistic layout with custom header
  * 
  * @param sections - Object containing content for each section by ID
  * @returns Formatted HTML content
  */
 function applyCreativeTemplate(sections: TemplateContentSections): string {
+  console.log("Applying creative template to content");
+  
   // Create base creative container
   let html = '<div class="creative-container">';
   
   // Process header content
   if (sections['resume-header']) {
-    // Extract name for prominent display
-    const nameHtml = extractNameOnly(sections['resume-header']);
-    html += `<div class="creative-header">${nameHtml}</div>`;
+    console.log("Processing resume header section");
     
-    // Add contact info in creative style
-    if (sections['resume-contact']) {
-      html += `<div class="contact-creative">${sections['resume-contact']}</div>`;
-    } else {
-      // Try to extract contact from header if separate contact section not available
-      const contactHtml = extractContactFromHeader(sections['resume-header']);
-      html += `<div class="contact-creative">${contactHtml || 'Email: example@email.com | Phone: (123) 456-7890'}</div>`;
-    }
+    // Extract structured information from header
+    const headerInfo = extractHeaderInfo(sections['resume-header']);
+    
+    // Generate formatted header HTML
+    html += generateCreativeHeader(headerInfo);
   } else {
-    html += `
-      <div class="creative-header"><h1>Full Name</h1></div>
-      <div class="contact-creative">Email: example@email.com | Phone: (123) 456-7890</div>
-    `;
+    // Default header if none provided
+    console.log("No header section found, using default");
+    html += generateCreativeHeader({
+      name: 'Full Name',
+      phone: '(123) 456-7890',
+      email: 'example@email.com',
+      linkedin: 'linkedin.com/in/username',
+      portfolio: 'portfolio.com',
+      address: 'City, Country',
+      title: 'Creative Professional'
+    });
   }
   
   // Process each section with creative styling
@@ -230,7 +244,7 @@ function applyCreativeTemplate(sections: TemplateContentSections): string {
   
   // Add each section with unique creative styling
   Object.entries(sectionMappings).forEach(([sectionId, title]) => {
-    if (sections[sectionId] && sectionId !== 'resume-header' && sectionId !== 'resume-contact') {
+    if (sections[sectionId] && sectionId !== 'resume-header') {
       html += `
       <div class="section-creative" id="${sectionId}">
         <h2>${title}</h2>
@@ -246,167 +260,277 @@ function applyCreativeTemplate(sections: TemplateContentSections): string {
 }
 
 /**
- * Extract just the name from header content
- */
-function extractNameOnly(headerContent: string): string {
-  try {
-    const parser = new DOMParser();
-    const headerDoc = parser.parseFromString(headerContent, 'text/html');
-    
-    // Look for h1 first
-    const nameElement = headerDoc.querySelector('h1');
-    if (nameElement) {
-      return nameElement.outerHTML;
-    }
-    
-    // If no h1, look for other heading elements
-    const altNameElement = headerDoc.querySelector('h2, h3');
-    if (altNameElement) {
-      return `<h1>${altNameElement.textContent}</h1>`;
-    }
-    
-    // Default fallback
-    return '<h1>Full Name</h1>';
-  } catch (error) {
-    console.error('Error extracting name:', error);
-    return '<h1>Full Name</h1>';
-  }
-}
-
-/**
- * Extract contact information from header content
- */
-function extractContactFromHeader(headerContent: string): string {
-  try {
-    const parser = new DOMParser();
-    const headerDoc = parser.parseFromString(headerContent, 'text/html');
-    
-    const contactParts: string[] = [];
-    const paragraphs = headerDoc.querySelectorAll('p');
-    
-    paragraphs.forEach(p => {
-      const text = p.textContent || '';
-      if (
-        text.includes('@') || 
-        text.match(/\d{3}[-.\s]\d{3}[-.\s]\d{4}/) ||
-        text.includes('linkedin') ||
-        text.includes('github')
-      ) {
-        contactParts.push(text);
-      }
-    });
-    
-    return contactParts.join(' | ');
-  } catch (error) {
-    console.error('Error extracting contact info:', error);
-    return '';
-  }
-}
-
-/**
- * Extract name and title from header content
- */
-function extractNameAndTitle(headerContent: string): { nameHtml: string, titleHtml: string } {
-  try {
-    const parser = new DOMParser();
-    const headerDoc = parser.parseFromString(headerContent, 'text/html');
-    
-    // Extract name
-    let nameHtml = '';
-    const nameElement = headerDoc.querySelector('h1');
-    if (nameElement) {
-      nameHtml = nameElement.outerHTML;
-    } else {
-      nameHtml = '<h1>Full Name</h1>';
-    }
-    
-    // Try to find a professional title
-    let titleHtml = '';
-    const paragraphs = headerDoc.querySelectorAll('p');
-    for (const p of paragraphs) {
-      const text = p.textContent || '';
-      // If the paragraph is short and doesn't contain typical contact info,
-      // it's likely to be a professional title
-      if (text.length < 50 && 
-          !text.includes('@') && 
-          !text.match(/\d{3}[-.\s]\d{3}[-.\s]\d{4}/) &&
-          !text.includes('linkedin')) {
-        titleHtml = text;
-        break;
-      }
-    }
-    
-    return { nameHtml, titleHtml };
-  } catch (error) {
-    console.error('Error extracting name and title:', error);
-    return { 
-      nameHtml: '<h1>Full Name</h1>', 
-      titleHtml: 'Professional Title' 
-    };
-  }
-}
-
-/**
- * Processes the header section to separate name and contact information
- * Avoids duplication of contact info
+ * Generates an executive header HTML structure
  * 
- * @param headerContent - HTML content of the header section
- * @returns Object with separate name and contact HTML
+ * @param headerInfo - Structured header information
+ * @returns Formatted HTML for the header section
  */
-function processHeaderSection(headerContent: string): { nameHtml: string, contactHtml: string } {
-  try {
-    const parser = new DOMParser();
-    const headerDoc = parser.parseFromString(headerContent, 'text/html');
+function generateExecutiveHeader(headerInfo: HeaderInfo): string {
+  return `<div id="resume-header">
+    <h1 class="section-title name">${headerInfo.name}</h1>
+    ${headerInfo.title ? `<h2 class="executive-title">${headerInfo.title}</h2>` : ''}
+    <div class="executive-contact">
+      ${headerInfo.phone ? `<div class="contact-item phone">${headerInfo.phone}</div>` : ''}
+      ${headerInfo.email ? `<div class="contact-item email">${headerInfo.email}</div>` : ''}
+      ${headerInfo.linkedin ? `<div class="contact-item linkedin">${headerInfo.linkedin}</div>` : ''}
+      ${headerInfo.portfolio ? `<div class="contact-item link">${headerInfo.portfolio}</div>` : ''}
+      ${headerInfo.address ? `<div class="contact-item address">${headerInfo.address}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+/**
+ * Custom apply function for the executive template
+ * Uses elegant styling suitable for leadership positions
+ * 
+ * @param sections - Object containing content for each section by ID
+ * @returns Formatted HTML content
+ */
+function applyExecutiveTemplate(sections: TemplateContentSections): string {
+  console.log("Applying executive template to content");
+  
+  // Create base HTML structure
+  let html = '<div class="executive-container">';
+  
+  // Process header content
+  if (sections['resume-header']) {
+    console.log("Processing resume header section");
     
-    // Extract the name (typically in h1)
-    let nameHtml = '';
-    const nameElement = headerDoc.querySelector('h1');
-    if (nameElement) {
-      nameHtml = nameElement.outerHTML;
-    } else {
-      // If no h1, look for the first heading or strong text as the name
-      const altNameElement = headerDoc.querySelector('h2, h3, strong');
-      if (altNameElement) {
-        nameHtml = `<h1>${altNameElement.textContent}</h1>`;
-      } else {
-        // Default if no name found
-        nameHtml = '<h1>Full Name</h1>';
-      }
-    }
+    // Extract structured information from header
+    const headerInfo = extractHeaderInfo(sections['resume-header']);
     
-    // Extract contact elements (looking for paragraphs with contact info)
-    let contactElements: Element[] = [];
-    const paragraphs = headerDoc.querySelectorAll('p');
-    
-    paragraphs.forEach(p => {
-      const text = p.textContent || '';
-      // Identify paragraphs that are likely contact information
-      if (
-        containsAny(text, ['@', 'email', 'mail']) || // Email indicators
-        containsAny(text, ['phone', 'tel', 'mobile']) || // Phone indicators
-        text.match(/\d{3}[-.\s]\d{3}[-.\s]\d{4}/) || // Phone pattern
-        containsAny(text, ['linkedin', 'github', 'portfolio']) || // Online profiles
-        containsAny(text, ['address', 'street', 'city', 'zip']) // Address indicators
-      ) {
-        contactElements.push(p);
-      }
+    // Generate formatted header HTML
+    html += generateExecutiveHeader(headerInfo);
+  } else {
+    // Default header if none provided
+    console.log("No header section found, using default");
+    html += generateExecutiveHeader({
+      name: 'Full Name',
+      phone: '(123) 456-7890',
+      email: 'example@email.com',
+      linkedin: 'linkedin.com/in/username',
+      portfolio: null,
+      address: 'City, Country',
+      title: 'Executive Director'
     });
-    
-    // Create contact HTML from identified elements
-    let contactHtml = '';
-    if (contactElements.length > 0) {
-      // Combine all contact elements, preserving their HTML
-      contactHtml = contactElements.map(el => el.outerHTML).join('');
-    }
-    
-    return { nameHtml, contactHtml };
-  } catch (error) {
-    console.error('Error processing header section:', error);
-    return { 
-      nameHtml: '<h1>Full Name</h1>', 
-      contactHtml: '<p>Email: example@email.com | Phone: (123) 456-7890</p>' 
-    };
   }
+  
+  // Process each section with executive styling
+  const sectionMappings = {
+    'resume-summary': 'Executive Summary',
+    'resume-experience': 'Professional Experience',
+    'resume-education': 'Education & Credentials',
+    'resume-skills': 'Areas of Expertise',
+    'resume-certifications': 'Professional Certifications',
+    'resume-languages': 'Languages',
+    'resume-projects': 'Key Projects & Initiatives',
+    'resume-awards': 'Honors & Distinctions',
+    'resume-references': 'Professional References',
+    'resume-publications': 'Publications & Speaking',
+    'resume-volunteering': 'Board & Volunteer Work',
+    'resume-additional': 'Additional Information',
+    'resume-interests': 'Interests'
+  };
+  
+  // Add each section with executive styling
+  Object.entries(sectionMappings).forEach(([sectionId, title]) => {
+    if (sections[sectionId] && sectionId !== 'resume-header') {
+      html += `
+      <div class="section" id="${sectionId}">
+        <h2>${title}</h2>
+        ${sections[sectionId]}
+      </div>`;
+    }
+  });
+  
+  // Close container
+  html += '</div>';
+  
+  return html;
+}
+
+/**
+ * Generates a technical header HTML structure with code-like formatting
+ * 
+ * @param headerInfo - Structured header information
+ * @returns Formatted HTML for the header section
+ */
+function generateTechnicalHeader(headerInfo: HeaderInfo): string {
+  return `<div id="resume-header">
+    <h1 class="section-title name">${headerInfo.name}</h1>
+    ${headerInfo.title ? `<div class="tech-title">${headerInfo.title}</div>` : ''}
+    <div class="tech-contact">
+      ${headerInfo.phone ? `<code class="contact-code phone">tel: ${headerInfo.phone}</code>` : ''}
+      ${headerInfo.email ? `<code class="contact-code email">email: ${headerInfo.email}</code>` : ''}
+      ${headerInfo.linkedin ? `<code class="contact-code linkedin">profile: ${headerInfo.linkedin}</code>` : ''}
+      ${headerInfo.portfolio ? `<code class="contact-code link">web: ${headerInfo.portfolio}</code>` : ''}
+      ${headerInfo.address ? `<code class="contact-code address">location: ${headerInfo.address}</code>` : ''}
+    </div>
+  </div>`;
+}
+
+/**
+ * Custom apply function for the technical template
+ * Uses code-like styling suitable for technical positions
+ * 
+ * @param sections - Object containing content for each section by ID
+ * @returns Formatted HTML content
+ */
+function applyTechnicalTemplate(sections: TemplateContentSections): string {
+  console.log("Applying technical template to content");
+  
+  // Create base HTML structure
+  let html = '<div class="technical-container">';
+  
+  // Process header content
+  if (sections['resume-header']) {
+    console.log("Processing resume header section");
+    
+    // Extract structured information from header
+    const headerInfo = extractHeaderInfo(sections['resume-header']);
+    
+    // Generate formatted header HTML
+    html += generateTechnicalHeader(headerInfo);
+  } else {
+    // Default header if none provided
+    console.log("No header section found, using default");
+    html += generateTechnicalHeader({
+      name: 'Full Name',
+      phone: '(123) 456-7890',
+      email: 'example@email.com',
+      linkedin: 'github.com/username',
+      portfolio: 'portfolio.dev',
+      address: 'City, Country',
+      title: 'Software Engineer'
+    });
+  }
+  
+  // Process each section with technical styling
+  const sectionMappings = {
+    'resume-summary': 'Technical Profile',
+    'resume-skills': 'Technical Skills',
+    'resume-experience': 'Professional Experience',
+    'resume-projects': 'Projects',
+    'resume-education': 'Education',
+    'resume-certifications': 'Certifications',
+    'resume-languages': 'Languages',
+    'resume-publications': 'Publications',
+    'resume-awards': 'Awards',
+    'resume-volunteering': 'Volunteering',
+    'resume-references': 'References',
+    'resume-additional': 'Additional Info',
+    'resume-interests': 'Interests'
+  };
+  
+  // Add each section in the specific order
+  Object.entries(sectionMappings).forEach(([sectionId, title]) => {
+    if (sections[sectionId] && sectionId !== 'resume-header') {
+      html += `
+      <div class="section" id="${sectionId}">
+        <h2>${title}</h2>
+        ${sections[sectionId]}
+      </div>`;
+    }
+  });
+  
+  // Close container
+  html += '</div>';
+  
+  return html;
+}
+
+/**
+ * Generates a compact header HTML structure with space-efficient layout
+ * 
+ * @param headerInfo - Structured header information
+ * @returns Formatted HTML for the header section
+ */
+function generateCompactHeader(headerInfo: HeaderInfo): string {
+  return `<div id="resume-header">
+    <div class="compact-header-row">
+      <h1 class="section-title name">${headerInfo.name}</h1>
+      <div class="compact-contact">
+        ${headerInfo.phone ? `<span class="phone">${headerInfo.phone}</span>` : ''}
+        ${headerInfo.email ? `<span class="email">${headerInfo.email}</span>` : ''}
+      </div>
+    </div>
+    ${headerInfo.title ? `<div class="compact-title">${headerInfo.title}</div>` : ''}
+    <div class="compact-details">
+      ${headerInfo.linkedin ? `<span class="linkedin">${headerInfo.linkedin}</span>` : ''}
+      ${headerInfo.portfolio ? `<span class="link">${headerInfo.portfolio}</span>` : ''}
+      ${headerInfo.address ? `<span class="address">${headerInfo.address}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+/**
+ * Custom apply function for the compact template
+ * Uses space-efficient layout for maximizing content
+ * 
+ * @param sections - Object containing content for each section by ID
+ * @returns Formatted HTML content
+ */
+function applyCompactTemplate(sections: TemplateContentSections): string {
+  console.log("Applying compact template to content");
+  
+  // Create base HTML structure
+  let html = '<div class="compact-container">';
+  
+  // Process header content
+  if (sections['resume-header']) {
+    console.log("Processing resume header section");
+    
+    // Extract structured information from header
+    const headerInfo = extractHeaderInfo(sections['resume-header']);
+    
+    // Generate formatted header HTML
+    html += generateCompactHeader(headerInfo);
+  } else {
+    // Default header if none provided
+    console.log("No header section found, using default");
+    html += generateCompactHeader({
+      name: 'Full Name',
+      phone: '(123) 456-7890',
+      email: 'example@email.com',
+      linkedin: 'linkedin.com/in/username',
+      portfolio: null,
+      address: 'City, Country',
+      title: 'Professional'
+    });
+  }
+  
+  // Process each section with compact styling
+  const sectionMappings = {
+    'resume-summary': 'Summary',
+    'resume-experience': 'Experience',
+    'resume-education': 'Education',
+    'resume-skills': 'Skills',
+    'resume-certifications': 'Certifications',
+    'resume-languages': 'Languages',
+    'resume-projects': 'Projects',
+    'resume-awards': 'Awards',
+    'resume-references': 'References',
+    'resume-publications': 'Publications',
+    'resume-volunteering': 'Volunteering',
+    'resume-additional': 'Additional',
+    'resume-interests': 'Interests'
+  };
+  
+  // Add each section with compact styling
+  Object.entries(sectionMappings).forEach(([sectionId, title]) => {
+    if (sections[sectionId] && sectionId !== 'resume-header') {
+      html += `
+      <div class="section" id="${sectionId}">
+        <h2>${title}</h2>
+        ${sections[sectionId]}
+      </div>`;
+    }
+  });
+  
+  // Close container
+  html += '</div>';
+  
+  return html;
 }
 
 // Define all resume templates with their properties
@@ -449,7 +573,7 @@ export const resumeTemplates: ResumeTemplateType[] = [
     description: "Sophisticated design for executive and leadership roles",
     styles: executiveStyles,
     template: executiveTemplate,
-    applyTemplate: applyBasicTemplate // Reuse basic template function for now
+    applyTemplate: applyExecutiveTemplate // Now using dedicated executive template function
   },
   {
     id: "technical",
@@ -459,7 +583,7 @@ export const resumeTemplates: ResumeTemplateType[] = [
     description: "Specialized layout highlighting technical skills and projects",
     styles: technicalStyles,
     template: technicalTemplate,
-    applyTemplate: applyBasicTemplate // Reuse basic template function for now
+    applyTemplate: applyTechnicalTemplate // Now using dedicated technical template function
   },
   {
     id: "compact",
@@ -469,7 +593,7 @@ export const resumeTemplates: ResumeTemplateType[] = [
     description: "Space-efficient design that fits more content on a single page",
     styles: compactStyles,
     template: compactTemplate,
-    applyTemplate: applyBasicTemplate // Reuse basic template function for now
+    applyTemplate: applyCompactTemplate // Now using dedicated compact template function
   }
 ];
 

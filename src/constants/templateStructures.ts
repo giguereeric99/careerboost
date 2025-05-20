@@ -10,50 +10,62 @@
  * Simple and clean layout with standard sections
  */
 export const basicTemplate = `
-<div id="resume-header">
-  {{resume-header}}
-</div>
-<div class="contact">
-  {{resume-contact}}
-</div>
-<div class="section" id="resume-summary">
-  {{resume-summary}}
-</div>
-<div class="section" id="resume-experience">
-  {{resume-experience}}
-</div>
-<div class="section" id="resume-education">
-  {{resume-education}}
-</div>
-<div class="section" id="resume-skills">
-  {{resume-skills}}
-</div>
-<div class="section" id="resume-languages">
-  {{resume-languages}}
-</div>
-<div class="section" id="resume-certifications">
-  {{resume-certifications}}
-</div>
-<div class="section" id="resume-projects">
-  {{resume-projects}}
-</div>
-<div class="section" id="resume-awards">
-  {{resume-awards}}
-</div>
-<div class="section" id="resume-volunteering">
-  {{resume-volunteering}}
-</div>
-<div class="section" id="resume-publications">
-  {{resume-publications}}
-</div>
-<div class="section" id="resume-interests">
-  {{resume-interests}}
-</div>
-<div class="section" id="resume-references">
-  {{resume-references}}
-</div>
-<div class="section" id="resume-additional">
-  {{resume-additional}}
+<div class="resume-container basic-template">
+  <div id="resume-header">
+    {{resume-header}}
+  </div>
+  
+  <div class="section" id="resume-summary">
+    {{resume-summary}}
+  </div>
+  
+  <div class="section" id="resume-experience">
+    {{resume-experience}}
+  </div>
+  
+  <div class="section" id="resume-education">
+    {{resume-education}}
+  </div>
+  
+  <div class="section" id="resume-skills">
+    {{resume-skills}}
+  </div>
+  
+  <div class="section" id="resume-languages">
+    {{resume-languages}}
+  </div>
+  
+  <div class="section" id="resume-certifications">
+    {{resume-certifications}}
+  </div>
+  
+  <div class="section" id="resume-projects">
+    {{resume-projects}}
+  </div>
+  
+  <div class="section" id="resume-awards">
+    {{resume-awards}}
+  </div>
+  
+  <div class="section" id="resume-volunteering">
+    {{resume-volunteering}}
+  </div>
+  
+  <div class="section" id="resume-publications">
+    {{resume-publications}}
+  </div>
+  
+  <div class="section" id="resume-interests">
+    {{resume-interests}}
+  </div>
+  
+  <div class="section" id="resume-references">
+    {{resume-references}}
+  </div>
+  
+  <div class="section" id="resume-additional">
+    {{resume-additional}}
+  </div>
 </div>
 `;
 

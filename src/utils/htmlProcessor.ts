@@ -389,6 +389,10 @@ export function applyDefaultStyling(html: string): string {
       el.classList.add('text-blue-600');
     });
     
+    doc.querySelectorAll('.link').forEach(el => {
+      el.classList.add('text-blue-600');
+    });
+    
     return doc.body.innerHTML;
   } catch (error) {
     console.error('Error applying default styling with DOM:', error);
@@ -403,10 +407,11 @@ export function applyDefaultStyling(html: string): string {
       .replace(/<section[^>]*id="resume-summary"[^>]*>/g, '<section id="resume-summary" class="mb-6 bg-gray-50 p-3 rounded">')
       .replace(/<section[^>]*id="resume-skills"[^>]*>/g, '<section id="resume-skills" class="mb-6">')
       .replace(/<ul[^>]*>/g, '<ul class="list-disc pl-5 mb-2">')
-      .replace(/<span class="email"[^>]*>/g, '<span class="email text-blue-600">')
-      .replace(/<span class="phone"[^>]*>/g, '<span class="phone text-blue-600">')
-      .replace(/<span class="address"[^>]*>/g, '<span class="address text-gray-600">')
-      .replace(/<span class="linkedin"[^>]*>/g, '<span class="linkedin text-blue-600">');
+      .replace(/<span class="email"[^>]*>/g, '<span class="email">')
+      .replace(/<span class="phone"[^>]*>/g, '<span class="phone">')
+      .replace(/<span class="address"[^>]*>/g, '<span class="address">')
+      .replace(/<span class="linkedin"[^>]*>/g, '<span class="linkedin">')
+      .replace(/<span class="link"[^>]*>/g, '<span class="link">');
     
     return styledHtml;
   }
@@ -442,9 +447,111 @@ export function extractSectionsFromHtml(html: string): Record<string, string> {
 }
 
 /**
+ * Enhances HTML header content by adding semantic span classes to contact information
+ * Used in prepareOptimizedTextForEditor to improve header structure before editing
+ * 
+ * @param headerSection - DOM Element containing the header section
+ */
+function enhanceHeaderContactInfo(headerSection: Element): void {
+  if (!headerSection) return;
+  
+  // Process paragraphs in the header
+  const paragraphs = headerSection.querySelectorAll('p');
+  
+  paragraphs.forEach(p => {
+    let textContentUpdated = false;
+    const originalText = p.innerHTML;
+    let newHTML = originalText;
+    
+    // 1. Add email spans
+    const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+    if (emailRegex.test(newHTML)) {
+      newHTML = newHTML.replace(emailRegex, '<span class="email">$1</span>');
+      textContentUpdated = true;
+    }
+    
+    // 2. Add phone spans
+    const phoneRegex = /((?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/g;
+    if (phoneRegex.test(newHTML)) {
+      newHTML = newHTML.replace(phoneRegex, '<span class="phone">$1</span>');
+      textContentUpdated = true;
+    }
+    
+    // 3. Add address spans for paragraphs that look like addresses
+    if (
+      newHTML.match(/[A-Z][0-9][A-Z]\s?[0-9][A-Z][0-9]/i) || // Canadian postal code
+      (newHTML.match(/,/g) || []).length >= 2 || // Multiple commas
+      newHTML.includes("app.") || // Apartment indicator
+      newHTML.match(/Quebec|Québec|Montreal|Montréal/i) // City names
+    ) {
+      // Only wrap in address span if not already in a span
+      if (!newHTML.includes('<span class="')) {
+        newHTML = `<span class="address">${newHTML}</span>`;
+        textContentUpdated = true;
+      }
+    }
+    
+    // 4. Add portfolio/website spans for text containing those keywords
+    const portfolioRegex = /(Portfolio\s*[:;]\s*[^<|/\n]+)/gi;
+    if (portfolioRegex.test(newHTML)) {
+      newHTML = newHTML.replace(portfolioRegex, '<span class="link">$1</span>');
+      textContentUpdated = true;
+    }
+    
+    // 5. Add LinkedIn spans
+    const linkedinRegex = /(LinkedIn\s*[:;]\s*[^<|/\n]+)/gi;
+    if (linkedinRegex.test(newHTML)) {
+      newHTML = newHTML.replace(linkedinRegex, '<span class="linkedin">$1</span>');
+      textContentUpdated = true;
+    }
+    
+    // 6. Process mixed content with separators (/, |) that might contain unmarked items
+    if (newHTML.includes('/') || newHTML.includes('|')) {
+      // Split by common separators
+      const parts = newHTML.split(/([\/|])/);
+      
+      // Process each part that isn't already wrapped in a span
+      let processedHTML = '';
+      parts.forEach(part => {
+        if (part === '/' || part === '|') {
+          processedHTML += part;
+        } else if (part.includes('<span class="')) {
+          processedHTML += part;
+        } else {
+          const trimmedPart = part.trim();
+          if (trimmedPart) {
+            // Determine the type of content
+            if (trimmedPart.toLowerCase().includes('portfolio') || 
+                trimmedPart.toLowerCase().includes('website')) {
+              processedHTML += `<span class="link">${trimmedPart}</span>`;
+              textContentUpdated = true;
+            } else if (trimmedPart.toLowerCase().includes('linkedin') || 
+                      trimmedPart.toLowerCase().includes('github')) {
+              processedHTML += `<span class="social">${trimmedPart}</span>`;
+              textContentUpdated = true;
+            } else {
+              processedHTML += trimmedPart;
+            }
+          }
+        }
+      });
+      
+      if (processedHTML && processedHTML !== newHTML) {
+        newHTML = processedHTML;
+        textContentUpdated = true;
+      }
+    }
+    
+    // Update paragraph HTML if changes were made
+    if (textContentUpdated) {
+      p.innerHTML = newHTML;
+    }
+  });
+}
+
+/**
  * Process and prepare optimized text for the editor
- * Main entry point for handling AI-generated content
- * Direct DOM-based approach to ensure correct class placement
+ * Enhanced to improve header content structure and formatting
  * 
  * @param optimizedText Text from AI (plain or HTML)
  * @returns Properly formatted HTML ready for the editor
@@ -484,32 +591,29 @@ export function prepareOptimizedTextForEditor(optimizedText: string): string {
         nameHeading.classList.add('name');
       }
       
-      // Process paragraphs for contact info
-      headerSection.querySelectorAll('p').forEach(p => {
-        const text = p.innerHTML;
-        
-        // Add email span
-        const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
-        if (emailRegex.test(text)) {
-          p.innerHTML = text.replace(emailRegex, '<span class="email">$1</span>');
-        }
-        
-        // Add phone span
-        const phoneRegex = /((?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/g;
-        if (phoneRegex.test(text)) {
-          p.innerHTML = text.replace(phoneRegex, '<span class="phone">$1</span>');
-        }
-        
-        // Add address span for paragraphs that look like addresses
-        if (
-          text.match(/[A-Z][0-9][A-Z]\s?[0-9][A-Z][0-9]/i) || // Canadian postal code
-          (text.match(/,/g) || []).length >= 2 || // Multiple commas
-          text.includes("app.") || // Apartment indicator
-          text.match(/Quebec|Québec|Montreal|Montréal/i) // City names
-        ) {
-          if (!text.includes('<span class="')) {
-            p.innerHTML = `<span class="address">${text}</span>`;
+      // Enhanced processing of contact information
+      enhanceHeaderContactInfo(headerSection);
+      
+      // Track processed text to avoid duplicates
+      const processedTexts = new Set<string>();
+      const elementsToRemove: Element[] = [];
+      
+      // Mark duplicates for removal
+      headerSection.querySelectorAll('p, span').forEach(element => {
+        const text = element.textContent?.trim() || '';
+        if (text) {
+          if (processedTexts.has(text)) {
+            elementsToRemove.push(element);
+          } else {
+            processedTexts.add(text);
           }
+        }
+      });
+      
+      // Remove duplicates
+      elementsToRemove.forEach(element => {
+        if (element.parentNode) {
+          element.parentNode.removeChild(element);
         }
       });
     }
@@ -563,6 +667,12 @@ export function prepareOptimizedTextForEditor(optimizedText: string): string {
             return `${before}${tagStart} class="name"${tagEnd}`;
           }
         }
+      );
+      
+      // Process Portfolio text
+      processedHtml = processedHtml.replace(
+        /(Portfolio\s*[:;]\s*[^<|/\n]+)/gi,
+        '<span class="link">$1</span>'
       );
       
       // Apply default styling

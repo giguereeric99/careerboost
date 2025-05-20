@@ -10,6 +10,7 @@
  * Clean and minimalist styling suitable for formal applications
  */
 export const basicStyles = `
+  /* Page setup and general typography */
   body {
     font-family: Arial, sans-serif;
     margin: 40px;
@@ -17,47 +18,132 @@ export const basicStyles = `
     color: #333;
     line-height: 1.6;
     font-size: 14px;
+    background-color: #fff;
   }
-  h1, h2 {
-    margin-bottom: 10px;
+  
+  .resume-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  
+  /* Headings */
+  h1, h2, h3, h4, h5, h6 {
+    margin-top: 0;
     color: #222;
+    font-weight: 600;
   }
+  
   h1 {
     font-size: 28px;
-    margin-top: 0;
+    margin-bottom: 10px;
     text-transform: uppercase;
   }
+  
   h2 {
     font-size: 20px;
     border-bottom: 1px solid #ccc;
     padding-bottom: 5px;
-    margin-top: 30px;
+    margin-top: 25px;
+    margin-bottom: 15px;
     text-transform: uppercase;
   }
+  
   h3 {
     font-size: 18px;
-    border-bottom: 1px solid #ccc;
-    padding-bottom: 5px;
-    margin-top: 30px;
-    text-transform: uppercase;
+    margin-bottom: 5px;
   }
+  
   h4 {
-    font-size: 17px;
-    padding-bottom: 5px;
-    margin-top: 30px;
+    font-size: 16px;
+    margin-bottom: 5px;
   }
+  
+  /* Paragraphs and lists */
   p, li {
     margin: 5px 0;
   }
+  
   ul {
     padding-left: 20px;
+    margin: 10px 0;
   }
-  .contact {
-    margin-top: 10px;
-    margin-bottom: 30px;
-  }
+  
+  /* Sections */
   .section {
     margin-bottom: 20px;
+    break-inside: avoid;
+  }
+  
+  /* Header section */
+  #resume-header {
+    margin-bottom: 25px;
+    text-align: left;
+  }
+  
+  /* Contact information styling */
+  .email {
+    font-weight: normal;
+  }
+  
+  .phone {
+    font-weight: normal;
+  }
+  
+  .address {
+    font-weight: normal;
+  }
+  
+  /* Specific section styling */
+  #resume-summary {
+    margin-bottom: 25px;
+  }
+  
+  #resume-summary p {
+    font-style: italic;
+    color: #333;
+  }
+  
+  #resume-skills ul, 
+  #resume-languages ul {
+    columns: 2;
+    list-style-type: disc;
+  }
+  
+  /* Experience styling */
+  #resume-experience li {
+    margin-bottom: 10px;
+  }
+  
+  #resume-experience strong {
+    display: inline-block;
+  }
+  
+  /* For print output */
+  @media print {
+    body {
+      margin: 0;
+      padding: 0;
+      font-size: 12pt;
+    }
+    
+    .resume-container {
+      width: 100%;
+      padding: 0;
+      margin: 0;
+    }
+    
+    h1 {
+      font-size: 18pt;
+    }
+    
+    h2 {
+      font-size: 14pt;
+    }
+    
+    h3 {
+      font-size: 12pt;
+    }
   }
 `;
 

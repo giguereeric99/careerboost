@@ -181,7 +181,9 @@ export function generateSystemPrompt(options: PromptOptions = {}): string {
   const config = { ...DEFAULT_OPTIONS, ...options };
   
   // Get section names in the appropriate language
-  const sectionNames = getSectionNamesByLanguage(config.language);
+  const sectionNames = getSectionNamesByLanguage(
+    typeof config.language === 'string' ? config.language : 'en'
+  );
   
   // Base role description
   let systemPrompt = `You are an expert resume optimizer who helps improve resumes for ATS compatibility and recruiter appeal in ${config.language}.
@@ -245,7 +247,9 @@ export function generateResumePrompt(resumeText: string, options: PromptOptions 
   const config = { ...DEFAULT_OPTIONS, ...options };
   
   // Get section names in the appropriate language
-  const sectionNames = getSectionNamesByLanguage(config.language);
+  const sectionNames = getSectionNamesByLanguage(
+    typeof config.language === 'string' ? config.language : 'en'
+  );
   
   // Build the base prompt with optimization criteria
   let prompt = `TASK: Analyze and optimize the following resume, focusing on these criteria:

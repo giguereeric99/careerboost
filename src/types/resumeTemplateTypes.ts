@@ -41,3 +41,17 @@ export interface ResumeTemplateType {
 export interface TemplateContentSections {
   [sectionId: string]: string;
 }
+
+/**
+ * Header information interface
+ * Common structure for header information across all templates
+ */
+export interface HeaderInfo {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  linkedin: string | null;
+  portfolio: string | null;
+  address: string | null;
+  title?: string | null; // Professional title/role
+}
