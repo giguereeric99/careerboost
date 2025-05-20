@@ -17,7 +17,7 @@ export const basicStyles = `
     padding: 0;
     color: #333;
     line-height: 1.6;
-    font-size: 14px;
+    font-size: 16px;
     background-color: #fff;
   }
   
@@ -25,6 +25,11 @@ export const basicStyles = `
     max-width: 800px;
     margin: 0 auto;
     padding: 20px;
+  }
+
+  p.professional-title {
+    font-size: 18px;
+    font-weight: bold;
   }
   
   /* Headings */

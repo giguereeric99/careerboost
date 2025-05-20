@@ -10,6 +10,7 @@
  * - Specialized instructions for different AI models
  * - Comprehensive section identification for better resume structure
  * - Real-time ATS score calculation based on multiple factors
+ * - Simplified header format for maximum template compatibility
  */
 
 /**
@@ -170,6 +171,35 @@ export const SECTION_WEIGHTS = {
 };
 
 /**
+ * Standardized header structure example - SIMPLIFIED VERSION
+ * This serves as a template for the AI to follow
+ * Using this exact structure in all templates ensures consistency
+ * 
+ * IMPORTANT: Removed span elements for maximum template compatibility
+ */
+export const STANDARD_HEADER_STRUCTURE = `<section id="resume-header">
+  <h1 class="section-title">Person Name</h1>
+  <p>Professional Title</p>
+  <p>Phone | Email | LinkedIn</p>
+  <p>Address Line 1<br>Address Line 2</p>
+  <p>Portfolio</p>
+</section>`;
+
+/**
+ * Standard structure for the experience section
+ * Provides a consistent format for job entries
+ */
+export const STANDARD_EXPERIENCE_STRUCTURE = `<section id="resume-experience">
+  <h2 class="section-title">Experience</h2>
+  <h3>Job Title - Company Name</h3>
+  <p class="date">Month Year - Month Year</p>
+  <ul>
+    <li>Accomplishment 1 with quantifiable results</li>
+    <li>Accomplishment 2 with quantifiable results</li>
+  </ul>
+</section>`;
+
+/**
  * Generates a standardized system prompt for resume optimization
  * This sets the overall context and role for the AI
  * 
@@ -225,6 +255,34 @@ You will format your output as HTML with semantic section IDs to enable proper t
 - Prioritize suggesting specialized or niche skills that would add significant value
 - For technologies or tools already mentioned in the resume, do not suggest them again as keywords
 - Analyze the entire resume content first to identify all existing skills and keywords`;
+
+  // ENHANCED: Added specific header formatting instructions - SIMPLIFIED VERSION
+  // Removed span tags for better template compatibility
+  systemPrompt += `\n\nCRITICAL HEADER FORMATTING INSTRUCTIONS:
+- The header section MUST follow this simple structure:
+  <section id="resume-header">
+    <h1 class="section-title">Person Name</h1>
+    <p>Professional Title</p> <!-- If applicable -->
+    <p>Phone | Email | LinkedIn</p>
+    <p>Full address</p> <!-- If applicable -->
+    <p>Portfolio</p> <!-- If applicable -->
+  </section>
+- Do NOT use any span tags in the header
+- Always use the pipe character (|) as separator between contact elements
+- Each type of information should be in its own paragraph (p tag)
+- The structure should be clean and simple for maximum template compatibility`;
+
+  systemPrompt += `\n\nCRITICAL SECTION REQUIREMENTS:
+- ALWAYS create a <section id="resume-summary"> even if there is none in the original resume
+- If there is no summary in the original, create one based on the information available in the resume
+- The summary should be concise (2-4 sentences) and highlight the candidate's key qualifications
+- The summary should include years of experience, key skills, and professional focus
+- Use this format for the created summary section:
+  <section id="resume-summary">
+    <h2 class="section-title">${sectionNames['resume-summary']}</h2>
+    <p>Professional with [X years] of experience in [field/industry]. Specialized in [key skills/areas]. Focused on [achievements/goals]...</p>
+  </section>
+- This summary section is crucial for ATS scanning and for providing a quick overview to recruiters`;
 
   // Final instructions
   systemPrompt += `\n\nI want all predefined sections to be included in the optimization result even if some are empty of content.
@@ -284,40 +342,70 @@ export function generateResumePrompt(resumeText: string, options: PromptOptions 
 - Match skills and experience with job requirements`;
   }
 
-  // Build HTML formatting instructions with explicit section IDs
-  // Each section is clearly identified for proper template application
-  // Added specific instructions for class placement
+  // ENHANCED: Completely revised HTML formatting instructions - SIMPLIFIED VERSION
+  // Removed span tags for better template compatibility
   prompt += `\n\nCRITICAL HTML FORMATTING INSTRUCTIONS:
-- Format your response with semantic HTML structure following these exact rules:`;
+- Format your response with semantic HTML structure following these exact rules:
+
+HEADER SECTION - MUST FOLLOW EXACTLY THIS STRUCTURE:
+<section id="resume-header">
+  <h1 class="section-title">Person Name</h1>
+  <p>Professional Title</p> <!-- If applicable -->
+  <p>Phone | Email | LinkedIn</p>
+  <p>Full address</p> <!-- If applicable -->
+  <p>Portfolio</p> <!-- If applicable -->
+</section>
+
+RULES FOR ALL OTHER SECTIONS:`;
 
   // List all possible sections with their IDs and correct class placement
   // Using language-specific section names
   Object.entries(sectionNames).forEach(([id, name]) => {
-    prompt += `\n  - Use <section id="${id}"> for ${name} section (without any class on the section tag)`;
-    
-    // Add specific instructions for section headers
-    if (id === 'resume-header') {
-      prompt += `\n    - Add class="section-title" to the <h1> element (not the section)
-    - Add class="name" to the heading with the person's name: <h1 class="section-title name">Person Name</h1>
-    - Add appropriate classes to personal information:
-      • class="email" for email addresses: <span class="email">email@example.com</span>
-      • class="phone" for phone numbers: <span class="phone">123-456-7890</span>
-      • class="address" for postal addresses: <span class="address">123 Street, City</span>
-      • class="linkedin" for LinkedIn URLs: <span class="linkedin">linkedin.com/in/username</span>`;
-    } else {
+    if (id !== 'resume-header') { // Skip header since we've already provided its structure
+      prompt += `\n  - Use <section id="${id}"> for ${name} section (without any class on the section tag)`;
       prompt += `\n    - Add class="section-title" to the section title: <h2 class="section-title">${name}</h2>`;
     }
   });
 
+  // ENHANCED: Added more detailed format instructions - SIMPLIFIED VERSION
   prompt += `\n
-- Important: Always add the class "section-title" to the HEADING tags (h1, h2), NOT to the section tags
+GENERAL FORMATTING RULES:
+- ALWAYS add the class "section-title" to the HEADING tags (h1, h2), NEVER to the section tags
 - Create proper sections for ALL applicable categories from the resume
 - Use the section titles in ${config.language}, not in English (unless ${config.language} is English)
 - Even if references only say "Available upon request," place this in a properly formatted resume-references section
 - Use appropriate HTML tags (h1, h2, h3, p, ul, li) for proper structure within each section
 - Make sure the HTML is well-formed and valid
 - Do not include any CSS or styling
-- Any time there's an email address, phone number, address or LinkedIn URL in the header, wrap it in a span with the appropriate class`;
+- DO NOT USE <span> TAGS ANYWHERE IN THE DOCUMENT - this is critical for template compatibility
+
+CONTACT INFORMATION RULES:
+- Keep contact information in simple paragraph tags <p>
+- ALWAYS use the pipe character (|) as separator between contact elements on the same line
+- Each type of information should be in its own paragraph
+- FORMAT: <p>Phone | Email | LinkedIn</p>
+
+MANDATORY SECTIONS:
+- The resume MUST include a summary section even if the original resume doesn't have one
+- Create a summary section with this format:
+  <section id="resume-summary">
+    <h2 class="section-title">${sectionNames['resume-summary']}</h2>
+    <p>Professional with [X years] of experience in [field/industry]. Specialized in [key skills/areas]. Focused on [achievements/goals]...</p>
+  </section>
+- If the original resume lacks a summary, create one by analyzing the experience, skills, and education sections
+- The summary is crucial for ATS compatibility and should highlight the candidate's most relevant qualifications
+- This section should always appear near the top of the resume, after the header
+
+EXAMPLE OF CORRECTLY FORMATTED EXPERIENCE SECTION:
+<section id="resume-experience">
+  <h2 class="section-title">${sectionNames['resume-experience']}</h2>
+  <h3>Job Title - Company Name</h3>
+  <p class="date">Month Year - Month Year</p>
+  <ul>
+    <li>Accomplishment with quantifiable results</li>
+    <li>Accomplishment with quantifiable results</li>
+  </ul>
+</section>`;
 
   // Add the resume content to be optimized
   prompt += `\n\nResume to optimize:
@@ -381,7 +469,27 @@ For each suggestion implemented, the score should increase by approximately:
 - Do not include ANY explanatory text, code blocks, or other content outside the JSON structure
 - CRITICAL: The 'section-title' class must be on the h1/h2 tags, NOT on the section tags
 - CRITICAL: The section titles in the output HTML must be in ${config.language}, not in English
-- CRITICAL: Double-check that suggestions and keywords don't recommend what's already in the resume`;
+- CRITICAL: Double-check that suggestions and keywords don't recommend what's already in the resume
+- CRITICAL: Verify that the header follows the EXACT structure specified above with NO span tags`;
+
+  // ENHANCED: Add concrete examples of correct/incorrect formatting - SIMPLIFIED VERSION
+  prompt += `\n\nEXAMPLES OF CORRECT VS INCORRECT FORMATTING:
+
+CORRECT HEADER (DO USE):
+<section id="resume-header">
+  <h1 class="section-title">John Doe</h1>
+  <p>Senior Software Developer</p>
+  <p>418-261-9999 | johndoe@gmail.com | linkedin.com/in/johndoe</p>
+  <p>9999 ave Villa Saint-Vincent app.999<br>Québec, Québec G1H 4B6</p>
+  <p>Portfolio : inactif</p>
+</section>
+
+INCORRECT HEADER (DO NOT USE):
+<section id="resume-header" class="section-title">
+  <h1 class="section-title name">John Doe</h1>
+  <p><span class="phone">418-261-9999</span> / <span class="email">johndoe@gmail.com</span></p>
+  <p>9999 ave Villa Saint-Vincent app.999<br>Québec, Québec G1H 4B6</p>
+</section>`;
 
   return prompt;
 }
@@ -397,7 +505,8 @@ For each suggestion implemented, the score should increase by approximately:
 export function generateClaudePrompt(resumeText: string, options: PromptOptions = {}): string {
   const basePrompt = generateResumePrompt(resumeText, options);
   
-  // Add Claude-specific instructions with enhanced focus on avoiding duplicate suggestions (updated)
+  // ENHANCED: Claude-specific instructions - SIMPLIFIED VERSION
+  // Removed span tags for better template compatibility
   return `${basePrompt}
 
 IMPORTANT CLAUDE-SPECIFIC INSTRUCTIONS:
@@ -414,7 +523,24 @@ IMPORTANT CLAUDE-SPECIFIC INSTRUCTIONS:
 - Ensure all section IDs exactly match the specified format (e.g., 'resume-header', 'resume-skills')
 - Make sure all section titles are in ${options.language || DEFAULT_OPTIONS.language}, not in English (unless the language is English)
 - CRITICALLY IMPORTANT: Before suggesting a keyword, verify it is COMPLETELY ABSENT from the resume in ALL forms
-- Only suggest genuinely new content in suggestions, not repetitions of what's already there`;
+- Only suggest genuinely new content in suggestions, not repetitions of what's already there
+
+CRITICALLY IMPORTANT FOR CLAUDE - HEADER STRUCTURE:
+The header section MUST follow EXACTLY this structure in the optimizedText:
+
+<section id="resume-header">
+  <h1 class="section-title">Person Name</h1>
+  <p>Professional Title</p> <!-- If applicable -->
+  <p>Phone | Email | LinkedIn</p>
+  <p>Full address</p> <!-- If applicable -->
+  <p>Portfolio</p> <!-- If applicable -->
+</section>
+
+- Do NOT use any span tags in the header
+- Always use pipe character (|) as separator between elements on the same line
+- Make sure the name is in an h1 with "section-title" class
+- Each type of contact information should be in a separate paragraph
+- This simplified structure is critical for maximum template compatibility`;
 }
 
 /**
@@ -613,6 +739,425 @@ export function calculateUpdatedAtsScore(
   
   // Calculate new score with ceiling at 100
   return Math.min(100, Math.round(baseScore + adjustedImprovement));
+}
+
+/**
+ * Interface for header information, used in header normalization function
+ * Contains structured data extracted from the resume header
+ */
+interface HeaderInfo {
+  name: string;
+  title: string;
+  // Using string array instead of attaching to a property that doesn't exist
+  contacts: string[];
+  address: string;
+  portfolio: string;
+}
+
+/**
+ * Normalizes the header structure to ensure maximum template compatibility
+ * This function ensures that header content follows the simplified structure
+ * with no span tags that can cause issues with templates
+ * 
+ * @param headerContent - The HTML content of the header section
+ * @returns Normalized header HTML with simplified structure
+ */
+export function normalizeHeaderStructure(headerContent: string): string {
+  try {
+    // Create a DOM parser
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(headerContent, 'text/html');
+    
+    // Extract key information from the header
+    // Initialize with the correct types for each field
+    const headerInfo: HeaderInfo = {
+      name: '',
+      title: '',
+      contacts: [], // Initialize as empty array
+      address: '',
+      portfolio: ''
+    };
+    
+    // Extract the name from h1
+    const nameElement = doc.querySelector('h1');
+    if (nameElement) {
+      headerInfo.name = nameElement.textContent?.trim() || '';
+    }
+    
+    // Extract other information from paragraphs
+    const paragraphs = doc.querySelectorAll('p');
+    paragraphs.forEach((paragraph, index) => {
+      const text = paragraph.textContent?.trim() || '';
+      
+      // Skip empty paragraphs
+      if (!text) return;
+      
+      // First paragraph after name is usually the professional title
+      if (index === 0 && !text.includes('@') && !text.includes('|')) {
+        headerInfo.title = text;
+      } 
+      // Paragraph with contact information (contains pipe or email)
+      else if (text.includes('|') || text.includes('@')) {
+        // Extract contacts without span tags - correct array push
+        headerInfo.contacts.push(text);
+      }
+      // Paragraph that looks like an address
+      else if (paragraph.innerHTML.includes('<br>') || 
+                text.includes('Québec') || 
+                text.includes('Montréal')) {
+        headerInfo.address = paragraph.innerHTML;
+      }
+      // Paragraph that might be portfolio
+      else if (text.toLowerCase().includes('portfolio')) {
+        headerInfo.portfolio = text;
+      }
+    });
+    
+    // Create a new simplified header structure
+    let newHeader = `<section id="resume-header">
+  <h1 class="section-title">${headerInfo.name}</h1>`;
+    
+    // Add title if available
+    if (headerInfo.title) {
+      newHeader += `\n  <p>${headerInfo.title}</p>`;
+    }
+    
+    // Add contacts
+    headerInfo.contacts.forEach(contact => {
+      newHeader += `\n  <p>${contact}</p>`;
+    });
+    
+    // Add address if available
+    if (headerInfo.address) {
+      newHeader += `\n  <p>${headerInfo.address}</p>`;
+    }
+    
+    // Add portfolio if available
+    if (headerInfo.portfolio) {
+      newHeader += `\n  <p>${headerInfo.portfolio}</p>`;
+    }
+    
+    // Close the section
+    newHeader += '\n</section>';
+    
+    return newHeader;
+  } catch (error) {
+    console.error('Error normalizing header structure:', error);
+    // If processing fails, return the original content
+    return headerContent;
+  }
+}
+
+/**
+ * Ensures that the resume has a summary section, creating one if missing
+ * This is important for ATS compatibility and template standardization
+ * 
+ * @param html - The HTML content of the resume
+ * @param language - The language of the resume (for section title)
+ * @returns HTML with guaranteed summary section
+ */
+export function ensureSummarySection(html: string, language: string = 'English'): string {
+  try {
+    // Get section names in the appropriate language
+    const sectionNames = getSectionNamesByLanguage(language);
+    const summaryTitle = sectionNames['resume-summary'];
+    
+    // Parse the HTML
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Check if summary section exists
+    const summarySection = doc.querySelector('section#resume-summary');
+    if (!summarySection) {
+      console.log('No summary section found. Creating a generic one.');
+      
+      // Create a new summary section
+      const newSummary = document.createElement('section');
+      newSummary.id = 'resume-summary';
+      
+      // Create the heading
+      const heading = document.createElement('h2');
+      heading.className = 'section-title';
+      heading.textContent = summaryTitle;
+      newSummary.appendChild(heading);
+      
+      // Create a generic summary paragraph based on other sections
+      const paragraph = document.createElement('p');
+      
+      // Try to extract experience information
+      const experienceSection = doc.querySelector('section#resume-experience');
+      const educationSection = doc.querySelector('section#resume-education');
+      const skillsSection = doc.querySelector('section#resume-skills');
+      
+      // Analyze available information to create a reasonable summary
+      // Fixed: Use let instead of const for variables that will be changed
+      let years = '5+'; // Default years of experience
+      let field = 'the field'; // Default field
+      let skills = 'relevant skills'; // Default skills
+      
+      // Try to determine years of experience from experience section
+      if (experienceSection) {
+        // Extract dates from experience section to estimate years
+        const dates = Array.from(experienceSection.querySelectorAll('.date, p:contains("20")'))
+          .map(el => el.textContent)
+          .filter(text => text && /\d{4}/.test(text || ''));
+        
+        if (dates.length > 0) {
+          // Extract years from dates
+          const yearMatches = dates.join(' ').match(/\b(19|20)\d{2}\b/g);
+          if (yearMatches && yearMatches.length > 0) {
+            const yearsArray = yearMatches.map(y => parseInt(y));
+            const earliestYear = Math.min(...yearsArray);
+            const currentYear = new Date().getFullYear();
+            const estimatedYears = currentYear - earliestYear;
+            
+            if (estimatedYears > 0) {
+              // Now using let variable, we can reassign
+              years = `${estimatedYears}+`;
+            }
+          }
+        }
+      }
+      
+      // Try to determine field/industry
+      if (experienceSection) {
+        const jobTitles = Array.from(experienceSection.querySelectorAll('h3'))
+          .map(el => el.textContent?.trim())
+          .filter(Boolean);
+        
+        if (jobTitles.length > 0) {
+          // Extract common field from job titles
+          const commonWords = jobTitles.join(' ')
+            .toLowerCase()
+            .replace(/[^\w\s]/g, '')
+            .split(/\s+/)
+            .filter(word => 
+              word.length > 3 && 
+              !['and', 'the', 'for', 'with'].includes(word)
+            );
+          
+          if (commonWords.length > 0) {
+            // Use most frequent meaningful word as field
+            // Fixed: Specify the type for wordCounts
+            const wordCounts: Record<string, number> = {};
+            commonWords.forEach(word => {
+              wordCounts[word] = (wordCounts[word] || 0) + 1;
+            });
+            
+            // Fixed: Explicit type casting in sort function
+            const sortedWords = Object.entries(wordCounts)
+              .sort(([, countA], [, countB]): number => (countB as number) - (countA as number));
+            
+            if (sortedWords.length > 0) {
+              field = sortedWords[0][0];
+              
+              // Capitalize first letter
+              field = field.charAt(0).toUpperCase() + field.slice(1);
+            }
+          }
+        }
+      }
+      
+      // Extract key skills
+      if (skillsSection) {
+        const skillItems = Array.from(skillsSection.querySelectorAll('li, p'))
+          .map(el => el.textContent?.trim())
+          .filter(Boolean)
+          .slice(0, 3);
+        
+        if (skillItems.length > 0) {
+          skills = skillItems.join(', ');
+        }
+      }
+      
+      // Create the summary text
+      paragraph.textContent = `Professional with ${years} years of experience in ${field}. Skilled in ${skills}.`;
+      newSummary.appendChild(paragraph);
+      
+      // Insert the summary section after the header or at the beginning of the body
+      const headerSection = doc.querySelector('section#resume-header');
+      if (headerSection && headerSection.nextSibling) {
+        headerSection.parentNode?.insertBefore(newSummary, headerSection.nextSibling);
+      } else {
+        const body = doc.querySelector('body');
+        if (body) {
+          if (body.firstChild) {
+            body.insertBefore(newSummary, body.firstChild);
+          } else {
+            body.appendChild(newSummary);
+          }
+        }
+      }
+    }
+    
+    // Return the modified HTML
+    return doc.body.innerHTML;
+  } catch (error) {
+    console.error('Error ensuring summary section:', error);
+    return html; // Return original if processing fails
+  }
+}
+
+/**
+ * Processes the AI optimization response to ensure template compatibility
+ * This function should be called after receiving the AI's response but before
+ * sending it to template processing
+ * 
+ * @param optimizedText - The HTML content returned by the AI
+ * @param language - The language of the resume
+ * @returns Processed HTML with standardized structure
+ */
+export function processOptimizedResponse(optimizedText: string, language: string = 'English'): string {
+  try {
+    // Parse the HTML
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(optimizedText, 'text/html');
+    
+    // Process the header section first
+    const headerSection = doc.querySelector('section#resume-header');
+    if (headerSection) {
+      // Normalize header structure to ensure template compatibility
+      const headerHtml = headerSection.outerHTML;
+      const normalizedHeader = normalizeHeaderStructure(headerHtml);
+      
+      // Replace the header with the normalized version
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = normalizedHeader;
+      const newHeader = tempDiv.firstChild;
+      
+      if (newHeader && headerSection.parentNode) {
+        headerSection.parentNode.replaceChild(newHeader, headerSection);
+      }
+    }
+    
+    // Ensure all sections have proper structure
+    doc.querySelectorAll('section').forEach(section => {
+      // Make sure no section has the section-title class
+      if (section.classList.contains('section-title')) {
+        section.classList.remove('section-title');
+      }
+      
+      // Make sure section headings have section-title class
+      const heading = section.querySelector('h1, h2');
+      if (heading && !heading.classList.contains('section-title')) {
+        heading.classList.add('section-title');
+      }
+      
+      // If this is not the header section, check for and remove span tags
+      if (section.id !== 'resume-header') {
+        // Find all span tags
+        const spans = section.querySelectorAll('span');
+        spans.forEach(span => {
+          // Replace span with its content
+          const parent = span.parentNode;
+          if (parent) {
+            const spanContent = span.textContent || '';
+            const textNode = document.createTextNode(spanContent);
+            parent.replaceChild(textNode, span);
+          }
+        });
+      }
+    });
+    
+    // Ensure summary section exists
+    const processedHtml = doc.body.innerHTML;
+    const htmlWithSummary = ensureSummarySection(processedHtml, language);
+    
+    return htmlWithSummary;
+  } catch (error) {
+    console.error('Error processing optimized response:', error);
+    return optimizedText; // Return original if processing fails
+  }
+}
+
+/**
+ * Ensures all sections in the resume have the correct structure
+ * This is particularly important for template application
+ * 
+ * @param html - The complete HTML content of the resume
+ * @returns Normalized HTML with corrected section structures
+ */
+export function normalizeResumeStructure(html: string): string {
+  try {
+    // Create a DOM parser
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // First process the header to ensure it has simplified structure
+    const headerSection = doc.querySelector('section#resume-header');
+    if (headerSection) {
+      const headerHtml = headerSection.outerHTML;
+      const normalizedHeader = normalizeHeaderStructure(headerHtml);
+      
+      // Replace the header with the normalized version
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = normalizedHeader;
+      const newHeader = tempDiv.firstChild;
+      
+      if (newHeader && headerSection.parentNode) {
+        headerSection.parentNode.replaceChild(newHeader, headerSection);
+      }
+    }
+    
+    // Ensure all sections have proper structure
+    doc.querySelectorAll('section').forEach(section => {
+      // Make sure no section has the section-title class
+      if (section.classList.contains('section-title')) {
+        section.classList.remove('section-title');
+      }
+      
+      // Make sure section headings have section-title class
+      const heading = section.querySelector('h1, h2');
+      if (heading && !heading.classList.contains('section-title')) {
+        heading.classList.add('section-title');
+      }
+      
+      // Special processing for each section type
+      if (section.id === 'resume-skills' || section.id === 'resume-languages') {
+        // Ensure skills and languages are in a proper list
+        const lists = section.querySelectorAll('ul');
+        if (lists.length === 0) {
+          // If no lists, create one with the paragraphs content
+          const items = Array.from(section.querySelectorAll('p'))
+            .map(p => p.textContent?.trim())
+            .filter(text => text && text.length > 0);
+          
+          if (items.length > 0) {
+            const ul = document.createElement('ul');
+            items.forEach(item => {
+              if (item) {
+                const li = document.createElement('li');
+                li.textContent = item;
+                ul.appendChild(li);
+              }
+            });
+            
+            // Remove paragraphs
+            section.querySelectorAll('p').forEach(p => {
+              if (p.parentNode === section && !p.classList.contains('professional-title')) {
+                p.remove();
+              }
+            });
+            
+            // Add the list after the heading
+            const headingEl = section.querySelector('h1, h2');
+            if (headingEl && headingEl.nextSibling) {
+              section.insertBefore(ul, headingEl.nextSibling);
+            } else {
+              section.appendChild(ul);
+            }
+          }
+        }
+      }
+    });
+    
+    // Return the normalized HTML
+    return doc.body.innerHTML;
+  } catch (error) {
+    console.error('Error normalizing resume structure:', error);
+    // If anything fails, return the original HTML
+    return html;
+  }
 }
 
 /**

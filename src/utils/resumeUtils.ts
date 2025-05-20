@@ -109,7 +109,7 @@ export function getSectionName(id: string): string {
  * @param id - Section ID to normalize
  * @returns Standardized section ID
  */
-export function normalizeSecttionId(id: string): string {
+export function normalizeSectionId(id: string): string {
   // Map of alternative section IDs to standard ones
   const sectionIdMapping: Record<string, string> = {
     'personal-information': 'resume-header',
@@ -218,17 +218,11 @@ export function normalizeHtmlContent(html: string, sanitizeFn?: (html: string) =
     .replace(/&#039;/g, "'")
     .replace(/&apos;/g, "'");
   
-  // Step 2: Add class="section-title" to section tags if missing
-  normalized = normalized.replace(
-    /<section\s+id="([^"]+)"(?!\s+class=)/g, 
-    '<section id="$1" class="section-title"'
-  );
-  
-  // Step 3: Standardize section IDs to ensure they match our predefined structure
+  // Step 2: Standardize section IDs to ensure they match our predefined structure
   STANDARD_SECTIONS.forEach(({ id }) => {
     // Find section tags with alternative IDs and standardize them
     normalized = normalized.replace(
-      new RegExp(`<section\\s+id="${normalizeSecttionId(id)}"`, 'g'),
+      new RegExp(`<section\\s+id="${normalizeSectionId(id)}"`, 'g'),
       `<section id="${id}"`
     );
   });
@@ -270,7 +264,7 @@ export function parseHtmlIntoSections(
       // Get section ID or generate one
       const rawId = section.id || `section-${Math.random().toString(36).substring(2, 9)}`;
       // Normalize the ID to ensure it matches our standard format
-      const id = normalizeSecttionId(rawId);
+      const id = normalizeSectionId(rawId);
       
       // Get the title from heading element or section id
       const title = getSectionNameFn(id);
@@ -304,7 +298,7 @@ export function parseHtmlIntoSections(
         // Use standard ID or create one from the heading
         const rawId = standardId || `section-${title.toLowerCase().replace(/\s+/g, '-')}`;
         // Normalize the ID
-        const id = normalizeSecttionId(rawId);
+        const id = normalizeSectionId(rawId);
         
         // Get the standardized title
         const standardTitle = getSectionNameFn(id);
@@ -388,7 +382,7 @@ export function parseHtmlIntoSections(
               }
             }
             
-            const normalizedId = normalizeSecttionId(newSectionId);
+            const normalizedId = normalizeSectionId(newSectionId);
             const sectionTitle = getSectionNameFn(newSectionId);
             
             currentSection = {
@@ -802,4 +796,45 @@ export function findMissingInformation(sections: Section[]): {
     missingSections,
     recommendations
   };
+}
+
+/**
+ * Ensures that all section titles have the required class
+ * This function checks all h1 and h2 elements in each section and adds the section-title class if missing
+ * 
+ * @param html - The HTML content to process
+ * @returns Normalized HTML with correct section-title classes
+ */
+export function ensureSectionTitleClasses(html: string): string {
+  try {
+    // Create a DOM parser
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Process all sections
+    doc.querySelectorAll('section').forEach(section => {
+      // Find the first h1 or h2 in the section
+      const heading = section.querySelector('h1, h2');
+      
+      // If a heading is found, ensure it has the section-title class
+      if (heading) {
+        if (!heading.classList.contains('section-title')) {
+          heading.classList.add('section-title');
+          console.log(`Added missing section-title class to heading in section ${section.id}`);
+        }
+      }
+      
+      // Ensure the section itself does not have the section-title class
+      if (section.classList.contains('section-title')) {
+        section.classList.remove('section-title');
+        console.log(`Removed section-title class from section ${section.id}`);
+      }
+    });
+    
+    // Return the normalized HTML
+    return doc.body.innerHTML;
+  } catch (error) {
+    console.error('Error ensuring section title classes:', error);
+    return html; // Return original HTML if processing fails
+  }
 }

@@ -5,6 +5,7 @@
 import { ResumeTemplateType, TemplateContentSections, HeaderInfo } from '../types/resumeTemplateTypes';
 import { STANDARD_SECTIONS, ALTERNATIVE_SECTION_IDS } from '../constants/sections';
 import { processAIResponse, applyDefaultStyling } from './htmlProcessor';
+import { ensureSectionTitleClasses } from "@/utils/resumeUtils";
 
 /**
  * Process header content to add missing spans
@@ -738,6 +739,9 @@ export function createCompleteHtml(
   title: string = 'Resume'
 ): string {
   console.log(`Creating complete HTML with template: ${template.id}`);
+
+  // Ensure all section titles have the proper class before processing
+  const normalizedContent = ensureSectionTitleClasses(content);
   
   // Extract sections from content
   const sections = extractSections(content);
@@ -781,191 +785,4 @@ export function createCompleteHtml(
     ${formattedContent}
   </body>
   </html>`;
-}
-
-/**
- * Enhances HTML header content by adding semantic span classes to contact information
- * Used in prepareOptimizedTextForEditor to improve header structure before editing
- * 
- * @param headerSection - DOM Element containing the header section
- */
-function enhanceHeaderContactInfo(headerSection: Element): void {
-  if (!headerSection) return;
-  
-  // Process paragraphs in the header
-  const paragraphs = headerSection.querySelectorAll('p');
-  
-  paragraphs.forEach(p => {
-    let textContentUpdated = false;
-    const originalText = p.innerHTML;
-    let newHTML = originalText;
-    
-    // 1. Add email spans
-    const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
-    if (emailRegex.test(newHTML)) {
-      newHTML = newHTML.replace(emailRegex, '<span class="email">$1</span>');
-      textContentUpdated = true;
-    }
-    
-    // 2. Add phone spans
-    const phoneRegex = /((?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/g;
-    if (phoneRegex.test(newHTML)) {
-      newHTML = newHTML.replace(phoneRegex, '<span class="phone">$1</span>');
-      textContentUpdated = true;
-    }
-    
-    // 3. Add address spans for paragraphs that look like addresses
-    if (
-      newHTML.match(/[A-Z][0-9][A-Z]\s?[0-9][A-Z][0-9]/i) || // Canadian postal code
-      (newHTML.match(/,/g) || []).length >= 2 || // Multiple commas
-      newHTML.includes("app.") || // Apartment indicator
-      newHTML.match(/Quebec|Québec|Montreal|Montréal/i) // City names
-    ) {
-      // Only wrap in address span if not already in a span
-      if (!newHTML.includes('<span class="')) {
-        newHTML = `<span class="address">${newHTML}</span>`;
-        textContentUpdated = true;
-      }
-    }
-    
-    // 4. Add portfolio/website spans for text containing those keywords
-    const portfolioRegex = /(Portfolio\s*[:;]\s*[^<|/\n]+)/gi;
-    if (portfolioRegex.test(newHTML)) {
-      newHTML = newHTML.replace(portfolioRegex, '<span class="link">$1</span>');
-      textContentUpdated = true;
-    }
-    
-    // 5. Add LinkedIn spans
-    const linkedinRegex = /(LinkedIn\s*[:;]\s*[^<|/\n]+)/gi;
-    if (linkedinRegex.test(newHTML)) {
-      newHTML = newHTML.replace(linkedinRegex, '<span class="linkedin">$1</span>');
-      textContentUpdated = true;
-    }
-    
-    // 6. Process mixed content with separators (/, |) that might contain unmarked items
-    if (newHTML.includes('/') || newHTML.includes('|')) {
-      // Split by common separators
-      const parts = newHTML.split(/([\/|])/);
-      
-      // Process each part that isn't already wrapped in a span
-      let processedHTML = '';
-      parts.forEach(part => {
-        if (part === '/' || part === '|') {
-          processedHTML += part;
-        } else if (part.includes('<span class="')) {
-          processedHTML += part;
-        } else {
-          const trimmedPart = part.trim();
-          if (trimmedPart) {
-            // Determine the type of content
-            if (trimmedPart.toLowerCase().includes('portfolio') || 
-                trimmedPart.toLowerCase().includes('website')) {
-              processedHTML += `<span class="link">${trimmedPart}</span>`;
-              textContentUpdated = true;
-            } else if (trimmedPart.toLowerCase().includes('linkedin') || 
-                      trimmedPart.toLowerCase().includes('github')) {
-              processedHTML += `<span class="social">${trimmedPart}</span>`;
-              textContentUpdated = true;
-            } else {
-              processedHTML += trimmedPart;
-            }
-          }
-        }
-      });
-      
-      if (processedHTML && processedHTML !== newHTML) {
-        newHTML = processedHTML;
-        textContentUpdated = true;
-      }
-    }
-    
-    // Update paragraph HTML if changes were made
-    if (textContentUpdated) {
-      p.innerHTML = newHTML;
-    }
-  });
-}
-
-/**
- * Process and prepare optimized text for the editor
- * Enhanced to improve header content structure and formatting
- * 
- * @param optimizedText Text from AI (plain or HTML)
- * @returns Properly formatted HTML ready for the editor
- */
-export function prepareOptimizedTextForEditor(optimizedText: string): string {
-  // Skip if empty
-  if (!optimizedText) return '';
-  
-  try {
-    // First convert to proper HTML if needed
-    let processedHtml = processAIResponse(optimizedText);
-    
-    // Create a temporary document to work with
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(processedHtml, 'text/html');
-    
-    // Step 1: Process each section to fix classes
-    doc.querySelectorAll('section').forEach(section => {
-      // Remove section-title class from the section itself
-      section.classList.remove('section-title');
-      
-      // Find the first h1 or h2 in the section
-      const heading = section.querySelector('h1, h2');
-      
-      // If a heading is found, add section-title class to it
-      if (heading) {
-        heading.classList.add('section-title');
-      }
-    });
-    
-    // Step 2: Process header section for name/email/phone/etc classes
-    const headerSection = doc.querySelector('section#resume-header');
-    if (headerSection) {
-      // Add name class to h1
-      const nameHeading = headerSection.querySelector('h1');
-      if (nameHeading) {
-        nameHeading.classList.add('name');
-      }
-      
-      // Enhanced processing of contact information
-      enhanceHeaderContactInfo(headerSection);
-      
-      // Track processed text to avoid duplicates
-      const processedTexts = new Set<string>();
-      const elementsToRemove: Element[] = [];
-      
-      // Mark duplicates for removal
-      headerSection.querySelectorAll('p, span').forEach(element => {
-        const text = element.textContent?.trim() || '';
-        if (text) {
-          if (processedTexts.has(text)) {
-            elementsToRemove.push(element);
-          } else {
-            processedTexts.add(text);
-          }
-        }
-      });
-      
-      // Remove duplicates
-      elementsToRemove.forEach(element => {
-        if (element.parentNode) {
-          element.parentNode.removeChild(element);
-        }
-      });
-    }
-    
-    // Step 3: Get the updated HTML
-    processedHtml = doc.body.innerHTML;
-    
-    // Step 4: Apply default styling
-    const styledHtml = applyDefaultStyling(processedHtml);
-    
-    return styledHtml;
-  } catch (error) {
-    console.error('Error in DOM processing:', error);
-    
-    // Fallback to original if any errors
-    return optimizedText;
-  }
 }

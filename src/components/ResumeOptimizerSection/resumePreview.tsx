@@ -67,6 +67,7 @@ import {
   SECTION_NAMES,
   SECTION_ORDER,
   isSectionEmpty,
+  ensureSectionTitleClasses,
 } from "@/utils/resumeUtils";
 
 /**
@@ -272,8 +273,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     return sections
       .filter((section) => !section.isEmpty) // Only include non-empty sections
       .map(
-        (section) =>
-          `<section id="${section.id}" class="section-title">${section.content}</section>`
+        (section) => `<section id="${section.id}">${section.content}</section>`
       )
       .join("\n");
   }, [sections]);
@@ -480,6 +480,28 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       setSections((prevSections) => {
         const updatedSections = prevSections.map((section) => {
           if (section.id === sectionId) {
+            // Process the new content to ensure section title classes
+            let processedContent = newContent;
+
+            try {
+              // Ensure section title class is preserved in the new content
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(newContent, "text/html");
+
+              // Find the first h1 or h2 in the content
+              const heading = doc.querySelector("h1, h2");
+
+              // If a heading is found, ensure it has the section-title class
+              if (heading && !heading.classList.contains("section-title")) {
+                heading.classList.add("section-title");
+                processedContent = doc.body.innerHTML;
+              }
+            } catch (error) {
+              console.error("Error processing section update:", error);
+              // Use original content if processing fails
+              processedContent = newContent;
+            }
+
             // Determine if section is empty after update
             const isEmpty = isSectionEmpty(newContent, section.title);
 
@@ -502,7 +524,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
             .filter((section) => !section.isEmpty)
             .map(
               (section) =>
-                `<section id="${section.id}" class="section-title">${section.content}</section>`
+                `<section id="${section.id}">${section.content}</section>`
             )
             .join("\n");
 
@@ -533,6 +555,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
       // Combine all non-empty sections into complete HTML and process it
       let combinedHtml = combineAllSections();
+
+      // Ensure all section titles have the proper class
+      combinedHtml = ensureSectionTitleClasses(combinedHtml);
+
       combinedHtml = processContent(combinedHtml);
 
       // Validate content length
@@ -631,9 +657,9 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   const openPreview = useCallback(() => {
     try {
       // Get the content to preview (different if in edit mode)
-      const contentToUse = editMode
-        ? combineAllSections()
-        : previewContent || optimizedText;
+      const contentToUse = previewContent || optimizedText;
+
+      // console.log(contentToUse);
 
       // Open the modal instead of a new window
       setIsPreviewModalOpen(true);
