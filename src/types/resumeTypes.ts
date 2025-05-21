@@ -430,3 +430,14 @@ export const DataMappers = {
     };
   }
 };
+
+/**
+ * Interface for uploaded file information
+ * Tracks metadata about the processed file
+ */
+export interface UploadedFileInfo {
+  name: string;
+  size: number;
+  type: string;
+  url: string;
+}

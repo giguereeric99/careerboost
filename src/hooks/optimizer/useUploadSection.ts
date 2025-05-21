@@ -16,17 +16,7 @@ import {
   parseOptimizedText, 
   extractKeywords 
 } from '@/services/resumeService';
-
-/**
- * Interface for uploaded file information
- * Tracks metadata about the processed file
- */
-interface UploadedFileInfo {
-  name: string;
-  size: number;
-  type: string;
-  url: string;
-}
+import { UploadedFileInfo } from '@/types/resumeTypes';
 
 /**
  * Hook props - allows parent to receive optimization data
