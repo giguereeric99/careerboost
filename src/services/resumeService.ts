@@ -17,9 +17,12 @@ import { supabase } from "@/lib/supabase-client";
 import { ResumeData, Suggestion } from "@/types/resumeTypes";
 import { toast } from "sonner";
 import { parseOptimizedText, extractKeywords, calculateAtsScore } from "./resumeParser";
+import { validateResume, getResumeImprovementSuggestions } from './resumeValidation';
 
 // Re-export these functions so they can be imported from resumeService
 export { parseOptimizedText, extractKeywords, calculateAtsScore };
+
+
 
 /**
  * Uploads a resume file to Supabase storage
@@ -476,4 +479,28 @@ export async function updateResumeTemplate(
     console.error("Error updating resume template:", error);
     return { success: false, error: error as Error };
   }
+}
+
+/**
+ * Validates resume content before optimization
+ * Checks if the document is a valid resume and returns suggestions if needed
+ * 
+ * @param content - Text content extracted from the uploaded file
+ * @returns Validation result with suggestions
+ */
+export async function validateResumeContent(content: string) {
+  // Perform resume validation
+  const validationResult = validateResume(content);
+  
+  // Generate improvement suggestions if necessary
+  const improvementSuggestions = getResumeImprovementSuggestions(validationResult);
+  
+  return {
+    isValid: validationResult.isValid,
+    score: validationResult.score,
+    sections: validationResult.sections,
+    missingElements: validationResult.missingElements,
+    needsImprovement: improvementSuggestions.needsImprovement,
+    suggestions: improvementSuggestions.suggestions
+  };
 }

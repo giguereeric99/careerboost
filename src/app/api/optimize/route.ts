@@ -5,6 +5,7 @@
  * - Initial optimization with AI services (OpenAI, Gemini, Claude)
  * - Extraction of text from various file formats
  * - Language detection
+ * - Resume structure validation (new feature)
  * - Support for resetting last_saved_text on new uploads
  * 
  * The route implements a cascading strategy for AI services:
@@ -14,6 +15,7 @@
  * 4. Uses a fallback generator if all services fail
  * 
  * Improvements:
+ * - Added resume structure validation before optimization
  * - Unified API endpoint for all optimization operations
  * - Modular service architecture for better maintainability
  * - Improved error handling with consistent response format
@@ -38,8 +40,38 @@ import {
   ResumeData, 
   KeywordWithId } from './types';
 
+// Import resume validation service
+import { validateResume, getResumeImprovementSuggestions } from '@/services/resumeValidation';
+
 // API timeout duration in milliseconds (60 seconds)
 const API_TIMEOUT = 60000;
+
+// Minimum score required to consider a document as a valid resume
+const MIN_RESUME_VALIDATION_SCORE = 60;
+
+/**
+ * Validates resume content before optimization
+ * Checks if the document is a valid resume and returns suggestions if needed
+ * 
+ * @param content - Text content extracted from the uploaded file
+ * @returns Validation result with suggestions
+ */
+async function validateResumeContent(content: string) {
+  // Perform resume validation
+  const validationResult = validateResume(content);
+  
+  // Generate improvement suggestions if necessary
+  const improvementSuggestions = getResumeImprovementSuggestions(validationResult);
+  
+  return {
+    isValid: validationResult.isValid,
+    score: validationResult.score,
+    sections: validationResult.sections,
+    missingElements: validationResult.missingElements,
+    needsImprovement: improvementSuggestions.needsImprovement,
+    suggestions: improvementSuggestions.suggestions
+  };
+}
 
 /**
  * POST handler for resume optimization
@@ -121,6 +153,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ 
         error: "Text is too short to process (minimum 50 characters required)" 
       }, { status: 400 });
+    }
+
+    // Resume structure validation step - strict enforcement, no bypass
+    console.log("Validating resume structure...");
+    const validationResult = await validateResumeContent(resumeText);
+    
+    if (!validationResult.isValid) {
+      console.log("Resume validation failed:", validationResult.missingElements);
+      
+      clearTimeout(timeoutId);
+      // Clean up temporary file
+      if (tempFilePath) {
+        cleanupTempFile(tempFilePath);
+      }
+      
+      return NextResponse.json({ 
+        error: "The document doesn't appear to be a valid resume",
+        validation: validationResult,
+        // Include the extracted text so the UI can display the content
+        content: resumeText,
+        fileSize: fileSize
+      }, { status: 422 }); // 422 Unprocessable Entity for validation failures
+    }
+    
+    // If valid but needs improvement, just log it and continue
+    if (validationResult.needsImprovement) {
+      console.log("Resume is valid but could be improved:", validationResult.suggestions);
     }
 
     // Detect language
