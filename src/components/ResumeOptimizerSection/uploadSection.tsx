@@ -111,6 +111,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   onAnalysisStart,
   onAnalysisComplete,
   checkingForExistingResumes = false,
+  showLoadingState,
 }) => {
   // Local state
   const [isDragOver, setIsDragOver] = useState(false);
@@ -176,7 +177,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
       isParsing ||
       isProcessing ||
       isUploadingFile ||
-      !!uploadedInfo
+      (uploadedInfo && analysisCompleted)
     );
   };
 
@@ -282,7 +283,17 @@ const UploadSection: React.FC<UploadSectionProps> = ({
     setShowValidationDialog(false);
     setShowAnalyzeState(false);
     setIsProcessing(false);
-  }, []);
+    setAnalysisCompleted(false);
+    setUploadedInfo(null); // Remettre à null
+    setIsActiveUpload(false);
+
+    if (onFileChange) {
+      onFileChange(null);
+    }
+
+    setValidationErrors(null);
+    toast.info("You can upload a new file");
+  }, [onFileChange]);
 
   /**
    * Handles the resume optimization process after file upload
@@ -318,65 +329,68 @@ const UploadSection: React.FC<UploadSectionProps> = ({
         body: formData,
       });
 
-      // Log detailed error info for debugging
+      // Always parse the response first, regardless of status
+      // This ensures we can access error details from the API
+      const result = await optimizeRes.json();
+
+      // Handle resume validation failure (422) - this is NOT an error, it's expected behavior
+      // When a document doesn't meet resume validation criteria, API returns 422
+      if (optimizeRes.status === 422 && result.validation) {
+        console.log(
+          "Document validation failed - user needs to upload a proper resume"
+        );
+
+        // Hide the loading toast since we're done processing
+        toast.dismiss(loadingToastId);
+
+        // Store validation errors to display in the validation dialog
+        setValidationErrors(result.validation);
+
+        // Show the validation dialog to inform user about issues
+        setShowValidationDialog(true);
+
+        // Hide the analysis loading state since validation is complete
+        setShowAnalyzeState(false);
+
+        // Reset processing state to allow new uploads
+        setIsProcessing(false);
+
+        showLoadingState(false);
+
+        // Exit gracefully - this is not an error condition
+        return;
+      }
+
+      // Handle other HTTP error statuses (these are actual errors)
       if (!optimizeRes.ok) {
-        console.error("API Error Status:", optimizeRes.status);
-        console.error("API Error Status Text:", optimizeRes.statusText);
+        // Log unexpected API errors for debugging purposes
+        console.log("Unexpected API error occurred:", {
+          status: optimizeRes.status,
+          statusText: optimizeRes.statusText,
+          error: result?.error || "Unknown error",
+        });
 
-        // Parse the response to get detailed error
-        const result = await optimizeRes.json();
-
-        // Check for resume validation errors (422 status code)
-        if (optimizeRes.status === 422 && result.validation) {
-          console.log("Resume validation failed:", result.validation);
-
-          // Hide loading toast
-          toast.dismiss(loadingToastId);
-
-          // Store validation errors for the dialog
-          setValidationErrors(result.validation);
-
-          // Update upload info for reference
-          setUploadedInfo({
-            name: fileName,
-            size: fileSize,
-            type: fileType,
-            url: fileUrl,
-          });
-
-          // Show validation dialog
-          setShowValidationDialog(true);
-
-          // Hide loading analyze state
-          setShowAnalyzeState(false);
-
-          return;
-        }
-
-        // For 500 errors, provide more detailed feedback based on file type
+        // Handle server errors (500) with file-specific help
         if (optimizeRes.status === 500) {
           const specificHelp = getFileTypeErrorHelp(
             fileType,
             "500 Internal Server Error"
           );
           throw new Error(
-            `The server encountered an error processing your file. ${specificHelp}`
+            `Le serveur a rencontré une erreur lors du traitement de votre fichier. ${specificHelp}`
           );
         }
 
-        // For other errors, use the error message from the response
-        throw new Error(result?.error || "Optimization failed");
+        // Handle other HTTP errors (400, 404, etc.)
+        throw new Error(result?.error || "L'optimisation a échoué");
       }
 
-      // Parse the API response
-      const result = await optimizeRes.json();
-
-      // Handle successful optimization
+      // Handle successful optimization response
       if (result?.optimizedText) {
         // Update file upload state in parent component
         onFileUpload(fileUrl, fileName, fileSize, fileType);
 
-        // Update local upload info for UI
+        // Update local upload info for UI display
         setUploadedInfo({
           name: fileName,
           size: fileSize,
@@ -385,12 +399,12 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 
         // Clear loading toast and show success message
         toast.dismiss(loadingToastId);
-        toast.success("Resume uploaded and optimized");
+        toast.success("CV téléchargé et optimisé avec succès");
 
-        // Mark analysis as completed for UI state
+        // Mark analysis as completed for UI state management
         setAnalysisCompleted(true);
 
-        // Extract all necessary data from result
+        // Extract all necessary data from API response
         const optimizedText = result.optimizedText || "";
         const resumeId = result.resumeId || "";
         const atsScore = result.atsScore || 65;
@@ -403,7 +417,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
           })) ||
           [];
 
-        // Pass all extracted data to parent component
+        // Pass all extracted data to parent component for state management
         if (onAnalysisComplete) {
           onAnalysisComplete(
             optimizedText,
@@ -414,20 +428,30 @@ const UploadSection: React.FC<UploadSectionProps> = ({
           );
         }
 
-        // Tab navigation is now handled by the useEffect
+        // Tab navigation will be handled by useEffect in parent component
       } else {
-        // Handle unexpected response format
-        throw new Error("Invalid response from server");
+        // Handle unexpected API response format
+        throw new Error("Réponse invalide du serveur - optimizedText manquant");
       }
     } catch (err: any) {
-      // Handle optimization errors with user feedback
+      // Handle all actual errors (network errors, server errors, parsing errors, etc.)
+      console.error("Resume optimization failed:", {
+        error: err.message,
+        fileName,
+        fileType,
+        stack: err.stack,
+      });
+
+      // Always dismiss loading toast on error
       toast.dismiss(loadingToastId);
 
-      // Enhanced error message with file-specific help
-      const errorMessage = err.message || "An error occurred during processing";
+      // Create enhanced error message with file-specific help
+      const errorMessage =
+        err.message || "Une erreur s'est produite lors du traitement";
       const specificHelp = getFileTypeErrorHelp(fileType, errorMessage);
 
-      toast.error("Upload analysis error", {
+      // Show error toast with detailed information
+      toast.error("Erreur d'analyse du CV", {
         description: errorMessage.includes(specificHelp)
           ? errorMessage
           : `${errorMessage}. ${specificHelp}`,
@@ -436,8 +460,16 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 
       // Hide loading analyze state on error
       setShowAnalyzeState(false);
+
+      // Reset all upload states to allow new upload attempts
+      setUploadedInfo(null);
+      if (onFileChange) {
+        onFileChange(null);
+      }
+      setIsActiveUpload(false);
     } finally {
-      // Always reset processing states
+      // Always reset processing state, regardless of success or failure
+      // This ensures UI is not stuck in processing state
       setIsProcessing(false);
     }
   };

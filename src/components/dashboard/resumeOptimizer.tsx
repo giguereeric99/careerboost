@@ -963,6 +963,7 @@ const ResumeOptimizer: React.FC = () => {
             onFileUpload={handleFileUploadAdapter}
             setActiveTab={setActiveTab}
             onAnalysisStart={handleAnalysisStart}
+            showLoadingState={setShowLoadingState}
             onAnalysisComplete={(
               optimizedText,
               resumeId,
