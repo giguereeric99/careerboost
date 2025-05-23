@@ -45,7 +45,7 @@ interface UploadSectionProps {
   isParsing: boolean; // Whether resume content is being parsed
   selectedFile: File | null; // Currently selected file object
   resumeContent: string; // Content from pasted resume
-  onFileChange: (file: File) => void; // Handler for file input change
+  onFileChange: (file: File | null) => void; // Handler for file input change
   onContentChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void; // Handler for textarea change
   onContinue: () => void; // Handler for continue button click
   onFileUpload: (
@@ -56,6 +56,7 @@ interface UploadSectionProps {
   ) => void; // Handler for successful file upload
   setActiveTab?: (tab: string) => void; // Optional prop to control tab navigation
   onAnalysisStart?: () => void; // Called when analysis starts
+  showLoadingState: (show: boolean) => void;
   onAnalysisComplete?: (
     optimizedText?: string,
     resumeId?: string,
@@ -171,13 +172,14 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   /**
    * Determine if upload buttons should be disabled
    */
-  const shouldDisableUpload = () => {
+  const shouldDisableUpload = (): boolean => {
     return (
       isUploading ||
       isParsing ||
       isProcessing ||
       isUploadingFile ||
-      (uploadedInfo && analysisCompleted)
+      (uploadedInfo && analysisCompleted) ||
+      false
     );
   };
 

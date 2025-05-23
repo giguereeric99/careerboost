@@ -1,18 +1,29 @@
 /**
  * Template Structures Constants
- * 
+ *
  * This file contains HTML structures for different resume templates
  * Each template has its own HTML layout with placeholders for content
+ * Enhanced with STANDARDIZED HEADER STRUCTURE using specific placeholders
+ * for maximum reliability and universal template compatibility
  */
 
 /**
  * Basic template HTML structure
- * Simple and clean layout with standard sections
+ * Simple and clean layout with standardized header placeholders
+ * Uses specific placeholders for each contact element to ensure reliability
  */
 export const basicTemplate = `
 <div class="resume-container basic-template">
   <div id="resume-header">
-    {{resume-header}}
+    <h1 class="section-title name">{{resume-header.name}}</h1>
+    <p class="title">{{resume-header.title}}</p>
+    <p>
+      <span class="phone">{{resume-header.phone}}</span> |
+      <span class="email">{{resume-header.email}}</span> |
+      <span class="linkedin">{{resume-header.linkedin}}</span> |
+      <span class="portfolio">{{resume-header.portfolio}}</span>
+    </p>
+    <p><span class="address">{{resume-header.address}}</span></p>
   </div>
   
   <div class="section" id="resume-summary">
@@ -72,14 +83,20 @@ export const basicTemplate = `
 /**
  * Professional template HTML structure
  * Based on the provided example with container and icons
+ * Uses standardized header structure with specific placeholders
  */
 export const professionalTemplate = `
 <div class="container">
   <div id="resume-header">
-    {{resume-header}}
-  </div>
-  <div class="contact-info">
-    {{resume-contact}}
+    <h1 class="section-title name">{{resume-header.name}}</h1>
+    <p class="title">{{resume-header.title}}</p>
+    <p>
+      <span class="phone">{{resume-header.phone}}</span> |
+      <span class="email">{{resume-header.email}}</span> |
+      <span class="linkedin">{{resume-header.linkedin}}</span> |
+      <span class="portfolio">{{resume-header.portfolio}}</span>
+    </p>
+    <p><span class="address">{{resume-header.address}}</span></p>
   </div>
   
   <div class="section" id="resume-summary">
@@ -155,15 +172,20 @@ export const professionalTemplate = `
 
 /**
  * Creative template HTML structure
- * Modern layout with creative elements
+ * Modern layout with creative elements and standardized header
  */
 export const creativeTemplate = `
 <div class="creative-container">
   <div id="resume-header">
-    {{resume-header}}
-  </div>
-  <div class="contact-creative">
-    {{resume-contact}}
+    <h1 class="section-title name">{{resume-header.name}}</h1>
+    <p class="title">{{resume-header.title}}</p>
+    <p>
+      <span class="phone">{{resume-header.phone}}</span> |
+      <span class="email">{{resume-header.email}}</span> |
+      <span class="linkedin">{{resume-header.linkedin}}</span> |
+      <span class="portfolio">{{resume-header.portfolio}}</span>
+    </p>
+    <p><span class="address">{{resume-header.address}}</span></p>
   </div>
   
   <div class="section-creative" id="resume-summary">
@@ -235,15 +257,20 @@ export const creativeTemplate = `
 
 /**
  * Executive template HTML structure
- * Elegant and sophisticated layout
+ * Elegant and sophisticated layout with standardized header
  */
 export const executiveTemplate = `
 <div class="executive-container">
   <div id="resume-header">
-    {{resume-header}}
-  </div>
-  <div class="contact">
-    {{resume-contact}}
+    <h1 class="section-title name">{{resume-header.name}}</h1>
+    <p class="title">{{resume-header.title}}</p>
+    <p>
+      <span class="phone">{{resume-header.phone}}</span> |
+      <span class="email">{{resume-header.email}}</span> |
+      <span class="linkedin">{{resume-header.linkedin}}</span> |
+      <span class="portfolio">{{resume-header.portfolio}}</span>
+    </p>
+    <p><span class="address">{{resume-header.address}}</span></p>
   </div>
   
   <div class="section" id="resume-summary">
@@ -315,15 +342,20 @@ export const executiveTemplate = `
 
 /**
  * Technical template HTML structure
- * Specialized for technical careers
+ * Specialized for technical careers with standardized header
  */
 export const technicalTemplate = `
 <div class="technical-container">
   <div id="resume-header">
-    {{resume-header}}
-  </div>
-  <div class="contact">
-    {{resume-contact}}
+    <h1 class="section-title name">{{resume-header.name}}</h1>
+    <p class="title">{{resume-header.title}}</p>
+    <p>
+      <span class="phone">{{resume-header.phone}}</span> |
+      <span class="email">{{resume-header.email}}</span> |
+      <span class="linkedin">{{resume-header.linkedin}}</span> |
+      <span class="portfolio">{{resume-header.portfolio}}</span>
+    </p>
+    <p><span class="address">{{resume-header.address}}</span></p>
   </div>
   
   <div class="section" id="resume-summary">
@@ -395,15 +427,20 @@ export const technicalTemplate = `
 
 /**
  * Compact template HTML structure
- * Space-efficient layout
+ * Space-efficient layout with standardized header
  */
 export const compactTemplate = `
 <div class="compact-container">
   <div id="resume-header">
-    {{resume-header}}
-  </div>
-  <div class="contact">
-    {{resume-contact}}
+    <h1 class="section-title name">{{resume-header.name}}</h1>
+    <p class="title">{{resume-header.title}}</p>
+    <p>
+      <span class="phone">{{resume-header.phone}}</span> |
+      <span class="email">{{resume-header.email}}</span> |
+      <span class="linkedin">{{resume-header.linkedin}}</span> |
+      <span class="portfolio">{{resume-header.portfolio}}</span>
+    </p>
+    <p><span class="address">{{resume-header.address}}</span></p>
   </div>
   
   <div class="section" id="resume-summary">

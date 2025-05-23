@@ -1,12 +1,12 @@
 /**
  * Template Styles Constants
- * 
+ *
  * This file contains all CSS styles for different resume templates
  * Centralizing styles makes them easier to maintain and update
  */
 
 /**
- * Basic template styling 
+ * Basic template styling
  * Clean and minimalist styling suitable for formal applications
  */
 export const basicStyles = `
@@ -27,7 +27,7 @@ export const basicStyles = `
     padding: 20px;
   }
 
-  p.professional-title {
+  p.title {
     font-size: 18px;
     font-weight: bold;
   }
@@ -90,6 +90,12 @@ export const basicStyles = `
   .email {
     font-weight: normal;
   }
+
+  .email::before { content: " | "; }
+
+  .linkedin::before { content: " | "; }
+
+  .portfolio::before { content: " | "; }
   
   .phone {
     font-weight: normal;
@@ -238,6 +244,12 @@ export const professionalStyles = `
     height: 20px;
     display: inline-block;
   }
+
+  .email::before { content: " | "; }
+
+  .linkedin::before { content: " | "; }
+
+  .portfolio::before { content: " | "; }
 `;
 
 /**
