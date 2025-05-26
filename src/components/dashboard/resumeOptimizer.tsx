@@ -1,17 +1,16 @@
 /**
- * ResumeOptimizer Component
+ * ResumeOptimizer Component - COMPLETELY REFACTORED FOR NEW ARCHITECTURE
  *
  * Main component that manages the resume optimization workflow.
  * Uses custom hooks for separation of concerns between uploading and editing.
- * Centralized UI state management for loading views and toasts.
  *
- * Key functionality:
- * - File upload and parsing
- * - AI optimization of resume content
- * - Editing of optimized content with real-time feedback
- * - Application of AI suggestions and keywords
- * - Template selection and preview
- * - Saving and resetting functionality
+ * MAJOR UPDATES FOR NEW ARCHITECTURE:
+ * - Updated to work with refactored useResumeOptimizer hook
+ * - Fixed all TypeScript errors by using correct property names
+ * - Simplified state management with centralized edit mode
+ * - Compatible with temporary content preservation system
+ * - Enhanced props passing to ResumePreview component
+ * - Maintained all original functionality while improving stability
  */
 
 "use client";
@@ -20,7 +19,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button"; // Import Button from UI components
+import { Button } from "@/components/ui/button";
 
 // Import UI components
 import UploadSection from "@/components/ResumeOptimizerSection/uploadSection";
@@ -43,7 +42,7 @@ import { Suggestion, Keyword, OptimizedResumeData } from "@/types/resumeTypes";
 import { SuggestionImpact } from "@/types/suggestionTypes";
 
 /**
- * EmptyPreviewStateProps interface based on error messages
+ * EmptyPreviewStateProps interface
  * Props for the empty state component when no resume is available
  */
 interface EmptyPreviewStateProps {
@@ -120,12 +119,12 @@ function normalizeKeyword(keyword: any, index: number): Keyword {
 }
 
 /**
- * ResumeOptimizer Component - Main entry point for the resume optimization workflow
+ * ResumeOptimizer Component - REFACTORED FOR NEW ARCHITECTURE
  * Handles the complete lifecycle of resume optimization including:
  * - File upload and content extraction
  * - AI optimization
  * - Rendering preview with template selection
- * - Managing suggestions and keywords
+ * - Managing suggestions and keywords with centralized state
  * - Saving and resetting user changes
  */
 const ResumeOptimizer: React.FC = () => {
@@ -138,48 +137,71 @@ const ResumeOptimizer: React.FC = () => {
   // State to track if welcome toast has been shown
   const welcomeToastShownRef = useRef(false);
 
+  // ===== USE THE REFACTORED HOOK WITH NEW PROPERTIES =====
+
   // Use the main optimizer hook to handle resume optimization state and actions
   const {
-    // State
+    // ===== CORE STATE =====
     resumeData,
     optimizedText,
-    editedText,
     originalAtsScore,
     currentAtsScore,
     suggestions,
     keywords,
-    isEditing,
     selectedTemplate,
+    hasResume,
+    activeTab,
+
+    // ===== CENTRALIZED EDITING STATE =====
+    isEditing, // NEW: centralized edit mode
+    tempEditedContent, // NEW: temporary content during editing
+    tempSections, // NEW: stable sections during editing
+    hasTempChanges, // NEW: tracks temporary modifications
+
+    // ===== COMPUTED STATE =====
+    currentDisplayContent, // NEW: computed display content
+    currentSections, // NEW: computed sections based on mode
+
+    // ===== MODIFICATION FLAGS =====
     contentModified,
     scoreModified,
+    templateModified,
+
+    // ===== LOADING STATES =====
     isLoading,
     isSaving,
     isResetting,
-    hasResume,
-    activeTab,
-    templateModified,
 
-    // Actions
+    // ===== CORE ACTIONS =====
     setActiveTab,
-    setIsEditing,
+    toggleEditMode, // NEW: centralized edit mode toggle
     loadLatestResume,
     saveResume,
     resetResume,
+
+    // ===== EDITING ACTIONS =====
     handleContentEdit,
+    handleSectionEdit, // NEW: section-specific editing
     handleApplySuggestion,
     handleKeywordApply,
     updateResumeWithOptimizedData,
     updateSelectedTemplate,
-    setContentModified,
-    setScoreModified,
-    setTemplateModified,
 
-    // These are the state setters you'll need to access directly
+    // ===== UTILITY FUNCTIONS =====
+    getAppliedKeywords,
+    hasUnsavedChanges,
+    calculateCompletionScore,
+    shouldEnableSaveButton,
+
+    // ===== DIRECT STATE SETTERS (limited access) =====
     setOptimizedText,
     setCurrentAtsScore,
     setSuggestions,
     setKeywords,
+    setContentModified,
+    setScoreModified,
     setSelectedTemplate,
+    setTemplateModified,
   } = useResumeOptimizer(user?.id);
 
   // Use the upload section hook to handle file upload and initial optimization
@@ -205,7 +227,7 @@ const ResumeOptimizer: React.FC = () => {
       suggestionsData,
       keywordsData
     ) => {
-      console.log("Optimization complete, processing results:", {
+      console.log("🎉 Optimization complete, processing results:", {
         resumeId,
         atsScore,
         suggestionsCount: suggestionsData?.length || 0,
@@ -222,7 +244,7 @@ const ResumeOptimizer: React.FC = () => {
         ? keywordsData.map(normalizeKeyword)
         : [];
 
-      console.log("Normalized data for UI:", {
+      console.log("✅ Normalized data for UI:", {
         suggestionsNormalized: normalizedSuggestions.length,
         keywordsNormalized: normalizedKeywords.length,
       });
@@ -247,6 +269,14 @@ const ResumeOptimizer: React.FC = () => {
     },
   });
 
+  // ===== LOCAL UI STATE =====
+
+  // State for managing loading display during analysis
+  const [showLoadingState, setShowLoadingState] = useState(false);
+
+  // State for reset confirmation dialog
+  const [showResetDialog, setShowResetDialog] = useState(false);
+
   /**
    * Centralized function to handle UI updates after loading
    * Handles tab navigation, loading state, and welcome toasts in one place
@@ -262,10 +292,10 @@ const ResumeOptimizer: React.FC = () => {
     if (!loadingJustFinished) return;
 
     // Automatic tab navigation based on resume data
-    if (hasResume && (optimizedText || resumeData?.optimized_text)) {
+    if (hasResume && (currentDisplayContent || optimizedText)) {
       // If we have resume data, switch to preview tab
       setActiveTab("preview");
-      console.log("Auto-switching to preview tab after loading");
+      console.log("🎯 Auto-switching to preview tab after loading");
 
       toast.success("Last resume loaded successfully!", {
         description:
@@ -275,14 +305,20 @@ const ResumeOptimizer: React.FC = () => {
     } else {
       // If no resume data, stay on upload tab
       setActiveTab("upload");
-      console.log("Staying on upload tab - no resume found");
+      console.log("📁 Staying on upload tab - no resume found");
 
       toast.info("Welcome to CareerBoost!", {
         description: "Upload your resume to get started with AI optimization.",
         duration: 7000,
       });
     }
-  }, [isLoading, hasResume, optimizedText, resumeData, setActiveTab]);
+  }, [
+    isLoading,
+    hasResume,
+    currentDisplayContent,
+    optimizedText,
+    setActiveTab,
+  ]);
 
   /**
    * Handle tab change with data loading if needed
@@ -301,9 +337,9 @@ const ResumeOptimizer: React.FC = () => {
       setActiveTab(value);
 
       // When switching to preview tab, load the latest resume data if needed
-      if (value === "preview" && user?.id && !optimizedText) {
+      if (value === "preview" && user?.id && !currentDisplayContent) {
         loadLatestResume();
-        console.log("Loading latest resume data");
+        console.log("🔄 Loading latest resume data");
       }
     },
     [
@@ -312,7 +348,7 @@ const ResumeOptimizer: React.FC = () => {
       isOptimizing,
       isLoading,
       loadLatestResume,
-      optimizedText,
+      currentDisplayContent,
       setActiveTab,
     ]
   );
@@ -321,7 +357,6 @@ const ResumeOptimizer: React.FC = () => {
    * Handle analysis start - show loading state
    * Called when the AI optimization process begins
    */
-  const [showLoadingState, setShowLoadingState] = useState(false);
   const handleAnalysisStart = useCallback(() => {
     setShowLoadingState(true);
   }, []);
@@ -334,16 +369,6 @@ const ResumeOptimizer: React.FC = () => {
     isLoading || isUploading || isOptimizing || showLoadingState;
 
   /**
-   * Determine which content to display in the preview
-   * Prioritizes: edited text > last saved text > optimized text > empty string
-   */
-  const displayContent =
-    editedText ||
-    (resumeData?.last_saved_text ?? resumeData?.optimized_text) ||
-    optimizedText ||
-    "";
-
-  /**
    * Get current ATS score to display
    * Uses current score if available, falls back to original score
    */
@@ -352,21 +377,13 @@ const ResumeOptimizer: React.FC = () => {
 
   /**
    * Get array of applied keywords for templates
-   * Filters keywords that have been applied and maps to text-only array
+   * Uses the utility function from the hook
    */
-  const appliedKeywordsArray = keywords
-    .filter((keyword) => keyword.isApplied)
-    .map((keyword) => keyword.text);
-
-  /**
-   * Handle reset dialog confirmation
-   * Controls visibility of the reset confirmation dialog
-   */
-  const [showResetDialog, setShowResetDialog] = useState(false);
+  const appliedKeywordsArray = getAppliedKeywords();
 
   /**
    * Centralized reset handler to ensure all components are synchronized
-   * This improved implementation properly handles the reset operation
+   * Handles the reset confirmation and execution
    */
   const handleCompleteReset = useCallback(() => {
     // Hide confirmation dialog
@@ -375,63 +392,23 @@ const ResumeOptimizer: React.FC = () => {
     // Call the reset function from the hook
     resetResume().then((success) => {
       if (success) {
-        // After a successful reset, reload the latest resume data to ensure
-        // all components are properly synchronized with the database state
-        loadLatestResume().then((data) => {
-          if (data) {
-            // Then update all state variables explicitly to ensure proper re-render
-            setOptimizedText(data.optimized_text || "");
-            setCurrentAtsScore(data.ats_score || 65);
-
-            // Update the selected template
-            if (data.selected_template) {
-              setSelectedTemplate(data.selected_template);
-            }
-
-            // Reset suggestions to their original non-applied state
-            if (Array.isArray(data.suggestions)) {
-              const normalizedSuggestions = data.suggestions.map((s, i) =>
-                normalizeSuggestion(s, i)
-              );
-              setSuggestions(normalizedSuggestions);
-            }
-
-            // Reset keywords to their original non-applied state
-            if (Array.isArray(data.keywords)) {
-              const normalizedKeywords = data.keywords.map((k, i) =>
-                normalizeKeyword(k, i)
-              );
-              setKeywords(normalizedKeywords);
-            }
-
-            // Log success message
-            console.log(
-              "Reset completed successfully - all components synchronized"
-            );
-
-            // Show success toast
-            toast.success("Resume reset to original version");
-          }
-        });
+        console.log(
+          "✅ Reset completed successfully - all components synchronized"
+        );
       }
     });
-  }, [
-    resetResume,
-    loadLatestResume,
-    setOptimizedText,
-    setCurrentAtsScore,
-    setSuggestions,
-    setKeywords,
-    setSelectedTemplate,
-  ]);
+  }, [resetResume]);
 
   /**
    * Handle resume download
    * Creates an HTML file with the current content and selected template
    */
   const handleDownload = useCallback(() => {
+    // Use current display content for download
+    const contentForDownload = currentDisplayContent || optimizedText;
+
     // Validate content exists
-    if (!displayContent) {
+    if (!contentForDownload) {
       toast.error("No content to download");
       return;
     }
@@ -468,7 +445,7 @@ const ResumeOptimizer: React.FC = () => {
     </head>
     <body>
       <div class="resume-content">
-        ${displayContent}
+        ${contentForDownload}
       </div>
     </body>
     </html>`;
@@ -485,7 +462,7 @@ const ResumeOptimizer: React.FC = () => {
     URL.revokeObjectURL(url);
 
     toast.success("Resume downloaded successfully");
-  }, [displayContent, selectedTemplate]);
+  }, [currentDisplayContent, optimizedText, selectedTemplate]);
 
   /**
    * Maps the database-format suggestions to component-format suggestions
@@ -540,13 +517,13 @@ const ResumeOptimizer: React.FC = () => {
    */
   const handleKeywordApplyAdapter = useCallback(
     (index: number) => {
-      console.log(`handleKeywordApplyAdapter called with index ${index}`);
+      console.log(`🏷️ handleKeywordApplyAdapter called with index ${index}`);
 
       // Only proceed with keyword application if in edit mode
       if (isEditing && index >= 0 && index < mappedKeywords.length) {
         const keyword = mappedKeywords[index];
 
-        console.log(`Applying keyword (local only):`, keyword);
+        console.log(`🏷️ Applying keyword (local only):`, keyword);
 
         // Handle missing ID with warning
         if (!keyword.id) {
@@ -559,7 +536,7 @@ const ResumeOptimizer: React.FC = () => {
         const exactPointImpact = keyword.pointImpact || 1;
 
         // Log the operation with impact details
-        console.log("Applying keyword with impact:", {
+        console.log("🎯 Applying keyword with impact:", {
           keywordId: keyword.id,
           keyword: keyword.text,
           pointImpact: exactPointImpact,
@@ -570,7 +547,6 @@ const ResumeOptimizer: React.FC = () => {
         handleKeywordApply(keyword.id, !keyword.isApplied);
 
         // Explicitly mark score as modified when applying keyword
-        // This ensures the save button is enabled after keyword application
         setScoreModified(true);
         setContentModified(true);
       } else if (!isEditing) {
@@ -578,7 +554,9 @@ const ResumeOptimizer: React.FC = () => {
         toast.info("Enter edit mode to apply keywords");
       } else {
         console.error(
-          `Invalid keyword index: ${index}. Max: ${mappedKeywords.length - 1}`
+          `❌ Invalid keyword index: ${index}. Max: ${
+            mappedKeywords.length - 1
+          }`
         );
       }
     },
@@ -618,7 +596,7 @@ const ResumeOptimizer: React.FC = () => {
 
       // Log the calculation for debugging
       console.log(
-        `Simulating keyword impact: ${currentScore} + ${pointImpact} = ${newScore}`
+        `📊 Simulating keyword impact: ${currentScore} + ${pointImpact} = ${newScore}`
       );
 
       // Return the expected object structure with accurate values
@@ -641,24 +619,24 @@ const ResumeOptimizer: React.FC = () => {
    */
   const handleApplySuggestionAdapter = useCallback(
     (index: number) => {
-      console.log(`handleApplySuggestionAdapter called with index ${index}`);
+      console.log(`💡 handleApplySuggestionAdapter called with index ${index}`);
 
       // Only proceed if in edit mode and index is valid
       if (isEditing && index >= 0 && index < mappedSuggestions.length) {
         const suggestion = mappedSuggestions[index];
 
-        console.log(`Applying suggestion (local only):`, suggestion);
+        console.log(`💡 Applying suggestion (local only):`, suggestion);
 
         // Validate that the suggestion has a valid ID
         if (!suggestion.id) {
           console.error(
-            "Cannot apply suggestion: Missing suggestion ID",
+            "❌ Cannot apply suggestion: Missing suggestion ID",
             suggestion
           );
 
           // Generate temporary ID for this operation
           const tempId = `temp-suggestion-${index}-${Date.now()}`;
-          console.log(`Generated temporary ID: ${tempId}`);
+          console.log(`🔧 Generated temporary ID: ${tempId}`);
 
           // Assign the temporary ID to the suggestion
           suggestion.id = tempId;
@@ -669,7 +647,7 @@ const ResumeOptimizer: React.FC = () => {
 
         // Validate the resume data exists and has an ID
         if (!resumeData?.id) {
-          console.error("Cannot apply suggestion: Missing resume ID");
+          console.error("❌ Cannot apply suggestion: Missing resume ID");
           toast.error("Cannot apply suggestion: Resume not found");
           return false;
         }
@@ -678,7 +656,7 @@ const ResumeOptimizer: React.FC = () => {
         const exactPointImpact = suggestion.pointImpact || 2;
 
         // Log the operation for debugging
-        console.log("Applying suggestion (local state only):", {
+        console.log("🎯 Applying suggestion (local state only):", {
           resumeId: resumeData.id,
           suggestionId: suggestion.id,
           suggestion: suggestion.text,
@@ -692,7 +670,6 @@ const ResumeOptimizer: React.FC = () => {
         handleApplySuggestion(suggestion.id, !suggestion.isApplied);
 
         // Explicitly mark score as modified when applying suggestion
-        // This ensures the save button is enabled after suggestion application
         setScoreModified(true);
         setContentModified(true);
 
@@ -704,7 +681,7 @@ const ResumeOptimizer: React.FC = () => {
       } else {
         // Invalid index
         console.error(
-          "Invalid suggestion index:",
+          "❌ Invalid suggestion index:",
           index,
           "Max:",
           mappedSuggestions.length - 1
@@ -748,7 +725,7 @@ const ResumeOptimizer: React.FC = () => {
 
       // Log the calculation for debugging
       console.log(
-        `Simulating suggestion impact: ${currentScore} + ${pointImpact} = ${newScore}`
+        `📊 Simulating suggestion impact: ${currentScore} + ${pointImpact} = ${newScore}`
       );
 
       // Return the expected object structure with accurate values
@@ -803,10 +780,7 @@ const ResumeOptimizer: React.FC = () => {
 
       // If save was successful
       if (result) {
-        // Reset modification states
-        setContentModified(false);
-        setScoreModified(false);
-        setTemplateModified(false);
+        // Reset modification states are handled by the hook
 
         // Update the toast to show success using the same ID
         toast.success("All changes saved successfully", {
@@ -825,13 +799,7 @@ const ResumeOptimizer: React.FC = () => {
 
       return result;
     },
-    [
-      saveResume,
-      selectedTemplate,
-      setContentModified,
-      setScoreModified,
-      setTemplateModified,
-    ]
+    [saveResume, selectedTemplate]
   );
 
   /**
@@ -856,19 +824,39 @@ const ResumeOptimizer: React.FC = () => {
       // Find the template
       const template = resumeTemplates.find((t) => t.id === templateId);
 
-      // Update the template locally
+      // Update the template using hook function
       updateSelectedTemplate(templateId);
-
-      // Mark content as modified to enable the save button
-      setTemplateModified(true);
 
       // Show confirmation toast
       toast.success(`${template?.name || "Template"} selected`, {
         description: "Remember to save your changes to apply this template.",
       });
     },
-    [isEditing, selectedTemplate, updateSelectedTemplate, setTemplateModified]
+    [isEditing, selectedTemplate, updateSelectedTemplate]
   );
+
+  /**
+   * Handle edit mode change from ResumePreview
+   * Delegates to the centralized hook function
+   *
+   * @param newEditingState - New editing state
+   */
+  const handleEditModeChange = useCallback(
+    (newEditingState: boolean) => {
+      console.log(
+        `🔄 Edit mode change requested: ${isEditing} -> ${newEditingState}`
+      );
+
+      // Use the centralized toggle function from the hook
+      // Note: toggleEditMode already handles the logic of entering/exiting edit mode
+      if (newEditingState !== isEditing) {
+        toggleEditMode();
+      }
+    },
+    [isEditing, toggleEditMode]
+  );
+
+  // ===== EFFECTS =====
 
   // Check for previous toast shown in session storage
   useEffect(() => {
@@ -893,6 +881,8 @@ const ResumeOptimizer: React.FC = () => {
   useEffect(() => {
     handleLoadingStateChange();
   }, [handleLoadingStateChange]);
+
+  // ===== RENDER =====
 
   return (
     <div className="py-8">
@@ -992,7 +982,7 @@ const ResumeOptimizer: React.FC = () => {
               // Hide loading state when complete
               setShowLoadingState(false);
             }}
-            checkingForExistingResumes={isLoading} // Pass isLoading to the checkingForExistingResumes prop
+            checkingForExistingResumes={isLoading}
           />
         </TabsContent>
 
@@ -1007,7 +997,7 @@ const ResumeOptimizer: React.FC = () => {
            */}
           {isLoading || showLoadingState || isOptimizing ? (
             <LoadingState />
-          ) : !displayContent ? (
+          ) : !currentDisplayContent && !optimizedText ? (
             <EmptyPreviewState onGoToUpload={() => setActiveTab("upload")} />
           ) : (
             <>
@@ -1016,25 +1006,36 @@ const ResumeOptimizer: React.FC = () => {
                 {/* Resume preview - takes 3 columns */}
                 <div className="col-span-3">
                   <ResumePreview
-                    optimizedText={displayContent}
+                    // ===== CONTENT PROPS =====
+                    optimizedText={currentDisplayContent || optimizedText}
                     originalOptimizedText={optimizedText}
+                    // ===== TEMPLATE AND DISPLAY =====
                     selectedTemplate={selectedTemplate}
                     templates={resumeTemplates}
                     appliedKeywords={appliedKeywordsArray}
                     suggestions={mappedSuggestions}
+                    // ===== ACTION CALLBACKS =====
                     onDownload={handleDownload}
-                    onSave={handleSaveWithUpdates} // Use enhanced save handler
+                    onSave={handleSaveWithUpdates}
                     onTextChange={handleContentEdit}
+                    onReset={() => setShowResetDialog(true)}
+                    // ===== STATE PROPS =====
                     isOptimizing={isOptimizing}
                     isApplyingChanges={isSaving}
                     language={resumeData?.language || "English"}
-                    onEditModeChange={setIsEditing}
-                    onReset={() => setShowResetDialog(true)}
-                    // Pass the editing state explicitly
+                    resumeData={resumeData || undefined}
+                    // ===== NEW: CENTRALIZED EDIT MODE MANAGEMENT =====
                     isEditing={isEditing}
-                    // Pass scoreModified state - make sure ResumePreview expects this prop
+                    onEditModeChange={handleEditModeChange}
+                    // ===== NEW: TEMPORARY CONTENT FROM HOOK =====
+                    tempEditedContent={tempEditedContent}
+                    tempSections={tempSections}
+                    hasTempChanges={hasTempChanges}
+                    onSectionEdit={handleSectionEdit}
+                    // ===== MODIFICATION FLAGS =====
                     scoreModified={scoreModified}
                     templateModified={templateModified}
+                    contentModified={contentModified}
                   />
                 </div>
 
@@ -1043,7 +1044,7 @@ const ResumeOptimizer: React.FC = () => {
                   {/* ATS Score card */}
                   <ScoreCard
                     optimizationScore={atsScore || 0}
-                    resumeContent={displayContent}
+                    resumeContent={currentDisplayContent || optimizedText}
                     suggestionsApplied={
                       suggestions.filter((s) => s.isApplied).length
                     }
@@ -1059,7 +1060,7 @@ const ResumeOptimizer: React.FC = () => {
                     suggestions={mappedSuggestions}
                     isOptimizing={isOptimizing}
                     onApplySuggestion={handleApplySuggestionAdapter}
-                    resumeContent={displayContent}
+                    resumeContent={currentDisplayContent || optimizedText}
                     currentScore={atsScore || 0}
                     simulateSuggestionImpact={simulateSuggestionImpactAdapter}
                     isEditing={isEditing} // Pass the editing state to control when suggestions can be applied
