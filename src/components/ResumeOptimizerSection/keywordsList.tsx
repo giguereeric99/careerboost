@@ -44,12 +44,6 @@ interface KeywordsListProps {
   needsRegeneration?: boolean; // Whether changes need regeneration
   currentScore?: number; // Current ATS score
   isEditing?: boolean; // Whether the resume is in edit mode
-  simulateKeywordImpact?: (index: number) => {
-    // Function to simulate impact
-    newScore: number; // Projected new score
-    pointImpact: number; // Point impact
-    description: string; // Impact description
-  };
 }
 
 /**
@@ -75,19 +69,6 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
 
   // State for keyword impacts - pre-calculated for performance
   const [keywordImpacts, setKeywordImpacts] = useState<ImpactData[]>([]);
-
-  /**
-   * Calculate keyword impacts on mount and when dependencies change
-   * This avoids recalculating impacts on every render
-   */
-  useEffect(() => {
-    if (!simulateKeywordImpact || keywords.length === 0) return;
-
-    // Pre-calculate impacts for all keywords
-    const impacts = keywords.map((_, index) => simulateKeywordImpact(index));
-
-    setKeywordImpacts(impacts);
-  }, [keywords, simulateKeywordImpact]);
 
   /**
    * Calculate cumulative impact of all applied keywords

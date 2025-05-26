@@ -1,11 +1,19 @@
 /**
- * Enhanced ResumePreview Component
+ * Enhanced ResumePreview Component - PERFORMANCE OPTIMIZED VERSION
  *
  * This component displays a preview of the optimized resume and allows editing.
+ *
+ * PERFORMANCE OPTIMIZATIONS APPLIED:
+ * - Memoized editors to prevent unnecessary re-renders
+ * - Debounced content updates to reduce processing overhead
+ * - Optimized useEffect dependencies to prevent cascading updates
+ * - Stable references for callbacks to maintain editor focus
+ * - Eliminated re-parsing of sections during typing
+ *
  * Features:
  * - Toggle between view and edit modes
  * - Real-time preview of edits without saving
- * - Section-based editing with TipTap rich text editor
+ * - Section-based editing with TipTap rich text editor and ResumeHeaderEditor
  * - Support for multiple templates
  * - Download functionality
  * - Reset to original version (always visible in preview mode)
@@ -14,7 +22,13 @@
  * - Support for full preview in modal with template applied
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   Download,
@@ -47,6 +61,7 @@ import { Section } from "@/types/resumeTypes";
 // Import TipTap editor
 import TipTapResumeEditor from "@/components/ResumeOptimizerSection/tipTapResumeEditor";
 
+// Import ResumeHeaderEditor for structured header editing
 import ResumeHeaderEditor from "@/components/ResumeOptimizerSection/resumeHeaderEditor";
 
 // Import UI components
@@ -73,33 +88,64 @@ import {
 } from "@/utils/resumeUtils";
 
 /**
+ * PERFORMANCE OPTIMIZATION: Memoized TipTap Editor
+ * Prevents re-rendering when props haven't actually changed
+ * This is critical for maintaining focus during typing
+ */
+const MemoizedTipTapEditor = React.memo(
+  TipTapResumeEditor,
+  (prevProps, nextProps) => {
+    return (
+      prevProps.content === nextProps.content &&
+      prevProps.appliedKeywords?.length === nextProps.appliedKeywords?.length &&
+      prevProps.suggestions?.length === nextProps.suggestions?.length
+    );
+  }
+);
+
+/**
+ * PERFORMANCE OPTIMIZATION: Memoized ResumeHeaderEditor
+ * Prevents re-rendering when content hasn't changed
+ * Essential for maintaining cursor position and input focus
+ */
+const MemoizedResumeHeaderEditor = React.memo(
+  ResumeHeaderEditor,
+  (prevProps, nextProps) => {
+    return prevProps.content === nextProps.content;
+  }
+);
+
+/**
  * Interface for ResumePreview component props
+ * Defines all the properties that can be passed to the component
  */
 interface ResumePreviewProps {
   optimizedText: string; // Resume content to display
-  originalOptimizedText?: string; // Original content for reset
-  selectedTemplate: string; // ID of the selected template
-  templates: ResumeTemplateType[]; // Available templates
-  appliedKeywords: string[]; // Keywords applied to the resume
-  suggestions: Suggestion[]; // Suggestions for improvement
-  onDownload: () => void; // Handler for download button
-  onSave: (content: string) => Promise<boolean> | boolean; // Handler for save button
-  onTextChange: (text: string) => void; // Handler for text changes
-  isOptimizing: boolean; // Whether optimization is in progress
-  isApplyingChanges?: boolean; // Whether changes are being applied
-  language?: string; // Language of the resume
+  originalOptimizedText?: string; // Original content for reset functionality
+  selectedTemplate: string; // ID of the selected template for styling
+  templates: ResumeTemplateType[]; // Available templates for preview and styling
+  appliedKeywords: string[]; // Keywords applied to the resume for enhancement
+  suggestions: Suggestion[]; // Suggestions for improvement from AI analysis
+  onDownload: () => void; // Handler for download button functionality
+  onSave: (content: string) => Promise<boolean> | boolean; // Handler for save button with content
+  onTextChange: (text: string) => void; // Handler for text changes notification
+  isOptimizing: boolean; // Whether optimization is in progress (shows loading state)
+  isApplyingChanges?: boolean; // Whether changes are being applied (optional)
+  language?: string; // Language of the resume content (default: English)
   onEditModeChange?: (isEditing: boolean) => void; // Optional callback for edit mode changes
-  onReset?: () => void; // Optional callback for reset button
+  onReset?: () => void; // Optional callback for reset button functionality
   onRegenerateContent?: () => void; // Optional callback for regenerating content with applied changes
   needsRegeneration?: boolean; // Whether the content needs regeneration after applying changes
   isEditing?: boolean; // Whether the resume is in edit mode (controlled by parent)
   scoreModified?: boolean; // Whether the score has been modified due to applied suggestions/keywords
   templateModified?: boolean; // Whether the template has been modified
-  resumeData?: OptimizedResumeData; // Full resume data object
+  resumeData?: OptimizedResumeData; // Full resume data object for additional context
 }
 
 /**
- * ResumePreview Component
+ * ResumePreview Component - PERFORMANCE OPTIMIZED VERSION
+ *
+ * Main component for displaying and editing resume content with enhanced performance
  */
 const ResumePreview: React.FC<ResumePreviewProps> = ({
   optimizedText,
@@ -123,7 +169,9 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   templateModified = false, // Whether the template has been modified (default: false)
   resumeData,
 }) => {
-  // Local state for UI controls
+  // ===== LOCAL STATE MANAGEMENT =====
+
+  // Local state for UI controls when not controlled by parent
   const [localEditMode, setLocalEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [sections, setSections] = useState<Section[]>([]);
@@ -131,34 +179,50 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   const [hasLoadedInitialContent, setHasLoadedInitialContent] = useState(false);
   const [previewContent, setPreviewContent] = useState<string>(""); // State for real-time preview
 
-  // Track if content has ever been modified
+  // Track if content has ever been modified for user feedback
   const [hasBeenModified, setHasBeenModified] = useState(false);
 
   // State for controlling the preview modal visibility
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
+  // ===== PERFORMANCE OPTIMIZATION: Refs for debouncing =====
+
+  // Ref to store timeout for debounced updates
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Ref to track if we're currently processing an update to prevent cascading
+  const isUpdatingRef = useRef(false);
+
+  // ===== COMPUTED VALUES =====
+
   // Determine the current edit mode - if isEditing is provided by parent, use it
-  // Otherwise use our local state
+  // Otherwise use our local state for uncontrolled mode
   const editMode = isEditing !== undefined ? isEditing : localEditMode;
 
-  // Get selected template
+  // Get selected template from the available templates array
   const template = useMemo(
     () => templates.find((t) => t.id === selectedTemplate) || templates[0],
     [selectedTemplate, templates]
   );
 
+  // ===== UTILITY FUNCTIONS =====
+
   /**
    * Sanitize HTML content to prevent XSS attacks
+   * Uses DOMPurify when available, falls back to basic sanitization
+   *
+   * @param html - HTML content to sanitize
+   * @returns Sanitized HTML content safe for rendering
    */
   const sanitizeHtml = useCallback((html: string): string => {
     if (typeof DOMPurify === "undefined") {
-      // Basic sanitization if DOMPurify is not available
+      // Basic sanitization if DOMPurify is not available (fallback)
       return html
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
         .replace(/\son\w+\s*=\s*["']?[^"']*["']?/gi, "");
     }
 
-    // Use DOMPurify for comprehensive sanitization
+    // Use DOMPurify for comprehensive sanitization with specific configuration
     return DOMPurify.sanitize(html, {
       ALLOWED_TAGS: [
         "a",
@@ -203,6 +267,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
   /**
    * Process and normalize the HTML content
+   * Ensures consistent format and handles HTML entity normalization
+   *
+   * @param content - Raw HTML content to process
+   * @returns Processed and normalized HTML content
    */
   const processContent = useCallback(
     (content: string): string => {
@@ -216,6 +284,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
   /**
    * Create a default empty section with title and placeholder content
+   * Used when initializing sections that don't exist in the content
+   *
+   * @param sectionId - ID of the section to create
+   * @returns Section object with default structure
    */
   const createEmptySection = useCallback((sectionId: string): Section => {
     const title = getSectionName(sectionId);
@@ -236,6 +308,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   /**
    * Initialize all standard sections for editing
    * This ensures all possible sections are available in edit mode
+   * Combines existing sections with empty placeholders for missing sections
+   *
+   * @param existingSections - Sections parsed from existing content
+   * @returns Complete array of all standard sections
    */
   const initializeAllSections = useCallback(
     (existingSections: Section[]) => {
@@ -259,7 +335,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
             ),
           };
         } else {
-          // Create a new empty section
+          // Create a new empty section for editing
           return createEmptySection(standardSection.id);
         }
       });
@@ -270,6 +346,9 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   /**
    * Combine non-empty sections into complete HTML
    * Only includes sections that have meaningful content
+   * Used for saving and preview generation
+   *
+   * @returns Combined HTML string of all non-empty sections
    */
   const combineAllSections = useCallback(() => {
     return sections
@@ -280,9 +359,12 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       .join("\n");
   }, [sections]);
 
+  // ===== RESET FUNCTIONALITY =====
+
   /**
    * Handle internal reset action
    * Reset content to original version without saving to database
+   * This is for local UI reset functionality
    */
   const handleLocalReset = useCallback(() => {
     if (!originalOptimizedText) return;
@@ -310,6 +392,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       // Notify parent of content change back to original
       onTextChange(originalOptimizedText);
 
+      // Note: Success toast commented out to reduce UI noise
       // toast.success("Content reset to original version");
     } catch (error) {
       console.error("Error resetting content:", error);
@@ -325,12 +408,13 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   /**
    * Handle reset button click
    * Calls parent reset function and also resets local state
+   * This handles both local and database reset operations
    */
   const handleReset = useCallback(() => {
     // First reset local content
     handleLocalReset();
 
-    // Then call parent reset function if provided
+    // Then call parent reset function if provided (for database reset)
     if (onReset) {
       onReset();
     }
@@ -343,8 +427,12 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     setHasBeenModified(false);
   }, [handleLocalReset, onReset, originalOptimizedText]);
 
+  // ===== EFFECTS FOR STATE MANAGEMENT =====
+
   /**
    * Parse the resume HTML into sections when optimizedText changes
+   * This effect handles the initial loading and parsing of content
+   * PERFORMANCE OPTIMIZED: Only runs when not in edit mode to prevent disruption
    */
   useEffect(() => {
     // Skip if we're currently in edit mode to prevent editor state from being reset
@@ -389,7 +477,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       }
     } catch (error) {
       console.error("Error parsing optimized text into sections:", error);
-      // Fallback to simple section
+      // Fallback to simple section if parsing fails
       setSections([
         {
           id: "resume-summary",
@@ -418,6 +506,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
   /**
    * Notify parent component when edit mode changes
+   * Only triggers when in uncontrolled mode (isEditing is undefined)
    */
   useEffect(() => {
     // Only call onEditModeChange if we're in uncontrolled mode
@@ -428,33 +517,27 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
   }, [localEditMode, onEditModeChange, isEditing]);
 
   /**
-   * Effect to initialize sections when entering edit mode
+   * PERFORMANCE OPTIMIZED: Effect to initialize sections when entering edit mode
+   * Only initializes sections if they don't already exist
+   * This prevents unnecessary re-parsing during typing
    */
   useEffect(() => {
-    // Only execute when edit mode is activated
-    if (editMode) {
+    // CRITICAL OPTIMIZATION: Only initialize if we're entering edit mode AND sections are empty
+    if (editMode && sections.length === 0) {
       console.log("Edit mode activated, preparing sections...");
 
-      // Determine which content to use - prefer previewContent over optimizedText
       const contentToLoad = previewContent || optimizedText;
 
       if (contentToLoad) {
         try {
-          // Process and normalize the content
           const normalizedContent = processContent(contentToLoad);
-
-          // Parse content into sections
           const parsedSections = parseHtmlIntoSections(
             normalizedContent,
             getSectionName,
             SECTION_NAMES,
             SECTION_ORDER
           );
-
-          // Initialize all standard sections with the current content
           const allSections = initializeAllSections(parsedSections);
-
-          // Update sections with the parsed content
           setSections(allSections);
 
           console.log(
@@ -465,23 +548,42 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         }
       }
     }
-  }, [
-    editMode,
-    previewContent,
-    optimizedText,
-    processContent,
-    initializeAllSections,
-  ]);
+  }, [editMode]); // SIMPLIFIED DEPENDENCIES: Only depend on editMode to prevent cascading updates
+
+  // ===== CONTENT UPDATE HANDLERS =====
 
   /**
-   * Handle section content update
+   * PERFORMANCE OPTIMIZED: Handle section content update with debouncing
    * Updates section content and also updates preview in real-time
+   * Uses debouncing to prevent excessive updates during typing
+   *
+   * @param sectionId - ID of the section being updated
+   * @param newContent - New content for the section
    */
   const handleSectionUpdate = useCallback(
     (sectionId: string, newContent: string) => {
+      console.log(
+        `📝 Section update received: ${sectionId}`,
+        newContent.length
+      );
+      // Clear any existing timeout to implement debouncing
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+
+      // Prevent cascading updates
+      if (isUpdatingRef.current) {
+        return;
+      }
+
       setSections((prevSections) => {
         const updatedSections = prevSections.map((section) => {
           if (section.id === sectionId) {
+            // PERFORMANCE CHECK: Only update if content actually changed
+            if (section.content === newContent) {
+              return section; // Return same reference to prevent re-render
+            }
+
             // Process the new content to ensure section title classes
             let processedContent = newContent;
 
@@ -520,27 +622,38 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         setContentModified(true);
         setHasBeenModified(true);
 
-        // Update the preview content immediately for real-time preview
-        setTimeout(() => {
-          const combinedSections = updatedSections
-            .filter((section) => !section.isEmpty)
-            .map(
-              (section) =>
-                `<section id="${section.id}">${section.content}</section>`
-            )
-            .join("\n");
+        // PERFORMANCE OPTIMIZATION: Debounced update to prevent excessive processing
+        updateTimeoutRef.current = setTimeout(() => {
+          if (!isUpdatingRef.current) {
+            isUpdatingRef.current = true;
 
-          setPreviewContent(combinedSections);
+            const combinedSections = updatedSections
+              .filter((section) => !section.isEmpty)
+              .map(
+                (section) =>
+                  `<section id="${section.id}">${section.content}</section>`
+              )
+              .join("\n");
 
-          // Notify parent of changes (but don't save to database yet)
-          onTextChange(combinedSections);
-        }, 0);
+            setPreviewContent(combinedSections);
+
+            // Notify parent of changes (but don't save to database yet)
+            onTextChange(combinedSections);
+
+            // Reset the updating flag after a short delay
+            setTimeout(() => {
+              isUpdatingRef.current = false;
+            }, 100);
+          }
+        }, 300); // 300ms debounce delay for optimal performance
 
         return updatedSections;
       });
     },
     [onTextChange]
   );
+
+  // ===== SAVE FUNCTIONALITY =====
 
   /**
    * Handle save button click
@@ -572,11 +685,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         return;
       }
 
-      // Notify user that we're saving all changes
+      // Note: Loading toast commented out to reduce UI noise
       // toast.loading("Saving all changes...", {
       //   id: "save-changes-toast",
-      //   description:
-      //     "Saving resume content, applied keywords, and suggestions...",
+      //   description: "Saving resume content, applied keywords, and suggestions...",
       // });
 
       // Call parent save handler and await its result
@@ -584,11 +696,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
       // Handle success case
       if (saveResult) {
-        // Dismiss loading toast and show success
+        // Note: Success toast commented out to reduce UI noise
         // toast.success("All changes saved successfully", {
         //   id: "save-changes-toast",
-        //   description:
-        //     "Resume content, keywords, and suggestions have been updated.",
+        //   description: "Resume content, keywords, and suggestions have been updated.",
         // });
 
         // Update local state
@@ -652,6 +763,8 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     initializeAllSections,
   ]);
 
+  // ===== PREVIEW FUNCTIONALITY =====
+
   /**
    * Open preview in modal
    * Updated to use the ResumePreviewModal component instead of opening in a new window
@@ -660,8 +773,6 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     try {
       // Get the content to preview (different if in edit mode)
       const contentToUse = previewContent || optimizedText;
-
-      // console.log(contentToUse);
 
       // Open the modal instead of a new window
       setIsPreviewModalOpen(true);
@@ -673,16 +784,11 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
       console.error("Error opening preview:", error);
       toast.error("Failed to open preview");
     }
-  }, [
-    selectedTemplate,
-    combineAllSections,
-    editMode,
-    previewContent,
-    optimizedText,
-  ]);
+  }, [selectedTemplate, previewContent, optimizedText]);
 
   /**
    * Handle closing the preview modal
+   * Simple state update to hide the modal
    */
   const handleClosePreviewModal = useCallback(() => {
     setIsPreviewModalOpen(false);
@@ -690,6 +796,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
   /**
    * Toggle edit mode on/off
+   * Handles both controlled and uncontrolled mode scenarios
    */
   const toggleEditMode = useCallback(() => {
     if (isEditing !== undefined) {
@@ -703,12 +810,31 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
     }
   }, [isEditing, onEditModeChange]);
 
+  // ===== CLEANUP =====
+
+  /**
+   * Cleanup effect to clear timeouts on unmount
+   * Prevents memory leaks and unwanted updates after component unmount
+   */
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // ===== EARLY RETURNS =====
+
   /**
    * Show loading state during optimization
+   * Early return to prevent rendering the main UI during processing
    */
   if (isOptimizing) {
     return <LoadingState />;
   }
+
+  // ===== COMPUTED VALUES FOR RENDER =====
 
   /**
    * Content to use for preview - prefers preview content if available
@@ -722,19 +848,18 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
    */
   const shouldEnableSave = contentModified || scoreModified || templateModified;
 
-  /**
-   * Main render
-   */
+  // ===== MAIN RENDER =====
+
   return (
     <div className="bg-white border rounded-lg p-6">
-      {/* Header with actions */}
+      {/* Header with actions - contains edit/preview toggle, save, reset buttons */}
       <PreviewHeader
         editMode={editMode}
         toggleEditMode={toggleEditMode}
         openPreview={openPreview}
         handleSave={handleSave}
         isSaving={isSaving}
-        shouldEnableSave={shouldEnableSave} // Use combined state
+        shouldEnableSave={shouldEnableSave} // Use combined state for save button
         optimizedText={optimizedText}
         // Always pass onReset if it exists and we're not in edit mode
         onReset={!editMode && onReset ? handleReset : undefined}
@@ -757,10 +882,11 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         </div>
       )}
 
-      {/* Content Area */}
+      {/* Content Area - switches between edit and preview modes */}
       {editMode ? (
+        // ===== EDIT MODE CONTENT =====
         <div className="space-y-4">
-          {/* Sections Editor */}
+          {/* Sections Editor with Accordion UI */}
           <Accordion
             type="single"
             className="space-y-4"
@@ -780,15 +906,20 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
                   )}
                 </AccordionTrigger>
                 <AccordionContent className="p-4 pt-6">
+                  {/* PERFORMANCE CRITICAL: Conditional rendering with memoized editors */}
                   {section.id === "resume-header" ? (
-                    <ResumeHeaderEditor
+                    // Use memoized ResumeHeaderEditor for structured header editing
+                    <MemoizedResumeHeaderEditor
                       content={section.content}
                       onChange={(html) => handleSectionUpdate(section.id, html)}
                     />
                   ) : (
-                    <TipTapResumeEditor
+                    // Use memoized TipTapEditor for rich text sections
+                    <MemoizedTipTapEditor
                       content={section.content}
                       onChange={(html) => handleSectionUpdate(section.id, html)}
+                      appliedKeywords={appliedKeywords}
+                      suggestions={suggestions}
                     />
                   )}
                 </AccordionContent>
@@ -796,19 +927,19 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
             ))}
           </Accordion>
 
-          {/* Action Buttons */}
+          {/* Action Buttons for Edit Mode */}
           <div className="pt-4 flex justify-end gap-2">
-            {/* Cancel button */}
+            {/* Cancel button - exits edit mode without saving */}
             <Button variant="outline" size="sm" onClick={toggleEditMode}>
               <X className="h-4 w-4 mr-2" /> Cancel
             </Button>
 
-            {/* Save button - considers content and score modifications */}
+            {/* Save button - saves all changes including content, keywords, and suggestions */}
             <Button
               size="sm"
               onClick={handleSave}
               disabled={isSaving || !shouldEnableSave}
-              className="bg-brand-600 hover:bg-brand-700 "
+              className="bg-brand-600 hover:bg-brand-700"
             >
               {isSaving ? (
                 <>
@@ -823,7 +954,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
             </Button>
           </div>
 
-          {/* Atomic save notice */}
+          {/* Atomic save notice - informs user about what gets saved */}
           {shouldEnableSave && (
             <div className="mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-gray-200">
               Clicking "Save Changes" will save your resume content and all
@@ -832,6 +963,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
           )}
         </div>
       ) : (
+        // ===== PREVIEW MODE CONTENT =====
         <PreviewContent
           optimizedText={displayedContent}
           combinedSections={previewContent || optimizedText}
@@ -841,12 +973,12 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
         />
       )}
 
-      {/* Applied keywords list */}
+      {/* Applied keywords list - only shown in preview mode */}
       {!editMode && appliedKeywords.length > 0 && (
         <AppliedKeywordsList keywords={appliedKeywords} />
       )}
 
-      {/* Resume Preview Modal */}
+      {/* Resume Preview Modal - for full-screen template preview */}
       <ResumePreviewModal
         open={isPreviewModalOpen}
         onClose={handleClosePreviewModal}

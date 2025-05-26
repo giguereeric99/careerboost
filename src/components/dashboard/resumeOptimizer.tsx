@@ -577,37 +577,37 @@ const ResumeOptimizer: React.FC = () => {
    * @param index - Index of keyword in array
    * @returns Impact calculation object
    */
-  const simulateKeywordImpactAdapter = useCallback(
-    (index: number) => {
-      // Find the keyword to get its exact point impact
-      const keyword =
-        index >= 0 && index < mappedKeywords.length
-          ? mappedKeywords[index]
-          : null;
+  // const simulateKeywordImpactAdapter = useCallback(
+  //   (index: number) => {
+  //     // Find the keyword to get its exact point impact
+  //     const keyword =
+  //       index >= 0 && index < mappedKeywords.length
+  //         ? mappedKeywords[index]
+  //         : null;
 
-      // Use the exact point impact from the keyword if available, or fallback to default
-      const pointImpact = keyword?.pointImpact || 1;
+  //     // Use the exact point impact from the keyword if available, or fallback to default
+  //     const pointImpact = keyword?.pointImpact || 1;
 
-      // Use current score as base, fallback to original score or default
-      const currentScore = atsScore || originalAtsScore || 65;
+  //     // Use current score as base, fallback to original score or default
+  //     const currentScore = atsScore || originalAtsScore || 65;
 
-      // Calculate new score capped at 100
-      const newScore = Math.min(100, currentScore + pointImpact);
+  //     // Calculate new score capped at 100
+  //     const newScore = Math.min(100, currentScore + pointImpact);
 
-      // Log the calculation for debugging
-      console.log(
-        `📊 Simulating keyword impact: ${currentScore} + ${pointImpact} = ${newScore}`
-      );
+  //     // Log the calculation for debugging
+  //     console.log(
+  //       `📊 Simulating keyword impact: ${currentScore} + ${pointImpact} = ${newScore}`
+  //     );
 
-      // Return the expected object structure with accurate values
-      return {
-        newScore,
-        pointImpact,
-        description: `Adding this keyword will improve your resume's ATS compatibility by ${pointImpact} point.`,
-      };
-    },
-    [atsScore, originalAtsScore, mappedKeywords]
-  );
+  //     // Return the expected object structure with accurate values
+  //     return {
+  //       newScore,
+  //       pointImpact,
+  //       description: `Adding this keyword will improve your resume's ATS compatibility by ${pointImpact} point.`,
+  //     };
+  //   },
+  //   [atsScore, originalAtsScore, mappedKeywords]
+  // );
 
   /**
    * Enhanced adapter function for applying suggestions
@@ -706,37 +706,37 @@ const ResumeOptimizer: React.FC = () => {
    * @param index - Index of suggestion in array
    * @returns Impact calculation object
    */
-  const simulateSuggestionImpactAdapter = useCallback(
-    (index: number): SuggestionImpact => {
-      // Find the suggestion to get its exact point impact
-      const suggestion =
-        index >= 0 && index < mappedSuggestions.length
-          ? mappedSuggestions[index]
-          : null;
+  // const simulateSuggestionImpactAdapter = useCallback(
+  //   (index: number): SuggestionImpact => {
+  //     // Find the suggestion to get its exact point impact
+  //     const suggestion =
+  //       index >= 0 && index < mappedSuggestions.length
+  //         ? mappedSuggestions[index]
+  //         : null;
 
-      // Use the exact point impact from the suggestion if available, or fallback to default
-      const pointImpact = suggestion?.pointImpact || 2;
+  //     // Use the exact point impact from the suggestion if available, or fallback to default
+  //     const pointImpact = suggestion?.pointImpact || 2;
 
-      // Use current score as base, fallback to original score or default
-      const currentScore = atsScore || originalAtsScore || 65;
+  //     // Use current score as base, fallback to original score or default
+  //     const currentScore = atsScore || originalAtsScore || 65;
 
-      // Calculate new score capped at 100
-      const newScore = Math.min(100, currentScore + pointImpact);
+  //     // Calculate new score capped at 100
+  //     const newScore = Math.min(100, currentScore + pointImpact);
 
-      // Log the calculation for debugging
-      console.log(
-        `📊 Simulating suggestion impact: ${currentScore} + ${pointImpact} = ${newScore}`
-      );
+  //     // Log the calculation for debugging
+  //     console.log(
+  //       `📊 Simulating suggestion impact: ${currentScore} + ${pointImpact} = ${newScore}`
+  //     );
 
-      // Return the expected object structure with accurate values
-      return {
-        newScore,
-        pointImpact,
-        description: `This suggestion will improve your resume's ATS compatibility by ${pointImpact} points.`,
-      };
-    },
-    [atsScore, originalAtsScore, mappedSuggestions]
-  );
+  //     // Return the expected object structure with accurate values
+  //     return {
+  //       newScore,
+  //       pointImpact,
+  //       description: `This suggestion will improve your resume's ATS compatibility by ${pointImpact} points.`,
+  //     };
+  //   },
+  //   [atsScore, originalAtsScore, mappedSuggestions]
+  // );
 
   /**
    * Adapter for file upload to match expected signature
@@ -1062,7 +1062,6 @@ const ResumeOptimizer: React.FC = () => {
                     onApplySuggestion={handleApplySuggestionAdapter}
                     resumeContent={currentDisplayContent || optimizedText}
                     currentScore={atsScore || 0}
-                    simulateSuggestionImpact={simulateSuggestionImpactAdapter}
                     isEditing={isEditing} // Pass the editing state to control when suggestions can be applied
                   />
 
@@ -1072,7 +1071,6 @@ const ResumeOptimizer: React.FC = () => {
                     onKeywordApply={handleKeywordApplyAdapter}
                     showImpactDetails={true}
                     currentScore={atsScore || 0}
-                    simulateKeywordImpact={simulateKeywordImpactAdapter}
                     isEditing={isEditing} // Pass the editing state to control when keywords can be applied
                   />
 

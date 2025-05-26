@@ -49,25 +49,12 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
   resumeContent = "",
   showImpactScore = true,
   currentScore = 0,
-  simulateSuggestionImpact,
   isEditing = false, // Default to false if not provided
 }) => {
   // State for tracking suggestion impacts
   const [suggestionImpacts, setSuggestionImpacts] = useState<
     SuggestionImpact[]
   >([]);
-
-  // Calculate suggestion impacts on mount and when dependencies change
-  useEffect(() => {
-    if (!simulateSuggestionImpact || suggestions.length === 0) return;
-
-    // Pre-calculate impacts for all suggestions
-    const impacts = suggestions.map((_, index) =>
-      simulateSuggestionImpact(index)
-    );
-
-    setSuggestionImpacts(impacts);
-  }, [suggestions, simulateSuggestionImpact]);
 
   // Calculate cumulative impact of all applied suggestions
   const cumulativeImpact = useMemo<CumulativeImpact | null>(() => {
