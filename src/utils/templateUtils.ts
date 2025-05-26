@@ -426,9 +426,13 @@ export function extractHeaderInfo(headerContent: string): HeaderInfo {
     // Extract contact information - SIMPLIFIED VERSION
     const allText = headerDoc.body.textContent || "";
 
-    // Extract phone - VERY PERMISSIVE
+    // Extract phone - VERY PERMISSIVE - Fixed null check
     const phoneElement = headerDoc.querySelector(".phone");
-    if (phoneElement && hasValue(phoneElement.textContent)) {
+    if (
+      phoneElement &&
+      phoneElement.textContent &&
+      hasValue(phoneElement.textContent)
+    ) {
       result.phone = phoneElement.textContent.trim();
     } else {
       // Search for phone patterns in text - MORE PERMISSIVE
@@ -448,9 +452,13 @@ export function extractHeaderInfo(headerContent: string): HeaderInfo {
       }
     }
 
-    // Extract email - SIMPLE
+    // Extract email - SIMPLE - Fixed null check
     const emailElement = headerDoc.querySelector(".email");
-    if (emailElement && hasValue(emailElement.textContent)) {
+    if (
+      emailElement &&
+      emailElement.textContent &&
+      hasValue(emailElement.textContent)
+    ) {
       result.email = emailElement.textContent.trim();
     } else {
       const emailMatch = allText.match(/[\w.-]+@[\w.-]+\.\w+/);
@@ -459,9 +467,13 @@ export function extractHeaderInfo(headerContent: string): HeaderInfo {
       }
     }
 
-    // Extract LinkedIn - SIMPLE
+    // Extract LinkedIn - SIMPLE - Fixed null check
     const linkedinElement = headerDoc.querySelector(".linkedin, .social");
-    if (linkedinElement && hasValue(linkedinElement.textContent)) {
+    if (
+      linkedinElement &&
+      linkedinElement.textContent &&
+      hasValue(linkedinElement.textContent)
+    ) {
       result.linkedin = linkedinElement.textContent.trim();
       console.log("LinkedIn found:", result.linkedin);
     } else {
@@ -484,9 +496,13 @@ export function extractHeaderInfo(headerContent: string): HeaderInfo {
       }
     }
 
-    // Extract portfolio - SIMPLE
+    // Extract portfolio - SIMPLE - Fixed null check
     const portfolioElement = headerDoc.querySelector(".link, .portfolio");
-    if (portfolioElement && hasValue(portfolioElement.textContent)) {
+    if (
+      portfolioElement &&
+      portfolioElement.textContent &&
+      hasValue(portfolioElement.textContent)
+    ) {
       result.portfolio = portfolioElement.textContent.trim();
       console.log("Portfolio found:", result.portfolio);
     } else {
@@ -623,8 +639,8 @@ export function generateStandardizedHeader(headerInfo: HeaderInfo): string {
     headerHtml += "  </p>\n";
   }
 
-  // Add address in separate paragraph if it has value
-  if (hasValue(headerInfo.address)) {
+  // Add address in separate paragraph if it has value - Fixed null check
+  if (hasValue(headerInfo.address) && headerInfo.address !== null) {
     const formattedAddress = headerInfo.address.replace(/\n/g, "<br>");
     headerHtml += `  <p><span class="address">${formattedAddress}</span></p>\n`;
   }
@@ -651,28 +667,52 @@ export function createHeaderPlaceholderObject(
   // Always include name
   headerObj.name = headerInfo.name || "Full Name";
 
-  // Include other fields only if they have values - NO EXCESSIVE VALIDATION
-  if (hasValue(headerInfo.title)) {
+  // Include other fields only if they have values - NO EXCESSIVE VALIDATION - Fixed type issues
+  if (
+    hasValue(headerInfo.title) &&
+    headerInfo.title !== null &&
+    headerInfo.title !== undefined
+  ) {
     headerObj.title = headerInfo.title;
   }
 
-  if (hasValue(headerInfo.phone)) {
+  if (
+    hasValue(headerInfo.phone) &&
+    headerInfo.phone !== null &&
+    headerInfo.phone !== undefined
+  ) {
     headerObj.phone = headerInfo.phone;
   }
 
-  if (hasValue(headerInfo.email)) {
+  if (
+    hasValue(headerInfo.email) &&
+    headerInfo.email !== null &&
+    headerInfo.email !== undefined
+  ) {
     headerObj.email = headerInfo.email;
   }
 
-  if (hasValue(headerInfo.linkedin)) {
+  if (
+    hasValue(headerInfo.linkedin) &&
+    headerInfo.linkedin !== null &&
+    headerInfo.linkedin !== undefined
+  ) {
     headerObj.linkedin = headerInfo.linkedin;
   }
 
-  if (hasValue(headerInfo.portfolio)) {
+  if (
+    hasValue(headerInfo.portfolio) &&
+    headerInfo.portfolio !== null &&
+    headerInfo.portfolio !== undefined
+  ) {
     headerObj.portfolio = headerInfo.portfolio;
   }
 
-  if (hasValue(headerInfo.address)) {
+  if (
+    hasValue(headerInfo.address) &&
+    headerInfo.address !== null &&
+    headerInfo.address !== undefined
+  ) {
     headerObj.address = headerInfo.address.replace(/\n/g, "<br>");
   }
 
@@ -1012,6 +1052,8 @@ export function validateHeaderStructure(headerContent: string): {
 } {
   const issues: string[] = [];
   const recommendations: string[] = [];
+  let isValid = true;
+  let hasStandardizedStructure = true;
 
   try {
     const parser = new DOMParser();
@@ -1024,6 +1066,8 @@ export function validateHeaderStructure(headerContent: string): {
       recommendations.push(
         "Wrap header content in <section id='resume-header'>"
       );
+      isValid = false;
+      hasStandardizedStructure = false;
     }
 
     // Check for required h1 with proper classes
@@ -1033,6 +1077,8 @@ export function validateHeaderStructure(headerContent: string): {
       recommendations.push(
         "Add <h1 class='section-title name'> for the person's name"
       );
+      isValid = false;
+      hasStandardizedStructure = false;
     }
 
     // Check for contact information structure
@@ -1051,6 +1097,16 @@ export function validateHeaderStructure(headerContent: string): {
       if (spans.length > 0) {
         hasProperContactStructure = true;
       }
+
+      // Check for trailing separators (simple check)
+      if (
+        text.endsWith("|") ||
+        text.endsWith(":") ||
+        html.endsWith(" |") ||
+        html.endsWith(" :")
+      ) {
+        hasTrailingSeparators = true;
+      }
     });
 
     if (!hasProperContactStructure) {
@@ -1058,6 +1114,7 @@ export function validateHeaderStructure(headerContent: string): {
       recommendations.push(
         "Wrap contact info in spans with classes: phone, email, linkedin, portfolio"
       );
+      hasStandardizedStructure = false;
     }
 
     if (hasTrailingSeparators) {
@@ -1065,6 +1122,7 @@ export function validateHeaderStructure(headerContent: string): {
       recommendations.push(
         "Remove trailing separators and ensure proper separator placement"
       );
+      isValid = false;
     }
 
     // Check for address structure
@@ -1074,6 +1132,7 @@ export function validateHeaderStructure(headerContent: string): {
       if (!addressParagraph) {
         issues.push("Address span not properly wrapped in paragraph");
         recommendations.push("Place address span inside its own paragraph");
+        hasStandardizedStructure = false;
       }
     }
 

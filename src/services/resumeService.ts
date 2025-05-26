@@ -227,7 +227,8 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
     );
 
     if (rpcError) {
-      throw new Error(result?.error || "Failed to load resume");
+      console.error("RPC Error:", rpcError);
+      throw new Error(rpcError.message || "Failed to load resume");
     }
 
     // IMPORTANT: Check if data exists, but treat "null data" as a valid state (new user)
