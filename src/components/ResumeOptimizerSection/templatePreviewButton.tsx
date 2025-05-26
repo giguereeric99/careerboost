@@ -1,15 +1,15 @@
 /**
  * Template Preview Button Component
- * 
+ *
  * A button that opens a custom modal to preview the resume with applied template
  * Updated to use the custom modal implementation
  */
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Eye } from 'lucide-react';
-import CustomResumePreviewModal from './resumePreviewModal';
-import { ResumeTemplateType } from '@/types/resumeTemplateTypes';
-import { getTemplateById } from '@/constants/resumeTemplates';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Eye } from "lucide-react";
+import CustomResumePreviewModal from "./resumePreviewModal";
+import { ResumeTemplateType } from "@/types/resumeTemplateTypes";
+import { getTemplateById } from "@/constants/templates";
 
 interface TemplatePreviewButtonProps {
   resumeContent: string;
@@ -24,24 +24,24 @@ interface TemplatePreviewButtonProps {
 const TemplatePreviewButton: React.FC<TemplatePreviewButtonProps> = ({
   resumeContent,
   selectedTemplateId,
-  children
+  children,
 }) => {
   // State for modal visibility
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  
+
   // Get the selected template from the template ID
   const selectedTemplate = getTemplateById(selectedTemplateId);
-  
+
   // Open the preview modal
   const handleOpenPreview = () => {
     setIsPreviewOpen(true);
   };
-  
+
   // Close the preview modal
   const handleClosePreview = () => {
     setIsPreviewOpen(false);
   };
-  
+
   return (
     <>
       {/* Preview Button */}
@@ -54,7 +54,7 @@ const TemplatePreviewButton: React.FC<TemplatePreviewButtonProps> = ({
         <Eye className="h-4 w-4" />
         {children || "Preview"}
       </Button>
-      
+
       {/* Custom Preview Modal */}
       <CustomResumePreviewModal
         open={isPreviewOpen}

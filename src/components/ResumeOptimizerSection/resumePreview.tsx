@@ -52,7 +52,7 @@ import {
 import { ResumeTemplateType } from "@/types/resumeTemplateTypes";
 import { Suggestion, OptimizedResumeData } from "@/types/resumeTypes";
 import { createCompleteHtml } from "@/utils/templateUtils";
-import { getTemplateById } from "@/constants/resumeTemplates";
+import { getTemplateById } from "@/constants/templates";
 import { STANDARD_SECTIONS } from "@/constants/sections";
 import DOMPurify from "dompurify";
 import { toast } from "sonner";
@@ -876,7 +876,8 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
             <p className="font-medium">You have unsaved changes</p>
             <p className="text-xs mt-1">
               This includes content edits, applied keywords, and suggestions.
-              Click "Save Changes" to update your resume with all modifications.
+              Click "Save Changes" in edit mode to update your resume with all
+              modifications.
             </p>
           </div>
         </div>
@@ -931,7 +932,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
           <div className="pt-4 flex justify-end gap-2">
             {/* Cancel button - exits edit mode without saving */}
             <Button variant="outline" size="sm" onClick={toggleEditMode}>
-              <X className="h-4 w-4 mr-2" /> Cancel
+              <X className="h-4 w-4 mr-2" /> Back to Preview
             </Button>
 
             {/* Save button - saves all changes including content, keywords, and suggestions */}

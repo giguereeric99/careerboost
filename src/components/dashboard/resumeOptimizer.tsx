@@ -31,7 +31,7 @@ import TemplateGallery from "@/components/ResumeOptimizerSection/templateGallery
 import ResetConfirmationDialog from "@/components/Dialogs/resetConfirmationDialog";
 import LoadingState from "@/components/ResumeOptimizerSection/loadingState";
 import EmptyPreviewState from "@/components/ResumeOptimizerSection/emptyPreviewState";
-import { resumeTemplates } from "@/constants/resumeTemplates";
+import { resumeTemplates } from "@/constants/templates";
 
 // Import custom hooks for state management
 import useResumeOptimizer from "@/hooks/optimizer/useResumeOptimizer";
