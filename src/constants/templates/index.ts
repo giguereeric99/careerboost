@@ -16,6 +16,7 @@ export {
 // Individual templates (for direct access if needed)
 export { basicTemplate } from "./basic/basicTemplate";
 export { professionalTemplate } from "./professional/professionalTemplate";
+export { creativeTemplate } from "./creative/creativeTemplate";
 
 // Utility functions
 export * from "./utils/templateHelpers";

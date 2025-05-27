@@ -2,6 +2,7 @@
  * Professional Template Definition - VERSION WITH CONDITIONAL HEADER
  * Modern, sophisticated resume template with 2-column layout and corporate styling
  * FIXED: Conditional display of header elements - only show if content exists
+ * FIXED: TypeScript errors for section indexing
  */
 import {
   ResumeTemplateType,
@@ -90,11 +91,41 @@ const professionalTemplateHTML = `
 `;
 
 /**
- * Section configuration for professional template
- * Defines icons for each section (titles will come from existing content)
+ * Type definition for section configuration
+ * Defines the structure of each section configuration with icon and location
  */
-const professionalSections = {
-  // Main content sections
+type SectionConfig = {
+  icon: string;
+  location: "main" | "sidebar";
+};
+
+/**
+ * Type definition for professional sections mapping
+ * Maps section IDs to their configuration to ensure type safety
+ */
+type ProfessionalSectionsType = {
+  "resume-summary": SectionConfig;
+  "resume-experience": SectionConfig;
+  "resume-projects": SectionConfig;
+  "resume-education": SectionConfig;
+  "resume-awards": SectionConfig;
+  "resume-publications": SectionConfig;
+  "resume-volunteering": SectionConfig;
+  "resume-references": SectionConfig;
+  "resume-additional": SectionConfig;
+  "resume-skills": SectionConfig;
+  "resume-languages": SectionConfig;
+  "resume-certifications": SectionConfig;
+  "resume-interests": SectionConfig;
+};
+
+/**
+ * Section configuration for professional template
+ * Defines icons and layout location for each resume section
+ * FIXED: Now properly typed to avoid TypeScript indexing errors
+ */
+const professionalSections: ProfessionalSectionsType = {
+  // Main content sections - displayed in the main column
   "resume-summary": {
     icon: "person-fill",
     location: "main",
@@ -132,7 +163,7 @@ const professionalSections = {
     location: "main",
   },
 
-  // Sidebar sections
+  // Sidebar sections - displayed in the sidebar column
   "resume-skills": {
     icon: "gear-fill",
     location: "sidebar",
@@ -153,9 +184,10 @@ const professionalSections = {
 
 /**
  * ENHANCED: Build conditional header HTML
- * Only includes elements that have actual content
+ * Only includes elements that have actual content to avoid empty spans
+ * This ensures clean contact information display without trailing separators
  *
- * @param headerInfo - Extracted header information
+ * @param headerInfo - Extracted header information from resume content
  * @returns Complete header HTML with only available elements
  */
 function buildConditionalHeader(headerInfo: any): string {
@@ -163,52 +195,58 @@ function buildConditionalHeader(headerInfo: any): string {
 
   let headerHTML = "";
 
-  // Always include name (required)
+  // Always include name (required field for any resume)
   headerHTML += `    <h1 class="section-title name professional-name">${
     headerInfo.name || "Full Name"
   }</h1>\n`;
 
-  // Conditionally include title
+  // Conditionally include professional title if available
   if (headerInfo.title && headerInfo.title.trim()) {
     headerHTML += `    <p class="title professional-title">${headerInfo.title}</p>\n`;
   }
 
   // Build contacts array for elements that exist
+  // This prevents empty spans that could cause display issues
   const contactElements: string[] = [];
 
+  // Add phone number if provided
   if (headerInfo.phone && headerInfo.phone.trim()) {
     contactElements.push(
       `<span class="phone professional-contact">${headerInfo.phone}</span>`
     );
   }
 
+  // Add email if provided
   if (headerInfo.email && headerInfo.email.trim()) {
     contactElements.push(
       `<span class="email professional-contact">${headerInfo.email}</span>`
     );
   }
 
+  // Add LinkedIn profile if provided
   if (headerInfo.linkedin && headerInfo.linkedin.trim()) {
     contactElements.push(
       `<span class="linkedin professional-contact">${headerInfo.linkedin}</span>`
     );
   }
 
+  // Add portfolio website if provided
   if (headerInfo.portfolio && headerInfo.portfolio.trim()) {
     contactElements.push(
       `<span class="portfolio professional-contact">${headerInfo.portfolio}</span>`
     );
   }
 
-  // Only add contacts section if we have at least one contact
+  // Only add contacts section if we have at least one contact method
   if (contactElements.length > 0) {
     headerHTML += `    <div class="professional-contacts">\n`;
     headerHTML += `      ${contactElements.join("\n      ")}\n`;
     headerHTML += `    </div>\n`;
   }
 
-  // Conditionally include address
+  // Conditionally include address if provided
   if (headerInfo.address && headerInfo.address.trim()) {
+    // Convert line breaks to HTML breaks for proper display
     const formattedAddress = headerInfo.address.replace(/\n/g, "<br>");
     headerHTML += `    <div class="professional-address">${formattedAddress}</div>\n`;
   }
@@ -225,8 +263,9 @@ function buildConditionalHeader(headerInfo: any): string {
 /**
  * Enhanced content processor that preserves existing titles and languages
  * Only adds icons to existing section titles, doesn't replace the title text
+ * This ensures multilingual support and custom section naming
  *
- * @param content - Original section content
+ * @param content - Original section content from resume data
  * @param sectionId - ID of the section being processed
  * @param config - Section configuration (icon, location)
  * @returns Enhanced HTML content with professional styling and icons
@@ -234,22 +273,24 @@ function buildConditionalHeader(headerInfo: any): string {
 function enhanceProfessionalContent(
   content: string,
   sectionId: string,
-  config: { icon: string; location: string }
+  config: SectionConfig
 ): string {
+  // Return empty string if no content provided
   if (!content || !content.trim()) return "";
 
   try {
+    // Parse HTML content safely using DOMParser
     const parser = new DOMParser();
     const doc = parser.parseFromString(content, "text/html");
 
-    // Find existing h2 title
+    // Find existing h2 title element in the content
     let titleElement = doc.querySelector("h2");
 
     if (titleElement) {
       // Keep the existing title text and language, just add icon
       const existingTitle = titleElement.textContent?.trim() || "";
 
-      // Add icon while preserving the original title text and language
+      // Add Bootstrap icon while preserving the original title text and language
       titleElement.innerHTML = `<img class="professional-icon" src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/${config.icon}.svg" alt="${existingTitle}"> ${existingTitle}`;
 
       // Update classes for professional styling
@@ -264,9 +305,9 @@ function enhanceProfessionalContent(
       );
     }
 
-    // Apply location-specific enhancements
+    // Apply location-specific enhancements based on sidebar or main content
     if (config.location === "sidebar") {
-      // Sidebar-specific enhancements
+      // Sidebar-specific enhancements for compact display
       const lists = doc.querySelectorAll("ul");
       lists.forEach((list) => {
         if (!list.className.includes("professional-sidebar-list")) {
@@ -281,7 +322,7 @@ function enhanceProfessionalContent(
         }
       });
     } else if (config.location === "main") {
-      // Main content enhancements
+      // Main content enhancements for detailed display
       const paragraphs = doc.querySelectorAll("p");
       paragraphs.forEach((p) => {
         if (!p.className.includes("professional-content")) {
@@ -289,7 +330,7 @@ function enhanceProfessionalContent(
         }
       });
 
-      // Special handling for experience section
+      // Special handling for experience section with job entries
       if (sectionId === "resume-experience") {
         const jobDivs = doc.querySelectorAll("div");
         jobDivs.forEach((div) => {
@@ -299,7 +340,7 @@ function enhanceProfessionalContent(
         });
       }
 
-      // Special handling for education section
+      // Special handling for education section with school entries
       if (sectionId === "resume-education") {
         const eduDivs = doc.querySelectorAll("div");
         eduDivs.forEach((div) => {
@@ -309,7 +350,7 @@ function enhanceProfessionalContent(
         });
       }
 
-      // Special handling for projects section
+      // Special handling for projects section with project entries
       if (sectionId === "resume-projects") {
         const projectDivs = doc.querySelectorAll("div");
         projectDivs.forEach((div) => {
@@ -320,20 +361,37 @@ function enhanceProfessionalContent(
       }
     }
 
+    // Return processed HTML content
     return doc.body.innerHTML;
   } catch (error) {
     console.error(
       `Error enhancing professional content for ${sectionId}:`,
       error
     );
-    // Fallback: return original content without modifications
+    // Fallback: return original content without modifications if parsing fails
     return content;
   }
 }
 
 /**
+ * Type guard to check if a section ID is valid for professional sections
+ * Helps TypeScript understand that the key exists in our sections configuration
+ * Also ensures the sectionId is a string type
+ *
+ * @param sectionId - Section ID to check (can be string or number from Object.entries)
+ * @returns True if the section ID is valid for professional sections
+ */
+function isValidProfessionalSection(
+  sectionId: string | number
+): sectionId is keyof ProfessionalSectionsType {
+  return typeof sectionId === "string" && sectionId in professionalSections;
+}
+
+/**
  * ENHANCED: Apply professional template to content sections
  * Now builds header conditionally based on available content
+ * FIXED: TypeScript errors for section indexing with proper type guards
+ * This is the main function that processes resume data and applies the professional template
  *
  * @param sections - Object containing content for each section by ID
  * @returns Formatted HTML content with professional template applied
@@ -350,9 +408,10 @@ function applyProfessionalTemplate(sections: TemplateContentSections): string {
   if (sections["resume-header"]) {
     console.log("Processing professional header with conditional display");
 
+    // Extract structured header information from raw content
     const headerInfo = extractHeaderInfo(sections["resume-header"]);
 
-    // Build conditional header HTML
+    // Build conditional header HTML with only available elements
     const conditionalHeaderHTML = buildConditionalHeader(headerInfo);
 
     // Replace the header placeholder with our conditional content
@@ -360,7 +419,7 @@ function applyProfessionalTemplate(sections: TemplateContentSections): string {
       "    <!-- Content will be inserted here based on available data -->";
     result = result.replace(headerPlaceholder, conditionalHeaderHTML);
   } else {
-    // Default professional header with basic info
+    // Default professional header with basic info if no header section provided
     console.log("No header section found, using minimal default header");
 
     const defaultHeaderHTML = buildConditionalHeader({
@@ -379,22 +438,38 @@ function applyProfessionalTemplate(sections: TemplateContentSections): string {
   }
 
   // Process all other sections while preserving existing titles
+  // FIXED: Using type guard to ensure TypeScript safety
   Object.entries(sections).forEach(([sectionId, content]) => {
-    if (sectionId !== "resume-header" && professionalSections[sectionId]) {
+    // Skip header section (already processed) and only process valid professional sections
+    if (
+      sectionId !== "resume-header" &&
+      isValidProfessionalSection(sectionId)
+    ) {
       const sectionConfig = professionalSections[sectionId];
+
+      // Additional safety check to ensure sectionConfig exists
+      // This should never happen due to type guard, but provides extra safety
+      if (!sectionConfig) {
+        console.warn(`No configuration found for section: ${sectionId}`);
+        return;
+      }
+
       const placeholder = `{{${sectionId}}}`;
 
+      // Only process if the placeholder exists in the template
       if (result.includes(placeholder)) {
         console.log(
           `Professional: Processing ${sectionId} for ${sectionConfig.location} - preserving existing title`
         );
 
+        // Enhance content with professional styling and icons
         const enhancedContent = enhanceProfessionalContent(
           content,
           sectionId,
           sectionConfig
         );
 
+        // Replace placeholder with enhanced content using regex for safety
         result = result.replace(
           new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
           enhancedContent || ""
@@ -403,12 +478,13 @@ function applyProfessionalTemplate(sections: TemplateContentSections): string {
     }
   });
 
-  // Clean up any remaining placeholders
+  // Clean up any remaining placeholders that weren't filled
   const remainingPlaceholders = result.match(/\{\{[^}]+\}\}/g);
   if (remainingPlaceholders) {
     console.log(
       `Professional: Cleaning ${remainingPlaceholders.length} remaining placeholders`
     );
+    // Remove each remaining placeholder to avoid display issues
     remainingPlaceholders.forEach((placeholder) => {
       result = result.replace(
         new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
@@ -426,15 +502,16 @@ function applyProfessionalTemplate(sections: TemplateContentSections): string {
 /**
  * Professional template configuration object
  * Exported for use in the template registry
+ * This object defines all properties needed for the CareerBoost template system
  */
 export const professionalTemplate: ResumeTemplateType = {
-  id: "professional",
-  name: "Professional",
-  isPro: true,
-  previewClass: "border-t-4 border-teal-600",
+  id: "professional", // Unique identifier for this template
+  name: "Professional", // Display name shown to users
+  isPro: true, // Requires Pro subscription for CareerBoost
+  previewClass: "border-t-4 border-teal-600", // Tailwind classes for preview styling
   description:
-    "Modern 2-column layout with sophisticated styling for corporate positions",
-  styles: professionalStyles,
-  template: professionalTemplateHTML,
-  applyTemplate: applyProfessionalTemplate,
+    "Modern 2-column layout with sophisticated styling for corporate positions", // User-facing description
+  styles: professionalStyles, // CSS styles for this template
+  template: professionalTemplateHTML, // HTML structure template
+  applyTemplate: applyProfessionalTemplate, // Function to apply content to template
 };

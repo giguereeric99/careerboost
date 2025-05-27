@@ -37,13 +37,23 @@ import {
  * Props interface for KeywordsList component
  */
 interface KeywordsListProps {
-  keywords: Keyword[]; // Available keywords
-  onKeywordApply: (index: number) => void; // Handler for applying keywords
-  resumeContent?: string; // Current resume content
-  showImpactDetails?: boolean; // Whether to show detailed impact info
+  keywords: Keyword[]; // Available keywords from AI optimization
+  onKeywordApply: (index: number) => void; // Handler for applying keywords locally
+  resumeContent?: string; // Current resume content for analysis
+  showImpactDetails?: boolean; // Whether to show detailed impact information
   needsRegeneration?: boolean; // Whether changes need regeneration
-  currentScore?: number; // Current ATS score
+  currentScore?: number; // Current ATS score for impact calculation
   isEditing?: boolean; // Whether the resume is in edit mode
+  // FIXED: Added missing simulateKeywordImpact function
+  simulateKeywordImpact?: (
+    keywordText: string,
+    resumeContent: string,
+    currentScore: number
+  ) => {
+    newScore: number;
+    pointImpact: number;
+    description: string;
+  };
 }
 
 /**
@@ -58,7 +68,6 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
   needsRegeneration = false,
   currentScore = 0,
   isEditing = false,
-  simulateKeywordImpact,
 }) => {
   // Define impact data structure for type safety
   interface ImpactData {
