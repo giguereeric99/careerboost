@@ -1015,13 +1015,9 @@ const ResumeOptimizer: React.FC = () => {
                     // ===== CENTRALIZED EDIT MODE MANAGEMENT =====
                     isEditing={isEditing}
                     onEditModeChange={handleEditModeChange}
-                    // ===== TEMPORARY CONTENT FROM HOOK =====
-                    // Note: Removed tempEditedContent and tempSections as they're not in the interface
-                    onSectionEdit={handleSectionEdit}
                     // ===== MODIFICATION FLAGS =====
                     scoreModified={scoreModified}
                     templateModified={templateModified}
-                    contentModified={contentModified}
                     // ===== MULTILINGUAL SECTION TITLES SUPPORT =====
                     sectionTitles={sectionTitles} // AI-generated section titles in correct language
                     resumeLanguage={

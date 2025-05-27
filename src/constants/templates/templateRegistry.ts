@@ -10,7 +10,7 @@ import { professionalTemplate } from "./professional/professionalTemplate";
 
 // TODO: Import other templates when created
 import { creativeTemplate } from "./creative/creativeTemplate";
-// import { executiveTemplate } from "./executive/executiveTemplate";
+import { executiveTemplate } from "./executive/executiveTemplate";
 // import { technicalTemplate } from "./technical/technicalTemplate";
 // import { compactTemplate } from "./compact/compactTemplate";
 
@@ -28,7 +28,7 @@ export const resumeTemplates: ResumeTemplateType[] = [
 
   // TODO: Add other templates as they are created
   creativeTemplate,
-  // executiveTemplate,
+  executiveTemplate,
   // technicalTemplate,
   // compactTemplate,
 ];
