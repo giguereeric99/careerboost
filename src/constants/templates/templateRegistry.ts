@@ -12,7 +12,7 @@ import { professionalTemplate } from "./professional/professionalTemplate";
 import { creativeTemplate } from "./creative/creativeTemplate";
 import { executiveTemplate } from "./executive/executiveTemplate";
 import { technicalTemplate } from "./technical/technicalTemplate";
-// import { compactTemplate } from "./compact/compactTemplate";
+import { compactTemplate } from "./compact/compactTemplate";
 
 /**
  * All available resume templates
@@ -30,7 +30,7 @@ export const resumeTemplates: ResumeTemplateType[] = [
 	creativeTemplate,
 	executiveTemplate,
 	technicalTemplate,
-	// compactTemplate,
+	compactTemplate,
 ];
 
 /**

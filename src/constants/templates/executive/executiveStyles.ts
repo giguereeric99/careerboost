@@ -405,6 +405,30 @@ export const executiveStyles = `
     margin: 0;
   }
 
+  /* === FIX FOR ORDERED LISTS ALIGNMENT === */
+  
+  /* Fix ordered lists that extend too far left */
+  ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  ol li:before {
+    content: unset !important;
+  }
+
+  .creative-section-content ol,
+  .creative-main ol,
+  .creative-sidebar ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  ol li {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+
   .executive-sidebar li {
     padding: 10px 0;
     font-size: 14px;

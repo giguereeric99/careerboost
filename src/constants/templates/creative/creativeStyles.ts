@@ -272,6 +272,30 @@ export const creativeStyles = `
     position: relative;
   }
 
+  /* === FIX FOR ORDERED LISTS ALIGNMENT === */
+  
+  /* Fix ordered lists that extend too far left */
+  ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  .creative-section-content ol,
+  .creative-main ol,
+  .creative-sidebar ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  ol li {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  ol li::before {
+    content: unset !important; /* Remove default numbering */
+  }
+
   /* Sidebar top accent line for visual separation */
   .creative-sidebar::before {
     content: '';
@@ -534,6 +558,14 @@ export const creativeStyles = `
     transition: all 0.3s ease;
     word-wrap: break-word;
     word-break: break-word;
+  }
+
+  /* Remove any other block-level elements margins inside list items */
+  .creative-sidebar-item > *,
+  .creative-main .creative-main-section li > *,
+  .creative-section-content li > * {
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .creative-sidebar-item:hover {

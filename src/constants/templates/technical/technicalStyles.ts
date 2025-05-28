@@ -167,6 +167,30 @@ export const technicalStyles = `
     position: relative;
   }
 
+  /* === FIX FOR ORDERED LISTS ALIGNMENT === */
+  
+  /* Fix ordered lists that extend too far left */
+  ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  .creative-section-content ol,
+  .creative-main ol,
+  .creative-sidebar ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  ol li {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  ol li:before {
+    content: unset !important;
+  }
+
   /* Sidebar accent line with vibrant tech colors */
   .technical-sidebar::before {
     content: '';

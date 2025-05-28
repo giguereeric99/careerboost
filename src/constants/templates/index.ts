@@ -19,6 +19,7 @@ export { professionalTemplate } from "./professional/professionalTemplate";
 export { creativeTemplate } from "./creative/creativeTemplate";
 export { executiveTemplate } from "./executive/executiveTemplate";
 export { technicalTemplate } from "./technical/technicalTemplate";
+export { compactTemplate } from "./compact/compactTemplate";
 
 // Utility functions
 export * from "./utils/templateHelpers";

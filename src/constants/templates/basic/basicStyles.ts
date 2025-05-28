@@ -140,6 +140,28 @@ export const basicStyles = `
   #resume-experience strong {
     display: inline-block;
   }
+
+  /* === FIX FOR ORDERED LISTS ALIGNMENT === */
+  
+  /* Fix ordered lists that extend too far left */
+  ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  .section ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  ol li {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  ol li:before {
+    content: unset !important;
+  }
   
   /* For print output */
   @media print {

@@ -226,6 +226,29 @@ export const professionalStyles = `
     line-height: 1.2;
   }
 
+  /* === FIX FOR ORDERED LISTS ALIGNMENT === */
+  
+  /* Fix ordered lists that extend too far left */
+  ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  .professional-main ol,
+  .professional-sidebar ol {
+    padding-left: 20px !important;
+    margin-left: 0 !important;
+  }
+
+  ol li {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  ol li:before {
+    content: unset !important;
+  }
+
   .professional-main h2 .professional-icon {
     width: 20px;
     height: 20px;

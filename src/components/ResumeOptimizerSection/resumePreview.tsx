@@ -29,31 +29,31 @@
  */
 
 import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
+	useState,
+	useEffect,
+	useCallback,
+	useMemo,
+	useRef,
 } from "react";
 import { Button } from "@/components/ui/button";
 import {
-  Download,
-  Save,
-  Eye,
-  Edit,
-  ChevronLeft,
-  Check,
-  FileText,
-  RotateCcw,
-  AlertCircle,
-  AlertTriangle,
-  X,
+	Download,
+	Save,
+	Eye,
+	Edit,
+	ChevronLeft,
+	Check,
+	FileText,
+	RotateCcw,
+	AlertCircle,
+	AlertTriangle,
+	X,
 } from "lucide-react";
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
+	Accordion,
+	AccordionContent,
+	AccordionItem,
+	AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ResumeTemplateType } from "@/types/resumeTemplateTypes";
 import { Suggestion, OptimizedResumeData } from "@/types/resumeTypes";
@@ -75,23 +75,24 @@ import ResumePreviewModal from "./resumePreviewModal";
 
 // Import helper components
 import {
-  PreviewHeader,
-  PreviewContent,
-  LoadingState,
-  NoContentWarning,
-  AppliedKeywordsList,
+	PreviewHeader,
+	PreviewFooter,
+	PreviewContent,
+	LoadingState,
+	NoContentWarning,
+	AppliedKeywordsList,
 } from "./resumePreviewComponents";
 
 // Import utilities
 import {
-  normalizeHtmlContent,
-  parseHtmlIntoSections,
-  getSectionName,
-  SECTION_NAMES,
-  SECTION_ORDER,
-  isSectionEmpty,
-  ensureSectionTitleClasses,
-  getSectionNameEnglish,
+	normalizeHtmlContent,
+	parseHtmlIntoSections,
+	getSectionName,
+	SECTION_NAMES,
+	SECTION_ORDER,
+	isSectionEmpty,
+	ensureSectionTitleClasses,
+	getSectionNameEnglish,
 } from "@/utils/resumeUtils";
 
 /**
@@ -100,14 +101,14 @@ import {
  * This is critical for maintaining focus during typing
  */
 const MemoizedTipTapEditor = React.memo(
-  TipTapResumeEditor,
-  (prevProps, nextProps) => {
-    return (
-      prevProps.content === nextProps.content &&
-      prevProps.appliedKeywords?.length === nextProps.appliedKeywords?.length &&
-      prevProps.suggestions?.length === nextProps.suggestions?.length
-    );
-  }
+	TipTapResumeEditor,
+	(prevProps, nextProps) => {
+		return (
+			prevProps.content === nextProps.content &&
+			prevProps.appliedKeywords?.length === nextProps.appliedKeywords?.length &&
+			prevProps.suggestions?.length === nextProps.suggestions?.length
+		);
+	}
 );
 
 /**
@@ -116,10 +117,10 @@ const MemoizedTipTapEditor = React.memo(
  * Essential for maintaining cursor position and input focus
  */
 const MemoizedResumeHeaderEditor = React.memo(
-  ResumeHeaderEditor,
-  (prevProps, nextProps) => {
-    return prevProps.content === nextProps.content;
-  }
+	ResumeHeaderEditor,
+	(prevProps, nextProps) => {
+		return prevProps.content === nextProps.content;
+	}
 );
 
 /**
@@ -128,30 +129,30 @@ const MemoizedResumeHeaderEditor = React.memo(
  * ENHANCED: Added section titles and language props for multilingual support
  */
 interface ResumePreviewProps {
-  optimizedText: string; // Resume content to display
-  originalOptimizedText?: string; // Original content for reset functionality
-  selectedTemplate: string; // ID of the selected template for styling
-  templates: ResumeTemplateType[]; // Available templates for preview and styling
-  appliedKeywords: string[]; // Keywords applied to the resume for enhancement
-  suggestions: Suggestion[]; // Suggestions for improvement from AI analysis
-  onDownload: () => void; // Handler for download button functionality
-  onSave: (content: string) => Promise<boolean> | boolean; // Handler for save button with content
-  onTextChange: (text: string) => void; // Handler for text changes notification
-  isOptimizing: boolean; // Whether optimization is in progress (shows loading state)
-  isApplyingChanges?: boolean; // Whether changes are being applied (optional)
-  language?: string; // Language of the resume content (default: English)
-  onEditModeChange?: (isEditing: boolean) => void; // Optional callback for edit mode changes
-  onReset?: () => void; // Optional callback for reset button functionality
-  onRegenerateContent?: () => void; // Optional callback for regenerating content with applied changes
-  needsRegeneration?: boolean; // Whether the content needs regeneration after applying changes
-  isEditing?: boolean; // Whether the resume is in edit mode (controlled by parent)
-  scoreModified?: boolean; // Whether the score has been modified due to applied suggestions/keywords
-  templateModified?: boolean; // Whether the template has been modified
-  resumeData?: OptimizedResumeData; // Full resume data object for additional context
+	optimizedText: string; // Resume content to display
+	originalOptimizedText?: string; // Original content for reset functionality
+	selectedTemplate: string; // ID of the selected template for styling
+	templates: ResumeTemplateType[]; // Available templates for preview and styling
+	appliedKeywords: string[]; // Keywords applied to the resume for enhancement
+	suggestions: Suggestion[]; // Suggestions for improvement from AI analysis
+	onDownload: () => void; // Handler for download button functionality
+	onSave: (content: string) => Promise<boolean> | boolean; // Handler for save button with content
+	onTextChange: (text: string) => void; // Handler for text changes notification
+	isOptimizing: boolean; // Whether optimization is in progress (shows loading state)
+	isApplyingChanges?: boolean; // Whether changes are being applied (optional)
+	language?: string; // Language of the resume content (default: English)
+	onEditModeChange?: (isEditing: boolean) => void; // Optional callback for edit mode changes
+	onReset?: () => void; // Optional callback for reset button functionality
+	onRegenerateContent?: () => void; // Optional callback for regenerating content with applied changes
+	needsRegeneration?: boolean; // Whether the content needs regeneration after applying changes
+	isEditing?: boolean; // Whether the resume is in edit mode (controlled by parent)
+	scoreModified?: boolean; // Whether the score has been modified due to applied suggestions/keywords
+	templateModified?: boolean; // Whether the template has been modified
+	resumeData?: OptimizedResumeData; // Full resume data object for additional context
 
-  // ENHANCEMENT: Multilingual section titles support
-  sectionTitles?: Record<string, string>; // Section titles generated by AI in correct language
-  resumeLanguage?: string; // Language of the resume for proper section title handling
+	// ENHANCEMENT: Multilingual section titles support
+	sectionTitles?: Record<string, string>; // Section titles generated by AI in correct language
+	resumeLanguage?: string; // Language of the resume for proper section title handling
 }
 
 /**
@@ -160,879 +161,864 @@ interface ResumePreviewProps {
  * Main component for displaying and editing resume content with enhanced performance and language support
  */
 const ResumePreview: React.FC<ResumePreviewProps> = ({
-  optimizedText,
-  originalOptimizedText,
-  selectedTemplate,
-  templates,
-  appliedKeywords,
-  suggestions,
-  onDownload,
-  onSave,
-  onTextChange,
-  isOptimizing,
-  isApplyingChanges = false,
-  language = "English",
-  onEditModeChange,
-  onReset,
-  onRegenerateContent,
-  needsRegeneration = false,
-  isEditing, // Whether the resume is in edit mode (controlled by parent)
-  scoreModified = false, // Whether score has been modified (default: false)
-  templateModified = false, // Whether the template has been modified (default: false)
-  resumeData,
+	optimizedText,
+	originalOptimizedText,
+	selectedTemplate,
+	templates,
+	appliedKeywords,
+	suggestions,
+	onDownload,
+	onSave,
+	onTextChange,
+	isOptimizing,
+	isApplyingChanges = false,
+	language = "English",
+	onEditModeChange,
+	onReset,
+	onRegenerateContent,
+	needsRegeneration = false,
+	isEditing, // Whether the resume is in edit mode (controlled by parent)
+	scoreModified = false, // Whether score has been modified (default: false)
+	templateModified = false, // Whether the template has been modified (default: false)
+	resumeData,
 
-  // ENHANCEMENT: Multilingual section titles support
-  sectionTitles = {}, // Default to empty object if not provided
-  resumeLanguage = "English", // Default to English if not specified
+	// ENHANCEMENT: Multilingual section titles support
+	sectionTitles = {}, // Default to empty object if not provided
+	resumeLanguage = "English", // Default to English if not specified
 }) => {
-  // ===== LOCAL STATE MANAGEMENT =====
-
-  // Local state for UI controls when not controlled by parent
-  const [localEditMode, setLocalEditMode] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [contentModified, setContentModified] = useState(false);
-  const [hasLoadedInitialContent, setHasLoadedInitialContent] = useState(false);
-  const [previewContent, setPreviewContent] = useState<string>(""); // State for real-time preview
-
-  // Track if content has ever been modified for user feedback
-  const [hasBeenModified, setHasBeenModified] = useState(false);
-
-  // State for controlling the preview modal visibility
-  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
-
-  // ===== PERFORMANCE OPTIMIZATION: Refs for debouncing =====
-
-  // Ref to store timeout for debounced updates
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Ref to track if we're currently processing an update to prevent cascading
-  const isUpdatingRef = useRef(false);
-
-  // ===== COMPUTED VALUES =====
-
-  // Determine the current edit mode - if isEditing is provided by parent, use it
-  // Otherwise use our local state for uncontrolled mode
-  const editMode = isEditing !== undefined ? isEditing : localEditMode;
-
-  // Get selected template from the available templates array
-  const template = useMemo(
-    () => templates.find((t) => t.id === selectedTemplate) || templates[0],
-    [selectedTemplate, templates]
-  );
-
-  // ENHANCEMENT: Determine the effective language for section titles
-  // Priority: resumeLanguage > language prop > "English"
-  const effectiveLanguage = useMemo(() => {
-    return resumeLanguage || language || "English";
-  }, [resumeLanguage, language]);
-
-  // ===== UTILITY FUNCTIONS =====
-
-  /**
-   * Sanitize HTML content to prevent XSS attacks
-   * Uses DOMPurify when available, falls back to basic sanitization
-   *
-   * @param html - HTML content to sanitize
-   * @returns Sanitized HTML content safe for rendering
-   */
-  const sanitizeHtml = useCallback((html: string): string => {
-    if (typeof DOMPurify === "undefined") {
-      // Basic sanitization if DOMPurify is not available (fallback)
-      return html
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-        .replace(/\son\w+\s*=\s*["']?[^"']*["']?/gi, "");
-    }
-
-    // Use DOMPurify for comprehensive sanitization with specific configuration
-    return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: [
-        "a",
-        "b",
-        "br",
-        "div",
-        "em",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "i",
-        "li",
-        "ol",
-        "p",
-        "section",
-        "span",
-        "strong",
-        "u",
-        "ul",
-      ],
-      ALLOWED_ATTR: [
-        "href",
-        "target",
-        "rel",
-        "id",
-        "class",
-        "style",
-        "data-section-id",
-        "data-section",
-      ],
-      ALLOW_ARIA_ATTR: true,
-      USE_PROFILES: { html: true },
-      ALLOW_DATA_ATTR: true,
-      SANITIZE_DOM: false,
-      KEEP_CONTENT: true,
-      ADD_ATTR: ["id"],
-    });
-  }, []);
-
-  /**
-   * Process and normalize the HTML content
-   * Ensures consistent format and handles HTML entity normalization
-   *
-   * @param content - Raw HTML content to process
-   * @returns Processed and normalized HTML content
-   */
-  const processContent = useCallback(
-    (content: string): string => {
-      if (!content) return "";
-
-      // Normalize HTML entities and ensure consistent format
-      return normalizeHtmlContent(content, sanitizeHtml);
-    },
-    [sanitizeHtml]
-  );
-
-  /**
-   * Create a default empty section with title and placeholder content
-   * Used when initializing sections that don't exist in the content
-   * ENHANCED: Uses AI-generated section titles with language fallback
-   *
-   * @param sectionId - ID of the section to create
-   * @returns Section object with default structure and proper language title
-   */
-  const createEmptySection = useCallback(
-    (sectionId: string): Section => {
-      // SOLUTION: Use AI-generated section titles first, then fallback to language-aware getSectionName
-      const title =
-        sectionTitles[sectionId] ||
-        getSectionName(sectionId, effectiveLanguage);
-
-      // Create placeholder content for the section with appropriate heading
-      const content = `<h2 class="section-title">${title}</h2><p></p>`;
-
-      console.log(
-        `Creating empty section ${sectionId} with title: "${title}" (language: ${effectiveLanguage})`
-      );
-
-      return {
-        id: sectionId,
-        title: title, // Now uses proper language title from AI or language-aware function
-        content: content,
-        visible: true, // Show all sections in edit mode
-        isEmpty: true, // Empty by default
-        type: "empty",
-        order: 0,
-      };
-    },
-    [sectionTitles, effectiveLanguage]
-  ); // ENHANCED: Dependencies include sectionTitles and effectiveLanguage
-
-  /**
-   * Initialize all standard sections for editing
-   * This ensures all possible sections are available in edit mode
-   * Combines existing sections with empty placeholders for missing sections
-   * ENHANCED: Uses multilingual section titles for empty sections
-   *
-   * @param existingSections - Sections parsed from existing content
-   * @returns Complete array of all standard sections with proper language titles
-   */
-  const initializeAllSections = useCallback(
-    (existingSections: Section[]) => {
-      // Create a map of existing sections by ID for easy lookup
-      const existingSectionsMap = new Map(
-        existingSections.map((section) => [section.id, section])
-      );
-
-      // Create the complete section list with standard sections in the correct order
-      return STANDARD_SECTIONS.map((standardSection) => {
-        const existingSection = existingSectionsMap.get(standardSection.id);
-
-        // If section exists in content, use it; otherwise create empty section
-        if (existingSection) {
-          // ENHANCEMENT: Update existing section title if AI provided a better one
-          const updatedTitle =
-            sectionTitles[standardSection.id] || existingSection.title;
-
-          return {
-            ...existingSection,
-            title: updatedTitle, // Use AI title if available, otherwise keep existing
-            visible: true, // Show sections that exist in the document
-            isEmpty: isSectionEmpty(existingSection.content, updatedTitle),
-          };
-        } else {
-          // Create a new empty section for editing with proper language title
-          return createEmptySection(standardSection.id);
-        }
-      });
-    },
-    [createEmptySection, sectionTitles]
-  );
-
-  /**
-   * Combine non-empty sections into complete HTML
-   * Only includes sections that have meaningful content
-   * Used for saving and preview generation
-   *
-   * @returns Combined HTML string of all non-empty sections
-   */
-  const combineAllSections = useCallback(() => {
-    return sections
-      .filter((section) => !section.isEmpty) // Only include non-empty sections
-      .map(
-        (section) => `<section id="${section.id}">${section.content}</section>`
-      )
-      .join("\n");
-  }, [sections]);
-
-  // ===== RESET FUNCTIONALITY =====
-
-  /**
-   * Handle internal reset action
-   * Reset content to original version without saving to database
-   * This is for local UI reset functionality
-   */
-  const handleLocalReset = useCallback(() => {
-    if (!originalOptimizedText) return;
-
-    // Reset preview content to original
-    setPreviewContent(originalOptimizedText);
-
-    // Parse original content to reset sections
-    try {
-      const normalizedContent = processContent(originalOptimizedText);
-      const parsedSections = parseHtmlIntoSections(
-        normalizedContent,
-        getSectionName,
-        SECTION_NAMES,
-        SECTION_ORDER
-      );
-
-      // Initialize all standard sections with original content
-      const allSections = initializeAllSections(parsedSections);
-      setSections(allSections);
-
-      // Reset modification state
-      setContentModified(false);
-
-      // Notify parent of content change back to original
-      onTextChange(originalOptimizedText);
-
-      // Note: Success toast commented out to reduce UI noise
-      // toast.success("Content reset to original version");
-    } catch (error) {
-      console.error("Error resetting content:", error);
-      toast.error("Failed to reset content");
-    }
-  }, [
-    originalOptimizedText,
-    processContent,
-    initializeAllSections,
-    onTextChange,
-  ]);
-
-  /**
-   * Handle reset button click
-   * Calls parent reset function and also resets local state
-   * This handles both local and database reset operations
-   */
-  const handleReset = useCallback(() => {
-    // First reset local content
-    handleLocalReset();
-
-    // Then call parent reset function if provided (for database reset)
-    if (onReset) {
-      onReset();
-    }
-
-    // Force a re-render of the preview content
-    setPreviewContent(originalOptimizedText || "");
-
-    // Also reset content modified state
-    setContentModified(false);
-    setHasBeenModified(false);
-  }, [handleLocalReset, onReset, originalOptimizedText]);
-
-  // ===== EFFECTS FOR STATE MANAGEMENT =====
-
-  /**
-   * Parse the resume HTML into sections when optimizedText changes
-   * This effect handles the initial loading and parsing of content
-   * PERFORMANCE OPTIMIZED: Only runs when not in edit mode to prevent disruption
-   */
-  useEffect(() => {
-    // Skip if we're currently in edit mode to prevent editor state from being reset
-    if (editMode) return;
-
-    // Skip if there's no content and we've already loaded initial content
-    if (!optimizedText && hasLoadedInitialContent) return;
-
-    try {
-      if (!optimizedText) {
-        // Initialize with empty standard sections when no content
-        const emptySections = STANDARD_SECTIONS.map(({ id }) =>
-          createEmptySection(id)
-        );
-        setSections(emptySections);
-        setHasLoadedInitialContent(true);
-        return;
-      }
-
-      // Normalize and sanitize the content
-      const normalizedContent = processContent(optimizedText);
-
-      // Parse content into sections
-      const parsedSections = parseHtmlIntoSections(
-        normalizedContent,
-        getSectionName,
-        SECTION_NAMES,
-        SECTION_ORDER
-      );
-
-      // Initialize all standard sections, filling in content from parsed sections
-      const allSections = initializeAllSections(parsedSections);
-
-      // Set all sections and reset modification state for initial load
-      setSections(allSections);
-
-      setHasLoadedInitialContent(true);
-
-      // Set initial preview content only if it doesn't exist already
-      if (!previewContent) {
-        setPreviewContent(normalizedContent);
-      }
-    } catch (error) {
-      console.error("Error parsing optimized text into sections:", error);
-      // Fallback to simple section if parsing fails
-      setSections([
-        {
-          id: "resume-summary",
-          title:
-            sectionTitles["resume-summary"] ||
-            getSectionName("resume-summary", effectiveLanguage),
-          content: optimizedText || "<p>No content available</p>",
-          visible: true,
-          isEmpty: !optimizedText,
-          type: "summary",
-          order: 0,
-        },
-      ]);
-      setHasLoadedInitialContent(true);
-      if (!previewContent) {
-        setPreviewContent(optimizedText || "");
-      }
-    }
-  }, [
-    optimizedText,
-    editMode,
-    hasLoadedInitialContent,
-    processContent,
-    createEmptySection,
-    initializeAllSections,
-    previewContent,
-    sectionTitles,
-    effectiveLanguage,
-  ]);
-
-  /**
-   * Notify parent component when edit mode changes
-   * Only triggers when in uncontrolled mode (isEditing is undefined)
-   */
-  useEffect(() => {
-    // Only call onEditModeChange if we're in uncontrolled mode
-    // and the local edit mode changes
-    if (isEditing === undefined && onEditModeChange) {
-      onEditModeChange(localEditMode);
-    }
-  }, [localEditMode, onEditModeChange, isEditing]);
-
-  /**
-   * PERFORMANCE OPTIMIZED: Effect to initialize sections when entering edit mode
-   * Only initializes sections if they don't already exist
-   * This prevents unnecessary re-parsing during typing
-   * ENHANCED: Uses AI section titles for proper language support
-   */
-  useEffect(() => {
-    // CRITICAL OPTIMIZATION: Only initialize if we're entering edit mode AND sections are empty
-    if (editMode && sections.length === 0) {
-      console.log(
-        "Edit mode activated, preparing sections with multilingual titles..."
-      );
-
-      const contentToLoad = previewContent || optimizedText;
-
-      if (contentToLoad) {
-        try {
-          const normalizedContent = processContent(contentToLoad);
-          const parsedSections = parseHtmlIntoSections(
-            normalizedContent,
-            getSectionName,
-            SECTION_NAMES,
-            SECTION_ORDER
-          );
-          const allSections = initializeAllSections(parsedSections);
-          setSections(allSections);
-
-          console.log(
-            `✅ Sections initialized for edit mode with current content (language: ${effectiveLanguage})`
-          );
-        } catch (error) {
-          console.error("Error initializing sections for edit mode:", error);
-        }
-      }
-    }
-  }, [editMode]); // SIMPLIFIED DEPENDENCIES: Only depend on editMode to prevent cascading updates
-
-  // ===== CONTENT UPDATE HANDLERS =====
-
-  /**
-   * PERFORMANCE OPTIMIZED: Handle section content update with debouncing
-   * Updates section content and also updates preview in real-time
-   * Uses debouncing to prevent excessive updates during typing
-   *
-   * @param sectionId - ID of the section being updated
-   * @param newContent - New content for the section
-   */
-  const handleSectionUpdate = useCallback(
-    (sectionId: string, newContent: string) => {
-      console.log(
-        `📝 Section update received: ${sectionId}`,
-        newContent.length
-      );
-      // Clear any existing timeout to implement debouncing
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-
-      // Prevent cascading updates
-      if (isUpdatingRef.current) {
-        return;
-      }
-
-      setSections((prevSections) => {
-        const updatedSections = prevSections.map((section) => {
-          if (section.id === sectionId) {
-            // PERFORMANCE CHECK: Only update if content actually changed
-            if (section.content === newContent) {
-              return section; // Return same reference to prevent re-render
-            }
-
-            // Process the new content to ensure section title classes
-            let processedContent = newContent;
-
-            try {
-              // Ensure section title class is preserved in the new content
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(newContent, "text/html");
-
-              // Find the first h1 or h2 in the content
-              const heading = doc.querySelector("h1, h2");
-
-              // If a heading is found, ensure it has the section-title class
-              if (heading && !heading.classList.contains("section-title")) {
-                heading.classList.add("section-title");
-                processedContent = doc.body.innerHTML;
-              }
-            } catch (error) {
-              console.error("Error processing section update:", error);
-              // Use original content if processing fails
-              processedContent = newContent;
-            }
-
-            // Determine if section is empty after update
-            const isEmpty = isSectionEmpty(newContent, section.title);
-
-            return {
-              ...section,
-              content: newContent,
-              isEmpty: isEmpty,
-            };
-          }
-          return section;
-        });
-
-        // Mark content as modified
-        setContentModified(true);
-        setHasBeenModified(true);
-
-        // PERFORMANCE OPTIMIZATION: Debounced update to prevent excessive processing
-        updateTimeoutRef.current = setTimeout(() => {
-          if (!isUpdatingRef.current) {
-            isUpdatingRef.current = true;
-
-            const combinedSections = updatedSections
-              .filter((section) => !section.isEmpty)
-              .map(
-                (section) =>
-                  `<section id="${section.id}">${section.content}</section>`
-              )
-              .join("\n");
-
-            setPreviewContent(combinedSections);
-
-            // Notify parent of changes (but don't save to database yet)
-            onTextChange(combinedSections);
-
-            // Reset the updating flag after a short delay
-            setTimeout(() => {
-              isUpdatingRef.current = false;
-            }, 100);
-          }
-        }, 300); // 300ms debounce delay for optimal performance
-
-        return updatedSections;
-      });
-    },
-    [onTextChange]
-  );
-
-  // ===== SAVE FUNCTIONALITY =====
-
-  /**
-   * Handle save button click
-   * Performs validation, saves content, and updates UI states
-   * Updated to reflect atomic save approach - saves all changes at once
-   */
-  const handleSave = useCallback(async () => {
-    // Prevent simultaneous save operations
-    if (isSaving) return;
-
-    try {
-      // Set saving state to show loading indicator
-      setIsSaving(true);
-
-      // Combine all non-empty sections into complete HTML and process it
-      let combinedHtml = combineAllSections();
-
-      // Ensure all section titles have the proper class
-      combinedHtml = ensureSectionTitleClasses(combinedHtml);
-
-      combinedHtml = processContent(combinedHtml);
-
-      // Validate content length
-      if (combinedHtml.length < 50) {
-        toast.error("Content too short", {
-          description: "Resume content must be at least 50 characters.",
-        });
-        setIsSaving(false);
-        return;
-      }
-
-      // Note: Loading toast commented out to reduce UI noise
-      // toast.loading("Saving all changes...", {
-      //   id: "save-changes-toast",
-      //   description: "Saving resume content, applied keywords, and suggestions...",
-      // });
-
-      // Call parent save handler and await its result
-      const saveResult = await Promise.resolve(onSave(combinedHtml));
-
-      // Handle success case
-      if (saveResult) {
-        // Note: Success toast commented out to reduce UI noise
-        // toast.success("All changes saved successfully", {
-        //   id: "save-changes-toast",
-        //   description: "Resume content, keywords, and suggestions have been updated.",
-        // });
-
-        // Update local state
-        setContentModified(false);
-
-        // Update preview content with saved content
-        setPreviewContent(combinedHtml);
-
-        // Update sections state with the saved content
-        try {
-          const normalizedContent = processContent(combinedHtml);
-          const parsedSections = parseHtmlIntoSections(
-            normalizedContent,
-            getSectionName,
-            SECTION_NAMES,
-            SECTION_ORDER
-          );
-
-          // Initialize all standard sections with the saved content
-          const allSections = initializeAllSections(parsedSections);
-          setSections(allSections);
-        } catch (sectionError) {
-          console.error(
-            "Error parsing saved content into sections:",
-            sectionError
-          );
-        }
-
-        // Notify parent component of the changes
-        onTextChange(combinedHtml);
-
-        // Exit edit mode after saving if we're in uncontrolled mode
-        if (isEditing === undefined) {
-          setLocalEditMode(false);
-        }
-      } else {
-        // Handle failure case
-        toast.error("Failed to save resume", {
-          id: "save-changes-toast",
-          description: "An error occurred while saving your changes.",
-        });
-      }
-    } catch (error) {
-      // Log error and show error toast
-      console.error("Error saving resume:", error);
-      toast.error("Failed to save resume", {
-        id: "save-changes-toast",
-        description: "An unexpected error occurred. Please try again.",
-      });
-    } finally {
-      // Always reset saving state when done
-      setIsSaving(false);
-    }
-  }, [
-    isSaving,
-    combineAllSections,
-    processContent,
-    onSave,
-    onTextChange,
-    isEditing,
-    initializeAllSections,
-  ]);
-
-  // ===== PREVIEW FUNCTIONALITY =====
-
-  /**
-   * Open preview in modal
-   * Updated to use the ResumePreviewModal component instead of opening in a new window
-   */
-  const openPreview = useCallback(() => {
-    try {
-      // Get the content to preview (different if in edit mode)
-      const contentToUse = previewContent || optimizedText;
-
-      // Open the modal instead of a new window
-      setIsPreviewModalOpen(true);
-
-      // Log the template and content being used for debugging
-      console.log("Opening preview with template:", selectedTemplate);
-      console.log("Content length for preview:", contentToUse.length);
-    } catch (error) {
-      console.error("Error opening preview:", error);
-      toast.error("Failed to open preview");
-    }
-  }, [selectedTemplate, previewContent, optimizedText]);
-
-  /**
-   * Handle closing the preview modal
-   * Simple state update to hide the modal
-   */
-  const handleClosePreviewModal = useCallback(() => {
-    setIsPreviewModalOpen(false);
-  }, []);
-
-  /**
-   * Toggle edit mode on/off
-   * Handles both controlled and uncontrolled mode scenarios
-   */
-  const toggleEditMode = useCallback(() => {
-    if (isEditing !== undefined) {
-      // In controlled mode, notify parent to toggle edit mode
-      if (onEditModeChange) {
-        onEditModeChange(!isEditing);
-      }
-    } else {
-      // In uncontrolled mode, toggle local state
-      setLocalEditMode((prev) => !prev);
-    }
-  }, [isEditing, onEditModeChange]);
-
-  // ===== CLEANUP =====
-
-  /**
-   * Cleanup effect to clear timeouts on unmount
-   * Prevents memory leaks and unwanted updates after component unmount
-   */
-  useEffect(() => {
-    return () => {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // ===== EARLY RETURNS =====
-
-  /**
-   * Show loading state during optimization
-   * Early return to prevent rendering the main UI during processing
-   */
-  if (isOptimizing) {
-    return <LoadingState />;
-  }
-
-  // ===== COMPUTED VALUES FOR RENDER =====
-
-  /**
-   * Content to use for preview - prefers preview content if available
-   * Falls back to optimizedText prop if no preview content
-   */
-  const displayedContent = previewContent || optimizedText;
-
-  /**
-   * Determine if save button should be enabled
-   * Now considering both content modification and score modification
-   */
-  const shouldEnableSave = contentModified || scoreModified || templateModified;
-
-  // ===== MAIN RENDER =====
-
-  return (
-    <div className="bg-white border rounded-lg p-6">
-      {/* Header with actions - contains edit/preview toggle, save, reset buttons */}
-      <PreviewHeader
-        editMode={editMode}
-        toggleEditMode={toggleEditMode}
-        openPreview={openPreview}
-        handleSave={handleSave}
-        isSaving={isSaving}
-        shouldEnableSave={shouldEnableSave} // Use combined state for save button
-        optimizedText={optimizedText}
-        // Always pass onReset if it exists and we're not in edit mode
-        onReset={!editMode && onReset ? handleReset : undefined}
-      />
-
-      {/* Warning if no content is available */}
-      {!optimizedText && <NoContentWarning />}
-
-      {/* Modified indicator - show in both edit and preview modes with warning icon */}
-      {shouldEnableSave && (
-        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4 text-sm text-amber-700 flex items-start">
-          <AlertTriangle className="h-4 w-4 mr-2 mt-0.5 text-amber-500 flex-shrink-0" />
-          <div>
-            <p className="font-medium">You have unsaved changes</p>
-            <p className="text-xs mt-1">
-              This includes content edits, applied keywords, and suggestions.
-              Click "Save Changes" in edit mode to update your resume with all
-              modifications.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Content Area - switches between edit and preview modes */}
-      {editMode ? (
-        // ===== EDIT MODE CONTENT =====
-        <div className="space-y-4">
-          {/* Sections Editor with Accordion UI */}
-          <Accordion
-            type="single"
-            className="space-y-4"
-            defaultValue={sections.length > 0 ? sections[0].id : undefined}
-            collapsible
-          >
-            {sections.map((section) => (
-              <AccordionItem
-                key={section.id}
-                value={section.id}
-                className="border border-gray-200 rounded-lg overflow-hidden"
-              >
-                <AccordionTrigger className="px-4 py-3 font-medium text-gray-800 hover:bg-gray-50 flex justify-between items-center">
-                  {/* ENHANCEMENT: Display AI-generated section title in correct language */}
-                  {getSectionNameEnglish(section.id)}
-                  {section.isEmpty && (
-                    <span className="text-xs text-gray-400 mr-2">(Empty)</span>
-                  )}
-                </AccordionTrigger>
-                <AccordionContent className="p-4 pt-6">
-                  {/* PERFORMANCE CRITICAL: Conditional rendering with memoized editors */}
-                  {section.id === "resume-header" ? (
-                    // Use memoized ResumeHeaderEditor for structured header editing
-                    <MemoizedResumeHeaderEditor
-                      content={section.content}
-                      onChange={(html) => handleSectionUpdate(section.id, html)}
-                    />
-                  ) : (
-                    // Use memoized TipTapEditor for rich text sections
-                    <MemoizedTipTapEditor
-                      content={section.content}
-                      onChange={(html) => handleSectionUpdate(section.id, html)}
-                      appliedKeywords={appliedKeywords}
-                      suggestions={suggestions}
-                    />
-                  )}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-
-          {/* Action Buttons for Edit Mode */}
-          <div className="pt-4 flex justify-end gap-2">
-            {/* Cancel button - exits edit mode without saving */}
-            <Button variant="outline" size="sm" onClick={toggleEditMode}>
-              <X className="h-4 w-4 mr-2" /> Back to Preview
-            </Button>
-
-            {/* Save button - saves all changes including content, keywords, and suggestions */}
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={isSaving || !shouldEnableSave}
-              className="bg-brand-600 hover:bg-brand-700"
-            >
-              {isSaving ? (
-                <>
-                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                  Saving all changes...
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" /> Save Changes
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Atomic save notice - informs user about what gets saved */}
-          {shouldEnableSave && (
-            <div className="mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-gray-200">
-              Clicking "Save Changes" will save your resume content and all
-              applied keywords and suggestions.
-            </div>
-          )}
-        </div>
-      ) : (
-        // ===== PREVIEW MODE CONTENT =====
-        <PreviewContent
-          optimizedText={displayedContent}
-          combinedSections={previewContent || optimizedText}
-          sanitizeHtml={sanitizeHtml}
-          template={template}
-          onDownload={onDownload}
-        />
-      )}
-
-      {/* Applied keywords list - only shown in preview mode */}
-      {!editMode && appliedKeywords.length > 0 && (
-        <AppliedKeywordsList keywords={appliedKeywords} />
-      )}
-
-      {/* Resume Preview Modal - for full-screen template preview */}
-      <ResumePreviewModal
-        open={isPreviewModalOpen}
-        onClose={handleClosePreviewModal}
-        resumeContent={editMode ? combineAllSections() : displayedContent}
-        selectedTemplate={template}
-      />
-    </div>
-  );
+	// ===== LOCAL STATE MANAGEMENT =====
+
+	// Local state for UI controls when not controlled by parent
+	const [localEditMode, setLocalEditMode] = useState(false);
+	const [isSaving, setIsSaving] = useState(false);
+	const [sections, setSections] = useState<Section[]>([]);
+	const [contentModified, setContentModified] = useState(false);
+	const [hasLoadedInitialContent, setHasLoadedInitialContent] = useState(false);
+	const [previewContent, setPreviewContent] = useState<string>(""); // State for real-time preview
+
+	// Track if content has ever been modified for user feedback
+	const [hasBeenModified, setHasBeenModified] = useState(false);
+
+	// State for controlling the preview modal visibility
+	const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+
+	// ===== PERFORMANCE OPTIMIZATION: Refs for debouncing =====
+
+	// Ref to store timeout for debounced updates
+	const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+	// Ref to track if we're currently processing an update to prevent cascading
+	const isUpdatingRef = useRef(false);
+
+	// ===== COMPUTED VALUES =====
+
+	// Determine the current edit mode - if isEditing is provided by parent, use it
+	// Otherwise use our local state for uncontrolled mode
+	const editMode = isEditing !== undefined ? isEditing : localEditMode;
+
+	// Get selected template from the available templates array
+	const template = useMemo(
+		() => templates.find((t) => t.id === selectedTemplate) || templates[0],
+		[selectedTemplate, templates]
+	);
+
+	// ENHANCEMENT: Determine the effective language for section titles
+	// Priority: resumeLanguage > language prop > "English"
+	const effectiveLanguage = useMemo(() => {
+		return resumeLanguage || language || "English";
+	}, [resumeLanguage, language]);
+
+	// ===== UTILITY FUNCTIONS =====
+
+	/**
+	 * Sanitize HTML content to prevent XSS attacks
+	 * Uses DOMPurify when available, falls back to basic sanitization
+	 *
+	 * @param html - HTML content to sanitize
+	 * @returns Sanitized HTML content safe for rendering
+	 */
+	const sanitizeHtml = useCallback((html: string): string => {
+		if (typeof DOMPurify === "undefined") {
+			// Basic sanitization if DOMPurify is not available (fallback)
+			return html
+				.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+				.replace(/\son\w+\s*=\s*["']?[^"']*["']?/gi, "");
+		}
+
+		// Use DOMPurify for comprehensive sanitization with specific configuration
+		return DOMPurify.sanitize(html, {
+			ALLOWED_TAGS: [
+				"a",
+				"b",
+				"br",
+				"div",
+				"em",
+				"h1",
+				"h2",
+				"h3",
+				"h4",
+				"h5",
+				"h6",
+				"i",
+				"li",
+				"ol",
+				"p",
+				"section",
+				"span",
+				"strong",
+				"u",
+				"ul",
+			],
+			ALLOWED_ATTR: [
+				"href",
+				"target",
+				"rel",
+				"id",
+				"class",
+				"style",
+				"data-section-id",
+				"data-section",
+			],
+			ALLOW_ARIA_ATTR: true,
+			USE_PROFILES: { html: true },
+			ALLOW_DATA_ATTR: true,
+			SANITIZE_DOM: false,
+			KEEP_CONTENT: true,
+			ADD_ATTR: ["id"],
+		});
+	}, []);
+
+	/**
+	 * Process and normalize the HTML content
+	 * Ensures consistent format and handles HTML entity normalization
+	 *
+	 * @param content - Raw HTML content to process
+	 * @returns Processed and normalized HTML content
+	 */
+	const processContent = useCallback(
+		(content: string): string => {
+			if (!content) return "";
+
+			// Normalize HTML entities and ensure consistent format
+			return normalizeHtmlContent(content, sanitizeHtml);
+		},
+		[sanitizeHtml]
+	);
+
+	/**
+	 * Create a default empty section with title and placeholder content
+	 * Used when initializing sections that don't exist in the content
+	 * ENHANCED: Uses AI-generated section titles with language fallback
+	 *
+	 * @param sectionId - ID of the section to create
+	 * @returns Section object with default structure and proper language title
+	 */
+	const createEmptySection = useCallback(
+		(sectionId: string): Section => {
+			// SOLUTION: Use AI-generated section titles first, then fallback to language-aware getSectionName
+			const title =
+				sectionTitles[sectionId] ||
+				getSectionName(sectionId, effectiveLanguage);
+
+			// Create placeholder content for the section with appropriate heading
+			const content = `<h2 class="section-title">${title}</h2><p></p>`;
+
+			console.log(
+				`Creating empty section ${sectionId} with title: "${title}" (language: ${effectiveLanguage})`
+			);
+
+			return {
+				id: sectionId,
+				title: title, // Now uses proper language title from AI or language-aware function
+				content: content,
+				visible: true, // Show all sections in edit mode
+				isEmpty: true, // Empty by default
+				type: "empty",
+				order: 0,
+			};
+		},
+		[sectionTitles, effectiveLanguage]
+	); // ENHANCED: Dependencies include sectionTitles and effectiveLanguage
+
+	/**
+	 * Initialize all standard sections for editing
+	 * This ensures all possible sections are available in edit mode
+	 * Combines existing sections with empty placeholders for missing sections
+	 * ENHANCED: Uses multilingual section titles for empty sections
+	 *
+	 * @param existingSections - Sections parsed from existing content
+	 * @returns Complete array of all standard sections with proper language titles
+	 */
+	const initializeAllSections = useCallback(
+		(existingSections: Section[]) => {
+			// Create a map of existing sections by ID for easy lookup
+			const existingSectionsMap = new Map(
+				existingSections.map((section) => [section.id, section])
+			);
+
+			// Create the complete section list with standard sections in the correct order
+			return STANDARD_SECTIONS.map((standardSection) => {
+				const existingSection = existingSectionsMap.get(standardSection.id);
+
+				// If section exists in content, use it; otherwise create empty section
+				if (existingSection) {
+					// ENHANCEMENT: Update existing section title if AI provided a better one
+					const updatedTitle =
+						sectionTitles[standardSection.id] || existingSection.title;
+
+					return {
+						...existingSection,
+						title: updatedTitle, // Use AI title if available, otherwise keep existing
+						visible: true, // Show sections that exist in the document
+						isEmpty: isSectionEmpty(existingSection.content, updatedTitle),
+					};
+				} else {
+					// Create a new empty section for editing with proper language title
+					return createEmptySection(standardSection.id);
+				}
+			});
+		},
+		[createEmptySection, sectionTitles]
+	);
+
+	/**
+	 * Combine non-empty sections into complete HTML
+	 * Only includes sections that have meaningful content
+	 * Used for saving and preview generation
+	 *
+	 * @returns Combined HTML string of all non-empty sections
+	 */
+	const combineAllSections = useCallback(() => {
+		return sections
+			.filter((section) => !section.isEmpty) // Only include non-empty sections
+			.map(
+				(section) => `<section id="${section.id}">${section.content}</section>`
+			)
+			.join("\n");
+	}, [sections]);
+
+	// ===== RESET FUNCTIONALITY =====
+
+	/**
+	 * Handle internal reset action
+	 * Reset content to original version without saving to database
+	 * This is for local UI reset functionality
+	 */
+	const handleLocalReset = useCallback(() => {
+		if (!originalOptimizedText) return;
+
+		// Reset preview content to original
+		setPreviewContent(originalOptimizedText);
+
+		// Parse original content to reset sections
+		try {
+			const normalizedContent = processContent(originalOptimizedText);
+			const parsedSections = parseHtmlIntoSections(
+				normalizedContent,
+				getSectionName,
+				SECTION_NAMES,
+				SECTION_ORDER
+			);
+
+			// Initialize all standard sections with original content
+			const allSections = initializeAllSections(parsedSections);
+			setSections(allSections);
+
+			// Reset modification state
+			setContentModified(false);
+
+			// Notify parent of content change back to original
+			onTextChange(originalOptimizedText);
+
+			// Note: Success toast commented out to reduce UI noise
+			// toast.success("Content reset to original version");
+		} catch (error) {
+			console.error("Error resetting content:", error);
+			toast.error("Failed to reset content");
+		}
+	}, [
+		originalOptimizedText,
+		processContent,
+		initializeAllSections,
+		onTextChange,
+	]);
+
+	/**
+	 * Handle reset button click
+	 * Calls parent reset function and also resets local state
+	 * This handles both local and database reset operations
+	 */
+	const handleReset = useCallback(() => {
+		// First reset local content
+		handleLocalReset();
+
+		// Then call parent reset function if provided (for database reset)
+		if (onReset) {
+			onReset();
+		}
+
+		// Force a re-render of the preview content
+		setPreviewContent(originalOptimizedText || "");
+
+		// Also reset content modified state
+		setContentModified(false);
+		setHasBeenModified(false);
+	}, [handleLocalReset, onReset, originalOptimizedText]);
+
+	// ===== EFFECTS FOR STATE MANAGEMENT =====
+
+	/**
+	 * Parse the resume HTML into sections when optimizedText changes
+	 * This effect handles the initial loading and parsing of content
+	 * PERFORMANCE OPTIMIZED: Only runs when not in edit mode to prevent disruption
+	 */
+	useEffect(() => {
+		// Skip if we're currently in edit mode to prevent editor state from being reset
+		if (editMode) return;
+
+		// Skip if there's no content and we've already loaded initial content
+		if (!optimizedText && hasLoadedInitialContent) return;
+
+		try {
+			if (!optimizedText) {
+				// Initialize with empty standard sections when no content
+				const emptySections = STANDARD_SECTIONS.map(({ id }) =>
+					createEmptySection(id)
+				);
+				setSections(emptySections);
+				setHasLoadedInitialContent(true);
+				return;
+			}
+
+			// Normalize and sanitize the content
+			const normalizedContent = processContent(optimizedText);
+
+			// Parse content into sections
+			const parsedSections = parseHtmlIntoSections(
+				normalizedContent,
+				getSectionName,
+				SECTION_NAMES,
+				SECTION_ORDER
+			);
+
+			// Initialize all standard sections, filling in content from parsed sections
+			const allSections = initializeAllSections(parsedSections);
+
+			// Set all sections and reset modification state for initial load
+			setSections(allSections);
+
+			setHasLoadedInitialContent(true);
+
+			// Set initial preview content only if it doesn't exist already
+			if (!previewContent) {
+				setPreviewContent(normalizedContent);
+			}
+		} catch (error) {
+			console.error("Error parsing optimized text into sections:", error);
+			// Fallback to simple section if parsing fails
+			setSections([
+				{
+					id: "resume-summary",
+					title:
+						sectionTitles["resume-summary"] ||
+						getSectionName("resume-summary", effectiveLanguage),
+					content: optimizedText || "<p>No content available</p>",
+					visible: true,
+					isEmpty: !optimizedText,
+					type: "summary",
+					order: 0,
+				},
+			]);
+			setHasLoadedInitialContent(true);
+			if (!previewContent) {
+				setPreviewContent(optimizedText || "");
+			}
+		}
+	}, [
+		optimizedText,
+		editMode,
+		hasLoadedInitialContent,
+		processContent,
+		createEmptySection,
+		initializeAllSections,
+		previewContent,
+		sectionTitles,
+		effectiveLanguage,
+	]);
+
+	/**
+	 * Notify parent component when edit mode changes
+	 * Only triggers when in uncontrolled mode (isEditing is undefined)
+	 */
+	useEffect(() => {
+		// Only call onEditModeChange if we're in uncontrolled mode
+		// and the local edit mode changes
+		if (isEditing === undefined && onEditModeChange) {
+			onEditModeChange(localEditMode);
+		}
+	}, [localEditMode, onEditModeChange, isEditing]);
+
+	/**
+	 * PERFORMANCE OPTIMIZED: Effect to initialize sections when entering edit mode
+	 * Only initializes sections if they don't already exist
+	 * This prevents unnecessary re-parsing during typing
+	 * ENHANCED: Uses AI section titles for proper language support
+	 */
+	useEffect(() => {
+		// CRITICAL OPTIMIZATION: Only initialize if we're entering edit mode AND sections are empty
+		if (editMode && sections.length === 0) {
+			console.log(
+				"Edit mode activated, preparing sections with multilingual titles..."
+			);
+
+			const contentToLoad = previewContent || optimizedText;
+
+			if (contentToLoad) {
+				try {
+					const normalizedContent = processContent(contentToLoad);
+					const parsedSections = parseHtmlIntoSections(
+						normalizedContent,
+						getSectionName,
+						SECTION_NAMES,
+						SECTION_ORDER
+					);
+					const allSections = initializeAllSections(parsedSections);
+					setSections(allSections);
+
+					console.log(
+						`✅ Sections initialized for edit mode with current content (language: ${effectiveLanguage})`
+					);
+				} catch (error) {
+					console.error("Error initializing sections for edit mode:", error);
+				}
+			}
+		}
+	}, [editMode]); // SIMPLIFIED DEPENDENCIES: Only depend on editMode to prevent cascading updates
+
+	// ===== CONTENT UPDATE HANDLERS =====
+
+	/**
+	 * PERFORMANCE OPTIMIZED: Handle section content update with debouncing
+	 * Updates section content and also updates preview in real-time
+	 * Uses debouncing to prevent excessive updates during typing
+	 *
+	 * @param sectionId - ID of the section being updated
+	 * @param newContent - New content for the section
+	 */
+	const handleSectionUpdate = useCallback(
+		(sectionId: string, newContent: string) => {
+			console.log(
+				`📝 Section update received: ${sectionId}`,
+				newContent.length
+			);
+			// Clear any existing timeout to implement debouncing
+			if (updateTimeoutRef.current) {
+				clearTimeout(updateTimeoutRef.current);
+			}
+
+			// Prevent cascading updates
+			if (isUpdatingRef.current) {
+				return;
+			}
+
+			setSections((prevSections) => {
+				const updatedSections = prevSections.map((section) => {
+					if (section.id === sectionId) {
+						// PERFORMANCE CHECK: Only update if content actually changed
+						if (section.content === newContent) {
+							return section; // Return same reference to prevent re-render
+						}
+
+						// Process the new content to ensure section title classes
+						let processedContent = newContent;
+
+						try {
+							// Ensure section title class is preserved in the new content
+							const parser = new DOMParser();
+							const doc = parser.parseFromString(newContent, "text/html");
+
+							// Find the first h1 or h2 in the content
+							const heading = doc.querySelector("h1, h2");
+
+							// If a heading is found, ensure it has the section-title class
+							if (heading && !heading.classList.contains("section-title")) {
+								heading.classList.add("section-title");
+								processedContent = doc.body.innerHTML;
+							}
+						} catch (error) {
+							console.error("Error processing section update:", error);
+							// Use original content if processing fails
+							processedContent = newContent;
+						}
+
+						// Determine if section is empty after update
+						const isEmpty = isSectionEmpty(newContent, section.title);
+
+						return {
+							...section,
+							content: newContent,
+							isEmpty: isEmpty,
+						};
+					}
+					return section;
+				});
+
+				// Mark content as modified
+				setContentModified(true);
+				setHasBeenModified(true);
+
+				// PERFORMANCE OPTIMIZATION: Debounced update to prevent excessive processing
+				updateTimeoutRef.current = setTimeout(() => {
+					if (!isUpdatingRef.current) {
+						isUpdatingRef.current = true;
+
+						const combinedSections = updatedSections
+							.filter((section) => !section.isEmpty)
+							.map(
+								(section) =>
+									`<section id="${section.id}">${section.content}</section>`
+							)
+							.join("\n");
+
+						setPreviewContent(combinedSections);
+
+						// Notify parent of changes (but don't save to database yet)
+						onTextChange(combinedSections);
+
+						// Reset the updating flag after a short delay
+						setTimeout(() => {
+							isUpdatingRef.current = false;
+						}, 100);
+					}
+				}, 300); // 300ms debounce delay for optimal performance
+
+				return updatedSections;
+			});
+		},
+		[onTextChange]
+	);
+
+	// ===== SAVE FUNCTIONALITY =====
+
+	/**
+	 * Handle save button click
+	 * Performs validation, saves content, and updates UI states
+	 * Updated to reflect atomic save approach - saves all changes at once
+	 */
+	const handleSave = useCallback(async () => {
+		// Prevent simultaneous save operations
+		if (isSaving) return;
+
+		try {
+			// Set saving state to show loading indicator
+			setIsSaving(true);
+
+			// Combine all non-empty sections into complete HTML and process it
+			let combinedHtml = combineAllSections();
+
+			// Ensure all section titles have the proper class
+			combinedHtml = ensureSectionTitleClasses(combinedHtml);
+
+			combinedHtml = processContent(combinedHtml);
+
+			// Validate content length
+			if (combinedHtml.length < 50) {
+				toast.error("Content too short", {
+					description: "Resume content must be at least 50 characters.",
+				});
+				setIsSaving(false);
+				return;
+			}
+
+			// Note: Loading toast commented out to reduce UI noise
+			// toast.loading("Saving all changes...", {
+			//   id: "save-changes-toast",
+			//   description: "Saving resume content, applied keywords, and suggestions...",
+			// });
+
+			// Call parent save handler and await its result
+			const saveResult = await Promise.resolve(onSave(combinedHtml));
+
+			// Handle success case
+			if (saveResult) {
+				// Note: Success toast commented out to reduce UI noise
+				// toast.success("All changes saved successfully", {
+				//   id: "save-changes-toast",
+				//   description: "Resume content, keywords, and suggestions have been updated.",
+				// });
+
+				// Update local state
+				setContentModified(false);
+
+				// Update preview content with saved content
+				setPreviewContent(combinedHtml);
+
+				// Update sections state with the saved content
+				try {
+					const normalizedContent = processContent(combinedHtml);
+					const parsedSections = parseHtmlIntoSections(
+						normalizedContent,
+						getSectionName,
+						SECTION_NAMES,
+						SECTION_ORDER
+					);
+
+					// Initialize all standard sections with the saved content
+					const allSections = initializeAllSections(parsedSections);
+					setSections(allSections);
+				} catch (sectionError) {
+					console.error(
+						"Error parsing saved content into sections:",
+						sectionError
+					);
+				}
+
+				// Notify parent component of the changes
+				onTextChange(combinedHtml);
+
+				// Exit edit mode after saving if we're in uncontrolled mode
+				if (isEditing === undefined) {
+					setLocalEditMode(false);
+				}
+			} else {
+				// Handle failure case
+				toast.error("Failed to save resume", {
+					id: "save-changes-toast",
+					description: "An error occurred while saving your changes.",
+				});
+			}
+		} catch (error) {
+			// Log error and show error toast
+			console.error("Error saving resume:", error);
+			toast.error("Failed to save resume", {
+				id: "save-changes-toast",
+				description: "An unexpected error occurred. Please try again.",
+			});
+		} finally {
+			// Always reset saving state when done
+			setIsSaving(false);
+		}
+	}, [
+		isSaving,
+		combineAllSections,
+		processContent,
+		onSave,
+		onTextChange,
+		isEditing,
+		initializeAllSections,
+	]);
+
+	// ===== PREVIEW FUNCTIONALITY =====
+
+	/**
+	 * Open preview in modal
+	 * Updated to use the ResumePreviewModal component instead of opening in a new window
+	 */
+	const openPreview = useCallback(() => {
+		try {
+			// Get the content to preview (different if in edit mode)
+			const contentToUse = previewContent || optimizedText;
+
+			// Open the modal instead of a new window
+			setIsPreviewModalOpen(true);
+
+			// Log the template and content being used for debugging
+			console.log("Opening preview with template:", selectedTemplate);
+			console.log("Content length for preview:", contentToUse.length);
+		} catch (error) {
+			console.error("Error opening preview:", error);
+			toast.error("Failed to open preview");
+		}
+	}, [selectedTemplate, previewContent, optimizedText]);
+
+	/**
+	 * Handle closing the preview modal
+	 * Simple state update to hide the modal
+	 */
+	const handleClosePreviewModal = useCallback(() => {
+		setIsPreviewModalOpen(false);
+	}, []);
+
+	/**
+	 * Toggle edit mode on/off
+	 * Handles both controlled and uncontrolled mode scenarios
+	 */
+	const toggleEditMode = useCallback(() => {
+		if (isEditing !== undefined) {
+			// In controlled mode, notify parent to toggle edit mode
+			if (onEditModeChange) {
+				onEditModeChange(!isEditing);
+			}
+		} else {
+			// In uncontrolled mode, toggle local state
+			setLocalEditMode((prev) => !prev);
+		}
+	}, [isEditing, onEditModeChange]);
+
+	// ===== CLEANUP =====
+
+	/**
+	 * Cleanup effect to clear timeouts on unmount
+	 * Prevents memory leaks and unwanted updates after component unmount
+	 */
+	useEffect(() => {
+		return () => {
+			if (updateTimeoutRef.current) {
+				clearTimeout(updateTimeoutRef.current);
+			}
+		};
+	}, []);
+
+	// ===== EARLY RETURNS =====
+
+	/**
+	 * Show loading state during optimization
+	 * Early return to prevent rendering the main UI during processing
+	 */
+	if (isOptimizing) {
+		return <LoadingState />;
+	}
+
+	// ===== COMPUTED VALUES FOR RENDER =====
+
+	/**
+	 * Content to use for preview - prefers preview content if available
+	 * Falls back to optimizedText prop if no preview content
+	 */
+	const displayedContent = previewContent || optimizedText;
+
+	/**
+	 * Determine if save button should be enabled
+	 * Now considering both content modification and score modification
+	 */
+	const shouldEnableSave = contentModified || scoreModified || templateModified;
+
+	// ===== MAIN RENDER =====
+
+	return (
+		<div className="bg-white border rounded-lg p-6">
+			{/* Header with actions - contains edit/preview toggle, save, reset buttons */}
+			<PreviewHeader
+				editMode={editMode}
+				toggleEditMode={toggleEditMode}
+				openPreview={openPreview}
+				handleSave={handleSave}
+				isSaving={isSaving}
+				shouldEnableSave={shouldEnableSave} // Use combined state for save button
+				optimizedText={optimizedText}
+				// Always pass onReset if it exists and we're not in edit mode
+				onReset={!editMode && onReset ? handleReset : undefined}
+			/>
+
+			{/* Warning if no content is available */}
+			{!optimizedText && <NoContentWarning />}
+
+			{/* Modified indicator - show in both edit and preview modes with warning icon */}
+			{shouldEnableSave && (
+				<div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4 text-sm text-amber-700 flex items-start">
+					<AlertTriangle className="h-4 w-4 mr-2 mt-0.5 text-amber-500 flex-shrink-0" />
+					<div>
+						<p className="font-medium">You have unsaved changes</p>
+						<p className="text-xs mt-1">
+							This includes content edits, applied keywords, and suggestions.
+							Click "Save Changes" in edit mode to update your resume with all
+							modifications.
+						</p>
+					</div>
+				</div>
+			)}
+
+			{/* Content Area - switches between edit and preview modes */}
+			{editMode ? (
+				// ===== EDIT MODE CONTENT =====
+				<div className="space-y-4">
+					{/* Sections Editor with Accordion UI */}
+					<Accordion
+						type="single"
+						className="space-y-4"
+						defaultValue={sections.length > 0 ? sections[0].id : undefined}
+						collapsible
+					>
+						{sections.map((section) => (
+							<AccordionItem
+								key={section.id}
+								value={section.id}
+								className="border border-gray-200 rounded-lg overflow-hidden"
+							>
+								<AccordionTrigger className="px-4 py-3 font-medium text-gray-800 hover:bg-gray-50 flex justify-between items-center">
+									{/* ENHANCEMENT: Display AI-generated section title in correct language */}
+									{getSectionNameEnglish(section.id)}
+									{section.isEmpty && (
+										<span className="text-xs text-gray-400 mr-2">(Empty)</span>
+									)}
+								</AccordionTrigger>
+								<AccordionContent className="p-4 pt-6">
+									{/* PERFORMANCE CRITICAL: Conditional rendering with memoized editors */}
+									{section.id === "resume-header" ? (
+										// Use memoized ResumeHeaderEditor for structured header editing
+										<MemoizedResumeHeaderEditor
+											content={section.content}
+											onChange={(html) => handleSectionUpdate(section.id, html)}
+										/>
+									) : (
+										// Use memoized TipTapEditor for rich text sections
+										<MemoizedTipTapEditor
+											content={section.content}
+											onChange={(html) => handleSectionUpdate(section.id, html)}
+											appliedKeywords={appliedKeywords}
+											suggestions={suggestions}
+										/>
+									)}
+								</AccordionContent>
+							</AccordionItem>
+						))}
+					</Accordion>
+
+					{/* Atomic save notice - informs user about what gets saved */}
+					{shouldEnableSave && (
+						<div className="mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-gray-200">
+							Clicking "Save Changes" will save your resume content and all
+							applied keywords and suggestions.
+						</div>
+					)}
+				</div>
+			) : (
+				// ===== PREVIEW MODE CONTENT =====
+				<PreviewContent
+					optimizedText={displayedContent}
+					combinedSections={previewContent || optimizedText}
+					sanitizeHtml={sanitizeHtml}
+					template={template}
+					onDownload={onDownload}
+				/>
+			)}
+
+			<PreviewFooter
+				editMode={editMode}
+				toggleEditMode={toggleEditMode}
+				openPreview={openPreview}
+				handleSave={handleSave}
+				isSaving={isSaving}
+				shouldEnableSave={shouldEnableSave} // Use combined state for save button
+				optimizedText={optimizedText}
+				// Always pass onReset if it exists and we're not in edit mode
+				onReset={!editMode && onReset ? handleReset : undefined}
+			/>
+
+			{/* Applied keywords list - only shown in preview mode */}
+			{!editMode && appliedKeywords.length > 0 && (
+				<AppliedKeywordsList keywords={appliedKeywords} />
+			)}
+
+			{/* Resume Preview Modal - for full-screen template preview */}
+			<ResumePreviewModal
+				open={isPreviewModalOpen}
+				onClose={handleClosePreviewModal}
+				resumeContent={editMode ? combineAllSections() : displayedContent}
+				selectedTemplate={template}
+			/>
+		</div>
+	);
 };
 
 export default ResumePreview;
