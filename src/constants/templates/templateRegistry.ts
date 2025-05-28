@@ -11,7 +11,7 @@ import { professionalTemplate } from "./professional/professionalTemplate";
 // TODO: Import other templates when created
 import { creativeTemplate } from "./creative/creativeTemplate";
 import { executiveTemplate } from "./executive/executiveTemplate";
-// import { technicalTemplate } from "./technical/technicalTemplate";
+import { technicalTemplate } from "./technical/technicalTemplate";
 // import { compactTemplate } from "./compact/compactTemplate";
 
 /**
@@ -20,17 +20,17 @@ import { executiveTemplate } from "./executive/executiveTemplate";
  * Templates are ordered by availability (free first, then pro)
  */
 export const resumeTemplates: ResumeTemplateType[] = [
-  // Free template
-  basicTemplate,
+	// Free template
+	basicTemplate,
 
-  // Pro templates
-  professionalTemplate,
+	// Pro templates
+	professionalTemplate,
 
-  // TODO: Add other templates as they are created
-  creativeTemplate,
-  executiveTemplate,
-  // technicalTemplate,
-  // compactTemplate,
+	// TODO: Add other templates as they are created
+	creativeTemplate,
+	executiveTemplate,
+	technicalTemplate,
+	// compactTemplate,
 ];
 
 /**
@@ -41,16 +41,16 @@ export const resumeTemplates: ResumeTemplateType[] = [
  * @returns The template object or the basic template if not found
  */
 export function getTemplateById(id: string): ResumeTemplateType {
-  const template = resumeTemplates.find((template) => template.id === id);
+	const template = resumeTemplates.find((template) => template.id === id);
 
-  if (!template) {
-    console.warn(
-      `Template with ID "${id}" not found, falling back to basic template`
-    );
-    return resumeTemplates[0]; // Return basic template as fallback
-  }
+	if (!template) {
+		console.warn(
+			`Template with ID "${id}" not found, falling back to basic template`
+		);
+		return resumeTemplates[0]; // Return basic template as fallback
+	}
 
-  return template;
+	return template;
 }
 
 /**
@@ -60,7 +60,7 @@ export function getTemplateById(id: string): ResumeTemplateType {
  * @returns Array of free templates
  */
 export function getFreeTemplates(): ResumeTemplateType[] {
-  return resumeTemplates.filter((template) => !template.isPro);
+	return resumeTemplates.filter((template) => !template.isPro);
 }
 
 /**
@@ -70,7 +70,7 @@ export function getFreeTemplates(): ResumeTemplateType[] {
  * @returns Array of pro templates
  */
 export function getProTemplates(): ResumeTemplateType[] {
-  return resumeTemplates.filter((template) => template.isPro);
+	return resumeTemplates.filter((template) => template.isPro);
 }
 
 /**
@@ -81,17 +81,17 @@ export function getProTemplates(): ResumeTemplateType[] {
  * @returns Array of templates matching the category
  */
 export function getTemplatesByCategory(
-  category: "free" | "pro" | "all" = "all"
+	category: "free" | "pro" | "all" = "all"
 ): ResumeTemplateType[] {
-  switch (category) {
-    case "free":
-      return getFreeTemplates();
-    case "pro":
-      return getProTemplates();
-    case "all":
-    default:
-      return resumeTemplates;
-  }
+	switch (category) {
+		case "free":
+			return getFreeTemplates();
+		case "pro":
+			return getProTemplates();
+		case "all":
+		default:
+			return resumeTemplates;
+	}
 }
 
 /**
@@ -101,51 +101,51 @@ export function getTemplatesByCategory(
  * @returns Validation results
  */
 export function validateTemplateRegistry(): {
-  isValid: boolean;
-  issues: string[];
-  templateCount: number;
+	isValid: boolean;
+	issues: string[];
+	templateCount: number;
 } {
-  const issues: string[] = [];
+	const issues: string[] = [];
 
-  // Check if we have at least one template
-  if (resumeTemplates.length === 0) {
-    issues.push("No templates registered");
-  }
+	// Check if we have at least one template
+	if (resumeTemplates.length === 0) {
+		issues.push("No templates registered");
+	}
 
-  // Check if we have at least one free template
-  const freeTemplates = getFreeTemplates();
-  if (freeTemplates.length === 0) {
-    issues.push("No free templates available");
-  }
+	// Check if we have at least one free template
+	const freeTemplates = getFreeTemplates();
+	if (freeTemplates.length === 0) {
+		issues.push("No free templates available");
+	}
 
-  // Validate each template
-  resumeTemplates.forEach((template, index) => {
-    if (!template.id) {
-      issues.push(`Template at index ${index} missing ID`);
-    }
+	// Validate each template
+	resumeTemplates.forEach((template, index) => {
+		if (!template.id) {
+			issues.push(`Template at index ${index} missing ID`);
+		}
 
-    if (!template.name) {
-      issues.push(`Template "${template.id}" missing name`);
-    }
+		if (!template.name) {
+			issues.push(`Template "${template.id}" missing name`);
+		}
 
-    if (!template.applyTemplate) {
-      issues.push(`Template "${template.id}" missing applyTemplate function`);
-    }
+		if (!template.applyTemplate) {
+			issues.push(`Template "${template.id}" missing applyTemplate function`);
+		}
 
-    if (!template.styles) {
-      issues.push(`Template "${template.id}" missing styles`);
-    }
+		if (!template.styles) {
+			issues.push(`Template "${template.id}" missing styles`);
+		}
 
-    // Check for duplicate IDs
-    const duplicates = resumeTemplates.filter((t) => t.id === template.id);
-    if (duplicates.length > 1) {
-      issues.push(`Duplicate template ID: "${template.id}"`);
-    }
-  });
+		// Check for duplicate IDs
+		const duplicates = resumeTemplates.filter((t) => t.id === template.id);
+		if (duplicates.length > 1) {
+			issues.push(`Duplicate template ID: "${template.id}"`);
+		}
+	});
 
-  return {
-    isValid: issues.length === 0,
-    issues,
-    templateCount: resumeTemplates.length,
-  };
+	return {
+		isValid: issues.length === 0,
+		issues,
+		templateCount: resumeTemplates.length,
+	};
 }

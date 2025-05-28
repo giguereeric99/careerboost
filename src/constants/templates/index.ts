@@ -5,12 +5,12 @@
 
 // Main registry exports
 export {
-  resumeTemplates,
-  getTemplateById,
-  getFreeTemplates,
-  getProTemplates,
-  getTemplatesByCategory,
-  validateTemplateRegistry,
+	resumeTemplates,
+	getTemplateById,
+	getFreeTemplates,
+	getProTemplates,
+	getTemplatesByCategory,
+	validateTemplateRegistry,
 } from "./templateRegistry";
 
 // Individual templates (for direct access if needed)
@@ -18,6 +18,7 @@ export { basicTemplate } from "./basic/basicTemplate";
 export { professionalTemplate } from "./professional/professionalTemplate";
 export { creativeTemplate } from "./creative/creativeTemplate";
 export { executiveTemplate } from "./executive/executiveTemplate";
+export { technicalTemplate } from "./technical/technicalTemplate";
 
 // Utility functions
 export * from "./utils/templateHelpers";
@@ -25,7 +26,7 @@ export * from "./utils/templateValidation";
 
 // Type exports (re-exported for convenience)
 export type {
-  ResumeTemplateType,
-  TemplateContentSections,
-  HeaderInfo,
+	ResumeTemplateType,
+	TemplateContentSections,
+	HeaderInfo,
 } from "../../types/resumeTemplateTypes";
