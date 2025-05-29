@@ -470,22 +470,6 @@ export const compactStyles = `
     position: relative;
   }
 
-  /* === RESPONSIVE DESIGN FOR COMPACT LAYOUT === */
-  @media (max-width: 1024px) {
-    .compact-content-wrapper {
-      grid-template-columns: 1fr; /* Single column on tablets */
-      gap: 10px;
-    }
-
-    body {
-      font-size: 12px; /* Slightly larger on tablets */
-    }
-
-    .compact-name {
-      font-size: 20px;
-    }
-  }
-
   @media (max-width: 768px) {
     body {
       padding: 10px;
@@ -498,9 +482,16 @@ export const compactStyles = `
     }
 
     .compact-content-wrapper {
-      grid-template-columns: 1fr; /* Single column on mobile */
-      gap: 8px;
-      padding: 10px;
+      grid-template-columns: 1fr; /* Single column on tablets */
+      gap: 10px;
+    }
+
+    .compact-left-column {
+      order: 2;
+    }
+
+    .compact-right-column {
+      order: 1;
     }
 
     .compact-header {
