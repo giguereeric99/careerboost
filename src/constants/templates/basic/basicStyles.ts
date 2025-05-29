@@ -170,6 +170,15 @@ export const basicStyles = `
       padding: 0;
       font-size: 12pt;
     }
+
+    * {
+      page-break-before: auto !important;
+      page-break-after: auto !important;
+      page-break-inside: auto !important;
+      break-before: auto !important;
+      break-after: auto !important;
+      break-inside: auto !important;
+    }
     
     .resume-container {
       width: 100%;

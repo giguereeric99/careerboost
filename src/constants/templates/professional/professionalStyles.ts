@@ -468,6 +468,15 @@ export const professionalStyles = `
       background: white;
       font-size: 11pt;
     }
+
+    * {
+      page-break-before: auto !important;
+      page-break-after: auto !important;
+      page-break-inside: auto !important;
+      break-before: auto !important;
+      break-after: auto !important;
+      break-inside: auto !important;
+    }
     
     .professional-resume-container {
       box-shadow: none;
@@ -483,6 +492,17 @@ export const professionalStyles = `
       background: #003366 !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+    }
+
+    .professional-contacts {
+      display: block !important;
+      text-align: center;
+    }
+    
+    .professional-contact {
+      display: inline-block !important;
+      margin: 0 8px 10px !important;
+      vertical-align: middle;
     }
 
     .professional-content-wrapper {

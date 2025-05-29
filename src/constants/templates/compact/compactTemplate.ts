@@ -1,8 +1,8 @@
 /**
- * Compact Template Definition - SPACE-OPTIMIZED FOR MAXIMUM CONTENT
+ * Compact Template Definition - 2 COLUMNS SPACE-OPTIMIZED
  * Ultra-compact template that maximizes space utilization for content-heavy resumes
  * Ideal for professionals with extensive experience who need everything on one page
- * Minimalist design with condensed sections and optimized typography
+ * Minimalist design with condensed sections and optimized typography - 2 COLUMN LAYOUT
  */
 import {
 	ResumeTemplateType,
@@ -15,8 +15,8 @@ import {
 import { compactStyles } from "./compactStyles";
 
 /**
- * Compact template HTML structure
- * Ultra-compact structure with minimalist header and 3-column layout on desktop
+ * Compact template HTML structure - 2 COLUMN LAYOUT
+ * Ultra-compact structure with minimalist header and 2-column layout on desktop
  * Mobile: automatically switches to single column for readability
  */
 const compactTemplateHTML = `
@@ -26,10 +26,10 @@ const compactTemplateHTML = `
     <!-- Content will be inserted conditionally based on available data -->
   </div>
 
-  <!-- Main Content Wrapper with Compact Layout -->
+  <!-- Main Content Wrapper with Compact 2-Column Layout -->
   <div class="compact-content-wrapper">
     
-    <!-- Left Column - Complementary Information -->
+    <!-- Left Column - Skills and Supplementary Information -->
     <div class="compact-left-column">
       <!-- Skills with compact tag display -->
       <div class="section compact-section compact-skills-section" id="resume-skills">
@@ -55,10 +55,15 @@ const compactTemplateHTML = `
       <div class="section compact-section compact-awards-section" id="resume-awards">
         {{resume-awards}}
       </div>
+
+      <!-- Volunteering with condensed entries - MOVED HERE -->
+      <div class="section compact-section compact-volunteering-section" id="resume-volunteering">
+        {{resume-volunteering}}
+      </div>
     </div>
 
-    <!-- Center Column - Primary Content -->
-    <div class="compact-center-column">
+    <!-- Right Column - Primary Content -->
+    <div class="compact-right-column">
       <!-- Summary with condensed format -->
       <div class="section compact-section compact-summary-section" id="resume-summary">
         {{resume-summary}}
@@ -68,28 +73,20 @@ const compactTemplateHTML = `
       <div class="section compact-section compact-experience-section" id="resume-experience">
         {{resume-experience}}
       </div>
+
+      <!-- Education with compact degree display - MOVED AFTER EXPERIENCE -->
+      <div class="section compact-section compact-education-section" id="resume-education">
+        {{resume-education}}
+      </div>
       
       <!-- Projects with condensed display -->
       <div class="section compact-section compact-projects-section" id="resume-projects">
         {{resume-projects}}
       </div>
-    </div>
 
-    <!-- Right Column - Education and Additional Info -->
-    <div class="compact-right-column">
-      <!-- Education with compact degree display -->
-      <div class="section compact-section compact-education-section" id="resume-education">
-        {{resume-education}}
-      </div>
-      
       <!-- Publications with abbreviated format -->
       <div class="section compact-section compact-publications-section" id="resume-publications">
         {{resume-publications}}
-      </div>
-      
-      <!-- Volunteering with condensed entries -->
-      <div class="section compact-section compact-volunteering-section" id="resume-volunteering">
-        {{resume-volunteering}}
       </div>
       
       <!-- References with minimal contact info -->
@@ -108,11 +105,11 @@ const compactTemplateHTML = `
 
 /**
  * Type definition for compact section configuration
- * Simplified configuration focused on space efficiency
+ * Simplified configuration focused on space efficiency - 2 COLUMN VERSION
  */
 type CompactSectionConfig = {
 	icon: string;
-	location: "left" | "center" | "right";
+	location: "left" | "right"; // Only 2 columns now
 	displayStyle: "tags" | "list" | "cards" | "timeline";
 	priority: number; // Higher priority sections get more space
 };
@@ -138,36 +135,28 @@ type CompactSectionsType = {
 };
 
 /**
- * Section configuration for compact template with space optimization
+ * Section configuration for compact template with space optimization - 2 COLUMN VERSION
  * Each section optimized for maximum content density while maintaining readability
  */
 const compactSections: CompactSectionsType = {
-	// Center column - Primary content with high priority
+	// Right column - Primary content with high priority
 	"resume-summary": {
 		icon: "person-lines-fill",
-		location: "center",
+		location: "right",
 		displayStyle: "cards",
 		priority: 10,
 	},
 	"resume-experience": {
 		icon: "briefcase-fill",
-		location: "center",
+		location: "right",
 		displayStyle: "timeline",
 		priority: 9,
 	},
 	"resume-projects": {
 		icon: "code-square",
-		location: "center",
-		displayStyle: "cards",
-		priority: 7,
-	},
-
-	// Right column - Education and formal credentials
-	"resume-education": {
-		icon: "mortarboard-fill",
 		location: "right",
 		displayStyle: "cards",
-		priority: 8,
+		priority: 7,
 	},
 	"resume-publications": {
 		icon: "journal-text",
@@ -224,6 +213,12 @@ const compactSections: CompactSectionsType = {
 		location: "left",
 		displayStyle: "list",
 		priority: 5,
+	},
+	"resume-education": {
+		icon: "mortarboard-fill",
+		location: "left",
+		displayStyle: "cards",
+		priority: 8,
 	},
 };
 
@@ -447,14 +442,14 @@ function isValidCompactSection(
 /**
  * Apply compact template to content sections
  * Builds header conditionally and applies space-optimized styling
- * Organizes content into three columns based on priority and content type
+ * Organizes content into two columns based on priority and content type
  *
  * @param sections - Object containing content for each section by ID
  * @returns Formatted HTML content with compact template applied
  */
 function applyCompactTemplate(sections: TemplateContentSections): string {
 	console.log(
-		"Applying Compact template with space optimization and 3-column layout"
+		"Applying Compact template with space optimization and 2-column layout"
 	);
 
 	// Start with the compact template structure
@@ -571,7 +566,7 @@ function applyCompactTemplate(sections: TemplateContentSections): string {
 	}
 
 	console.log(
-		"Compact template processing completed with space optimization and 3-column layout"
+		"Compact template processing completed with space optimization and 2-column layout"
 	);
 	return result;
 }
@@ -586,7 +581,7 @@ export const compactTemplate: ResumeTemplateType = {
 	isPro: true, // Pro template for CareerBoost
 	previewClass: "border-l-4 border-gray-600",
 	description:
-		"Space-optimized layout that maximizes content density while maintaining readability, perfect for extensive resumes",
+		"Space-optimized 2-column layout that maximizes content density while maintaining readability, perfect for extensive resumes",
 	styles: compactStyles,
 	template: compactTemplateHTML,
 	applyTemplate: applyCompactTemplate,

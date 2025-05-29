@@ -956,6 +956,15 @@ export const creativeStyles = `
       background: white;
       font-size: 11pt;
     }
+
+    * {
+      page-break-before: auto !important;
+      page-break-after: auto !important;
+      page-break-inside: auto !important;
+      break-before: auto !important;
+      break-after: auto !important;
+      break-inside: auto !important;
+    }
     
     .creative-resume-container {
       box-shadow: none;
@@ -970,6 +979,33 @@ export const creativeStyles = `
       background: #667eea !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+    }
+
+    .creative-contacts {
+      display: grid !important;
+      grid-template-columns: repeat(2, 1fr) !important;
+      grid-template-rows: auto auto !important;
+      justify-items: center !important;
+      gap: 15px 20px !important;
+      padding: 0 0 20px 0 !important;
+      text-align: center !important;
+      margin-top: 0 !important;
+    }
+    
+    .creative-contact-item {
+      display: block !important;
+      width: auto !important;
+    }
+    
+    .creative-contact-icon {
+      display: inline-block !important;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+    
+    .creative-contact-text {
+      display: inline-block !important;
+      vertical-align: middle;
     }
 
     .creative-content-wrapper {

@@ -1,7 +1,7 @@
 /**
- * Compact Template Styles - SPACE-OPTIMIZED FOR MAXIMUM CONTENT DENSITY
+ * Compact Template Styles - 2 COLUMNS SPACE-OPTIMIZED FOR MAXIMUM CONTENT DENSITY
  * Ultra-efficient design that maximizes content per page while maintaining readability
- * Features: Condensed spacing, optimized typography, 3-column layout, minimal margins
+ * Features: Condensed spacing, optimized typography, 2-column layout, minimal margins
  * Perfect for professionals with extensive experience who need everything on one page
  */
 
@@ -20,7 +20,7 @@ export const compactStyles = `
   /* === MAIN CONTAINER WITH COMPACT DIMENSIONS === */
   .compact-resume-container {
     background: #ffffff;
-    max-width: 900px; /* Slightly wider for 3-column layout */
+    max-width: 850px; /* Optimized width for 2-column layout */
     margin: 0 auto;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     border-radius: 4px; /* Minimal border radius */
@@ -97,11 +97,11 @@ export const compactStyles = `
     font-size: 8px;
   }
 
-  /* === 3-COLUMN LAYOUT WITH SPACE OPTIMIZATION === */
+  /* === 2-COLUMN LAYOUT WITH SPACE OPTIMIZATION === */
   .compact-content-wrapper {
     display: grid;
-    grid-template-columns: 1fr 1.8fr 1fr; /* Balanced 3-column layout */
-    gap: 12px; /* Minimal gap between columns */
+    grid-template-columns: 1fr 2fr; /* Balanced 2-column layout: 1:2 ratio */
+    gap: 15px; /* Minimal gap between columns */
     padding: 15px; /* Reduced padding */
     min-height: 600px;
     height: auto;
@@ -118,20 +118,10 @@ export const compactStyles = `
     overflow: visible;
   }
 
-  /* === CENTER COLUMN - PRIMARY CONTENT === */
-  .compact-center-column {
+  /* === RIGHT COLUMN - PRIMARY CONTENT === */
+  .compact-right-column {
     padding: 12px; /* Compact padding */
     background: #ffffff;
-    height: auto;
-    overflow: visible;
-  }
-
-  /* === RIGHT COLUMN - EDUCATION AND ADDITIONAL INFO === */
-  .compact-right-column {
-    background: #f8f9fa;
-    padding: 12px; /* Compact padding */
-    border-radius: 4px;
-    border-left: 1px solid #e9ecef;
     height: auto;
     overflow: visible;
   }
@@ -178,13 +168,12 @@ export const compactStyles = `
     margin-top: 8px; /* Minimal content margin */
   }
 
-  .compact-left-content,
-  .compact-right-content {
+  .compact-left-content {
     font-size: 10px; /* Smaller font for sidebar content */
     line-height: 1.3;
   }
 
-  .compact-center-content {
+  .compact-right-content {
     font-size: 11px; /* Slightly larger for main content */
     line-height: 1.4;
   }
@@ -220,7 +209,7 @@ export const compactStyles = `
     padding: 0 !important;
   }
 
-    /* === FIX FOR ORDERED LISTS ALIGNMENT === */
+  /* === FIX FOR ORDERED LISTS ALIGNMENT === */
   
   /* Fix ordered lists that extend too far left */
   ol {
@@ -230,7 +219,6 @@ export const compactStyles = `
 
   .compact-section-content ol,
   .compact-left-content ol,
-  .compact-center-content ol,
   .compact-right-content ol {
     padding-left: 16px !important;
     margin-left: 0 !important;
@@ -485,16 +473,8 @@ export const compactStyles = `
   /* === RESPONSIVE DESIGN FOR COMPACT LAYOUT === */
   @media (max-width: 1024px) {
     .compact-content-wrapper {
-      grid-template-columns: 1fr 2fr; /* 2-column on tablets */
+      grid-template-columns: 1fr; /* Single column on tablets */
       gap: 10px;
-    }
-
-    .compact-right-column {
-      grid-column: 1 / -1; /* Right column spans full width below */
-      margin-top: 15px;
-      border-left: none;
-      border-top: 1px solid #e9ecef;
-      padding-top: 15px;
     }
 
     body {
@@ -564,7 +544,6 @@ export const compactStyles = `
 
     /* Mobile optimizations for sections */
     .compact-left-column,
-    .compact-center-column,
     .compact-right-column {
       padding: 10px;
       border: none;
@@ -603,6 +582,16 @@ export const compactStyles = `
       font-size: 9pt; /* Very compact for print */
       line-height: 1.2;
     }
+
+    /* Reset all page breaks to avoid spacing issues */
+    * {
+      page-break-before: auto !important;
+      page-break-after: auto !important;
+      page-break-inside: auto !important;
+      break-before: auto !important;
+      break-after: auto !important;
+      break-inside: auto !important;
+    }
     
     .compact-resume-container {
       box-shadow: none;
@@ -620,23 +609,39 @@ export const compactStyles = `
       padding: 10px 15px; /* Minimal print padding */
     }
 
+    .compact-header-contacts {
+      display: block !important;
+      text-align: left !important;
+    }
+    
+    .compact-contact-item {
+      display: inline-block !important;
+      margin: 0 8px 10px !important;
+      vertical-align: middle;
+    }
+
+    .compact-contact-separator {
+      display: inline-block !important;
+      margin: 0 2px 8px !important;
+      vertical-align: middle;
+    }
+
     .compact-content-wrapper {
-      grid-template-columns: 0.8fr 2fr 0.8fr; /* Optimized for print */
-      gap: 8px;
-      padding: 10px;
+      grid-template-columns: 1fr 2fr !important; /* Maintain 2-column for print */
+      gap: 12px;
+      padding: 12px;
       min-height: auto;
     }
 
-    .compact-left-column,
-    .compact-right-column {
+    .compact-left-column {
       background: #f8f9fa !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
-      padding: 8px;
+      padding: 10px;
     }
 
-    .compact-center-column {
-      padding: 8px;
+    .compact-right-column {
+      padding: 10px;
     }
 
     .compact-section {
@@ -817,19 +822,14 @@ export const compactStyles = `
 
   /* === COLUMN-SPECIFIC OPTIMIZATIONS === */
   
-  /* Left column - Skills focus */
+  /* Left column - Skills and supplementary focus */
   .compact-left-column .compact-section {
-    margin-bottom: 14px; /* Slightly less spacing for skills */
+    margin-bottom: 14px; /* Slightly less spacing for sidebar */
   }
 
-  /* Center column - Main content focus */
-  .compact-center-column .compact-section {
-    margin-bottom: 20px; /* More spacing for readability */
-  }
-
-  /* Right column - Supplementary info */
+  /* Right column - Main content focus */
   .compact-right-column .compact-section {
-    margin-bottom: 14px; /* Compact supplementary spacing */
+    margin-bottom: 18px; /* More spacing for readability */
   }
 
   /* === CONTENT TYPE SPECIFIC STYLING === */
@@ -863,7 +863,6 @@ export const compactStyles = `
   
   /* Ensure consistent column heights */
   .compact-left-column,
-  .compact-center-column,
   .compact-right-column {
     align-self: start; /* Prevent columns from stretching */
   }
@@ -885,18 +884,15 @@ export const compactStyles = `
   /* === BROWSER-SPECIFIC OPTIMIZATIONS === */
   
   /* Webkit scrollbars for compact columns */
-  .compact-left-column::-webkit-scrollbar,
-  .compact-right-column::-webkit-scrollbar {
+  .compact-left-column::-webkit-scrollbar {
     width: 4px;
   }
 
-  .compact-left-column::-webkit-scrollbar-track,
-  .compact-right-column::-webkit-scrollbar-track {
+  .compact-left-column::-webkit-scrollbar-track {
     background: #f1f3f4;
   }
 
-  .compact-left-column::-webkit-scrollbar-thumb,
-  .compact-right-column::-webkit-scrollbar-thumb {
+  .compact-left-column::-webkit-scrollbar-thumb {
     background: #bdc3c7;
     border-radius: 2px;
   }
