@@ -8,6 +8,7 @@
  * - Download options for HTML and PDF
  * - Responsive layout for all screen sizes
  * - Keyboard accessibility (Escape to close)
+ * FIXED: TypeScript error handling for unknown error types
  */
 import React, { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,36 @@ interface ResumePreviewModalProps {
 	resumeContent: string; // HTML content of the resume to preview
 	selectedTemplate: ResumeTemplateType; // Template to apply to the resume
 }
+
+/**
+ * Utility function to safely extract error message from unknown error type
+ * This ensures TypeScript compatibility when handling catch blocks
+ *
+ * @param error - Unknown error object from catch block
+ * @returns Safe error message string
+ */
+const getErrorMessage = (error: unknown): string => {
+	// Check if error is an Error instance with message property
+	if (error instanceof Error) {
+		return error.message;
+	}
+
+	// Check if error is an object with message property
+	if (error && typeof error === "object" && "message" in error) {
+		const errorObj = error as { message: unknown };
+		if (typeof errorObj.message === "string") {
+			return errorObj.message;
+		}
+	}
+
+	// Check if error is a string
+	if (typeof error === "string") {
+		return error;
+	}
+
+	// Fallback for unknown error types
+	return "An unknown error has occurred";
+};
 
 /**
  * ResumePreviewModal component
@@ -142,9 +173,8 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
 		const handleEscape = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				onClose();
+				toast.message("👁️ Exiting to preview mode...");
 			}
-
-			toast.message("👁️ Exiting to preview mode...");
 		};
 
 		if (open) {
@@ -182,13 +212,15 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
 			toast.success("Resume downloaded as HTML");
 		} catch (error) {
 			console.error("Error downloading HTML:", error);
-			toast.error("Failed to download resume as HTML");
+			const errorMessage = getErrorMessage(error);
+			toast.error(`Failed to download resume as HTML: ${errorMessage}`);
 		}
 	};
 
 	/**
 	 * Download the resume as PDF using the existing HTML preview
 	 * Much simpler - uses the same HTML that's already working in the preview
+	 * FIXED: TypeScript error handling with proper error type checking
 	 */
 	const handleDownloadPdf = async () => {
 		setIsGeneratingPdf(true);
@@ -224,7 +256,6 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
 			if (!response.ok) {
 				const errorData = await response.json();
 				throw new Error(errorData.error || "Failed to generate PDF");
-				toast.error("Something wrong happened, try again later!");
 			}
 
 			// Handle PDF download
@@ -245,7 +276,9 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
 			toast.success("Resume downloaded as PDF");
 		} catch (error) {
 			console.error("Error generating PDF:", error);
-			toast.error(`Failed to generate PDF: ${error.message}`);
+			// FIXED: Use safe error message extraction
+			const errorMessage = getErrorMessage(error);
+			toast.error(`Failed to generate PDF: ${errorMessage}`);
 		} finally {
 			setIsGeneratingPdf(false);
 		}

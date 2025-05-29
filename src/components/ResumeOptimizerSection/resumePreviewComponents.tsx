@@ -5,6 +5,7 @@
  * to reduce the file size and improve maintainability.
  * These components are used by the main ResumePreview component to render
  * different parts of the UI based on the current state.
+ * OPTIMIZED: Unified PreviewActions component instead of separate Header/Footer
  */
 
 import React from "react";
@@ -39,13 +40,13 @@ interface Section {
 	content: string; // HTML content of the section
 }
 
-// ========== PreviewHeader Component ==========
+// ========== PreviewActions Component (Unified Header/Footer) ==========
 
 /**
- * Props for PreviewHeader component
- * Contains all action buttons and controls for the preview header
+ * Props for PreviewActions component
+ * Contains all action buttons and controls that can be used in header or footer
  */
-interface PreviewHeaderProps {
+interface PreviewActionsProps {
 	editMode: boolean; // Whether the resume is in edit mode
 	toggleEditMode: () => void; // Function to toggle edit mode
 	openPreview: () => void; // Function to open full preview modal
@@ -54,13 +55,16 @@ interface PreviewHeaderProps {
 	shouldEnableSave: boolean; // Whether content has been modified
 	optimizedText: string; // Current optimized text
 	onReset?: () => void; // Optional function to reset to original version
+	showTitle?: boolean; // Whether to show the title (for header usage)
+	className?: string; // Additional CSS classes
 }
 
 /**
- * Header section of the ResumePreview with action buttons
+ * Unified actions component that can be used as header or footer
  * Shows different options based on whether in edit or preview mode
+ * OPTIMIZED: Single component instead of duplicate Header/Footer components
  */
-export const PreviewHeader: React.FC<PreviewHeaderProps> = ({
+export const PreviewActions: React.FC<PreviewActionsProps> = ({
 	editMode,
 	toggleEditMode,
 	openPreview,
@@ -69,108 +73,21 @@ export const PreviewHeader: React.FC<PreviewHeaderProps> = ({
 	shouldEnableSave,
 	optimizedText,
 	onReset,
+	showTitle = false,
+	className = "",
 }) => (
-	<div>
-		<div className="flex items-center justify-between mb-4">
-			{editMode && <h3 className="font-bold text-lg">Edit Sections</h3>}
-		</div>
-		<div className="flex items-center justify-between mb-4">
-			<div className="flex items-center gap-2">
-				{editMode && (
-					<Button variant="ghost" size="sm" onClick={toggleEditMode}>
-						<ChevronLeft className="h-4 w-4 mr-1" /> Back to Preview
-					</Button>
-				)}
-				{!editMode && <h3 className="font-bold text-lg">Resume Preview</h3>}
-			</div>
-
-			<div className="flex gap-2">
-				{!editMode && (
-					<>
-						{/* Full Preview Button - Opens the preview modal with template applied */}
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={openPreview}
-							disabled={!optimizedText}
-							title="View resume with template applied in full preview mode"
-						>
-							<Eye className="h-4 w-4 mr-2" /> Full Preview
-						</Button>
-
-						{/* Reset button - only visible if onReset is provided */}
-						{onReset && (
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={onReset}
-								disabled={!optimizedText}
-								className="text-red-600 hover:text-red-700 hover:bg-red-50"
-								title="Reset resume to original optimized version"
-							>
-								<RotateCcw className="h-4 w-4 mr-2" /> Reset
-							</Button>
-						)}
-
-						{/* Edit Button - Switches to edit mode */}
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={toggleEditMode}
-							disabled={!optimizedText}
-							title="Edit resume content by section"
-						>
-							<Edit className="h-4 w-4 mr-2" /> Edit
-						</Button>
-					</>
-				)}
-
-				{/* Save Button - Only visible in edit mode */}
-				{editMode && (
-					<Button
-						size="sm"
-						onClick={handleSave}
-						disabled={isSaving || !shouldEnableSave}
-						className="bg-brand-600 hover:bg-brand-700"
-						title="Save all changes to resume"
-					>
-						{isSaving ? (
-							<>
-								<div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-								Saving...
-							</>
-						) : (
-							<>
-								<Save className="h-4 w-4 mr-2" /> Save Changes
-							</>
-						)}
-					</Button>
-				)}
-			</div>
-		</div>
-	</div>
-);
-
-/**
- * Footer section of the ResumePreview with action buttons
- * Shows different options based on whether in edit or preview mode
- */
-export const PreviewFooter: React.FC<PreviewFooterProps> = ({
-	editMode,
-	toggleEditMode,
-	openPreview,
-	handleSave,
-	isSaving,
-	shouldEnableSave,
-	optimizedText,
-	onReset,
-}) => (
-	<div className="flex items-center justify-between mt-4">
+	<div className={`flex items-center justify-between ${className}`}>
 		<div className="flex items-center gap-2">
 			{editMode && (
 				<Button variant="ghost" size="sm" onClick={toggleEditMode}>
 					<ChevronLeft className="h-4 w-4 mr-1" /> Back to Preview
 				</Button>
+			)}
+			{!editMode && showTitle && (
+				<h3 className="font-bold text-lg">Resume Preview</h3>
+			)}
+			{editMode && showTitle && (
+				<h3 className="font-bold text-lg">Edit Sections</h3>
 			)}
 		</div>
 
@@ -238,6 +155,26 @@ export const PreviewFooter: React.FC<PreviewFooterProps> = ({
 			)}
 		</div>
 	</div>
+);
+
+// ========== Convenience exports for backward compatibility ==========
+
+/**
+ * PreviewHeader - Uses PreviewActions with title enabled
+ * Wrapper for backward compatibility
+ */
+export const PreviewHeader: React.FC<PreviewActionsProps> = (props) => (
+	<div className="mb-4">
+		<PreviewActions {...props} showTitle={true} />
+	</div>
+);
+
+/**
+ * PreviewFooter - Uses PreviewActions without title
+ * Wrapper for backward compatibility
+ */
+export const PreviewFooter: React.FC<PreviewActionsProps> = (props) => (
+	<PreviewActions {...props} showTitle={false} className="mt-4" />
 );
 
 // ========== PreviewContent Component ==========

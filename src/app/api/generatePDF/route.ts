@@ -1,10 +1,48 @@
 /**
- * PDF Generation API Route - SIMPLIFIED VERSION
+ * PDF Generation API Route - SIMPLIFIED VERSION WITH TYPESCRIPT FIXES
  * Just takes complete HTML and converts it to PDF
+ * Fixed all TypeScript errors related to unknown error types
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+
+/**
+ * Helper function to safely extract error message from unknown error
+ * TypeScript-safe way to handle errors in catch blocks
+ *
+ * @param error - Unknown error from catch block
+ * @returns Safe error message string
+ */
+function getErrorMessage(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	if (typeof error === "string") {
+		return error;
+	}
+	return "An unknown error occurred";
+}
+
+/**
+ * Helper function to safely extract error details for logging
+ * Provides more detailed error information for debugging
+ *
+ * @param error - Unknown error from catch block
+ * @returns Object containing error details
+ */
+function getErrorDetails(error: unknown): { message: string; stack?: string } {
+	if (error instanceof Error) {
+		return {
+			message: error.message,
+			stack: error.stack,
+		};
+	}
+	if (typeof error === "string") {
+		return { message: error };
+	}
+	return { message: "An unknown error occurred" };
+}
 
 export async function POST(request: NextRequest) {
 	console.log("PDF generation request received");
@@ -114,34 +152,42 @@ export async function POST(request: NextRequest) {
 			},
 		});
 	} catch (error) {
-		console.error("Error generating PDF:", error);
+		// FIXED: Use helper function to safely extract error message
+		const errorDetails = getErrorDetails(error);
+		console.error("Error generating PDF:", errorDetails);
 
 		return NextResponse.json(
 			{
 				error: "Failed to generate PDF",
 				details:
-					process.env.NODE_ENV === "development" ? error.message : undefined,
+					process.env.NODE_ENV === "development"
+						? errorDetails.message
+						: undefined,
 			},
 			{ status: 500 }
 		);
 	} finally {
-		// Cleanup
+		// Cleanup with proper error handling
 		console.log("Starting cleanup...");
 
+		// FIXED: Safe page cleanup with TypeScript-safe error handling
 		try {
 			if (page && !page.isClosed()) {
 				await page.close();
 			}
 		} catch (pageError) {
-			console.error("Error closing page:", pageError.message);
+			// FIXED: Use helper function to safely extract error message
+			console.error("Error closing page:", getErrorMessage(pageError));
 		}
 
+		// FIXED: Safe browser cleanup with TypeScript-safe error handling
 		try {
 			if (browser && browser.connected) {
 				await browser.close();
 			}
 		} catch (browserError) {
-			console.error("Error closing browser:", browserError.message);
+			// FIXED: Use helper function to safely extract error message
+			console.error("Error closing browser:", getErrorMessage(browserError));
 		}
 
 		console.log("Cleanup completed");
