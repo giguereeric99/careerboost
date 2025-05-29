@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 		const screenshot = await page.screenshot({
 			fullPage: true,
 			type: "png",
-			path: "./debug-screenshot.png", // Sauvegarde temporaire
+			path: "./technical-preview.png", // Sauvegarde temporaire
 		});
 
 		// Generate PDF

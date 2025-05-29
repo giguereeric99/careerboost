@@ -14,7 +14,7 @@ export const technicalStyles = `
     margin: 0;
     padding: 40px;
     color: #1a202c;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     line-height: 1.6;
     font-size: 14px;
     min-height: 100vh;
@@ -877,7 +877,7 @@ export const technicalStyles = `
     }
     
     .technical-contact:nth-child(4) {
-      grid-column: 1 / -1 !important; /* S'étend sur toutes les colonnes */
+      grid-column: 1 / -1 !important;
       grid-row: 2;
       justify-self: start !important;
       width: auto !important;

@@ -125,6 +125,7 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
 
 					// End loading state
 					setIsLoading(false);
+					toast.message("👁️ Previewing the final result of your resume!");
 				}
 			}, 100);
 		} catch (error) {
@@ -142,6 +143,8 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
 			if (e.key === "Escape") {
 				onClose();
 			}
+
+			toast.message("👁️ Exiting to preview mode...");
 		};
 
 		if (open) {
@@ -193,6 +196,8 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
 		try {
 			console.log("Starting PDF generation using existing preview HTML...");
 
+			toast.message("📄 Generating the PDF...");
+
 			// Use the SAME HTML that's already working in the preview
 			const completeHtml = createCompleteHtml(
 				selectedTemplate,
@@ -219,6 +224,7 @@ const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
 			if (!response.ok) {
 				const errorData = await response.json();
 				throw new Error(errorData.error || "Failed to generate PDF");
+				toast.error("Something wrong happened, try again later!");
 			}
 
 			// Handle PDF download

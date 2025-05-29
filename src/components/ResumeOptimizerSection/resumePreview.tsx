@@ -837,6 +837,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 	 */
 	const handleClosePreviewModal = useCallback(() => {
 		setIsPreviewModalOpen(false);
+		toast.message("👁️ Exiting to preview mode...");
 	}, []);
 
 	/**
