@@ -876,9 +876,9 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 	 * Show loading state during optimization
 	 * Early return to prevent rendering the main UI during processing
 	 */
-	if (isOptimizing) {
-		return <LoadingState />;
-	}
+	// if (isOptimizing) {
+	// 	return <LoadingState />;
+	// }
 
 	// ===== COMPUTED VALUES FOR RENDER =====
 

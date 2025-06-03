@@ -1,251 +1,188 @@
 /**
- * useResumeOptimizer Hook - FINAL ULTRA-OPTIMIZED VERSION WITH SECTION TITLES SUPPORT
+ * useResumeOptimizer Hook - REFACTORED AND SIMPLIFIED VERSION
  *
- * COMPLETELY FIXED FOR STABLE EDITING EXPERIENCE:
- * - Eliminated ALL focus loss issues during editing
- * - Prevented cascading re-renders that cause editor reinitialization
- * - Implemented stable section references with immutable updates
- * - Added debounced content updates for smooth typing experience
- * - Optimized memo dependencies to prevent unnecessary recalculations
- * - Maintained all original functionality while drastically improving performance
- * - ENHANCED: Added section titles support for multilingual empty sections
- *
- * KEY IMPROVEMENTS:
- * - Section updates use immutable patterns to preserve editor instances
- * - Content combination is deferred to prevent immediate re-renders
- * - Stable references returned when content hasn't actually changed
- * - Focus management optimized with proper debouncing
- * - All modification tracking optimized for minimal re-renders
- * - Section titles from AI response are captured and stored for proper language support
+ * This hook provides the main interface for resume optimization functionality.
+ * MAJOR IMPROVEMENTS:
+ * - Fixed UploadThing double processing issue
+ * - Simplified UI state management
+ * - Added auto-processing useEffect
+ * - Reduced complexity and redundancy
+ * - Enhanced error handling and debugging
  */
 
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useReducer, useCallback, useEffect, useRef, useMemo } from "react";
 import { toast } from "sonner";
+import { useUser } from "@clerk/nextjs";
+
+// Import separated concerns
+import {
+	CVOptimizerState,
+	UseResumeOptimizerReturn,
+	UploadedFileInfo,
+	CVOptimizerAction,
+} from "@/types/resumeOptimizerTypes";
+import {
+	TOAST_CONFIGURATIONS,
+	LOADING_STATES,
+	PROCESSING_STATES,
+	EDIT_ALLOWED_STATES,
+	SAVE_ALLOWED_STATES,
+	RESET_ALLOWED_STATES,
+	PREVIEW_TAB_STATES,
+	UPLOAD_TAB_STATES,
+	UPLOAD_STATES,
+	FILE_PROCESSING_STATES,
+	ANALYSIS_STATES,
+	TIMING_CONFIG,
+} from "@/constants/resumeOptimizerConstants";
+import {
+	cvOptimizerReducer,
+	actionCreators,
+	createInitialContext,
+	isErrorState,
+	getErrorMessage,
+	isRetryableError,
+	calculateOverallProgress,
+	getCurrentStepDescription,
+	canUploadFile,
+	canInputText,
+	isLoadingState,
+	validateFile,
+	validateTextContent,
+	normalizeSuggestion,
+	normalizeKeyword,
+} from "@/actions/resumeOptimizerActions";
+
+// Import services for database operations
 import {
 	getLatestOptimizedResume,
-	saveResumeComplete, // New atomic save function
+	saveResumeComplete,
 	resetResumeToOriginal,
-	updateResumeTemplate,
 } from "@/services/resumeService";
-import { parseOptimizedText, calculateAtsScore } from "@/services/resumeParser";
+
+// Import utility functions
+import {
+	parseHtmlIntoSections,
+	getSectionName,
+	SECTION_NAMES,
+	SECTION_ORDER,
+	ensureAllStandardSections,
+} from "@/utils/resumeUtils";
+
+// Import existing types
 import {
 	OptimizedResumeData,
 	Suggestion,
 	Keyword,
 	Section,
 } from "@/types/resumeTypes";
-import {
-	parseHtmlIntoSections,
-	getSectionName,
-	SECTION_NAMES,
-	SECTION_ORDER,
-	isSectionEmpty,
-	ensureAllStandardSections,
-} from "@/utils/resumeUtils";
 
 /**
- * Type guard to check if a value is not null or undefined
- * Used for safer type narrowing in TypeScript
- *
- * @param value - Value to check
- * @returns Boolean indicating if value is defined (type predicate)
+ * Main hook that provides the resume optimization interface
+ * SIMPLIFIED: Reduced complexity and eliminated redundancy
  */
-function isDefined<T>(value: T | null | undefined): value is T {
-	return value !== null && value !== undefined;
-}
+export const useResumeOptimizer = (
+	userId?: string
+): UseResumeOptimizerReturn => {
+	// Get authenticated user info from Clerk for upload operations
+	const { user } = useUser();
 
-/**
- * Normalizes a suggestion object to ensure consistent structure
- * Handles different property naming conventions (camelCase vs snake_case)
- *
- * @param suggestion - Raw suggestion from API or other source
- * @returns Normalized suggestion with consistent property names
- */
-function normalizeSuggestion(suggestion: any): Suggestion {
-	return {
-		// Generate ID if missing with fallbacks
-		id: suggestion.id || suggestion.suggestion_id || String(Math.random()),
-		// Ensure basic text properties
-		text: suggestion.text || suggestion.original_text || "",
-		type: suggestion.type || "general",
-		impact: suggestion.impact || "",
-		// Handle both naming conventions for applied state
-		isApplied: suggestion.isApplied || suggestion.is_applied || false,
-		// Include pointImpact for score calculations
-		pointImpact: suggestion.pointImpact || suggestion.point_impact || 2,
+	// Initialize state machine with separated reducer
+	const [{ current: state, context }, dispatch] = useReducer(
+		cvOptimizerReducer,
+		{
+			current: CVOptimizerState.INITIALIZING,
+			context: createInitialContext(),
+		}
+	);
+
+	// Refs for optimization and tracking
+	const hasInitialized = useRef(false);
+	const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+	const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+	const retryCountRef = useRef<number>(0);
+	const lastOperationRef = useRef<string | null>(null);
+
+	// Debug action history ref
+	type ActionHistoryEntry = {
+		action: CVOptimizerAction;
+		fromState: CVOptimizerState;
+		toState: CVOptimizerState;
+		timestamp: Date;
+		success: boolean;
+		error?: string | null;
 	};
-}
 
-/**
- * Normalizes a keyword object to ensure consistent structure
- * Handles different property naming conventions and formats
- *
- * @param keyword - Raw keyword from API (string or object)
- * @returns Normalized keyword with consistent property names
- */
-function normalizeKeyword(keyword: any): Keyword {
-	// Handle case where keyword is just a string
-	if (typeof keyword === "string") {
+	const actionHistoryRef = useRef<ActionHistoryEntry[]>([]);
+
+	// ===== SIMPLIFIED COMPUTED VALUES =====
+
+	// Basic UI states derived from current state
+	const uiStates = useMemo(
+		() => ({
+			isLoading: LOADING_STATES.includes(state),
+			isSaving: state === CVOptimizerState.SAVING_CHANGES,
+			isResetting: state === CVOptimizerState.RESETTING_CHANGES,
+			isEditing: EDIT_ALLOWED_STATES.includes(state),
+			hasResume: context.hasExistingResume,
+			activeTab: context.activeTab,
+			isUploading: UPLOAD_STATES.includes(state),
+			isProcessingFile: FILE_PROCESSING_STATES.includes(state),
+			isAnalyzing: ANALYSIS_STATES.includes(state),
+			canUpload: canUploadFile(state, context),
+			canInputText: canInputText(state, context),
+			isInErrorState: isErrorState(state),
+			isRetryable: isRetryableError(state, context),
+		}),
+		[state, context.hasExistingResume, context.activeTab]
+	);
+
+	// SIMPLIFIED: Single upload UI state function
+	const uploadUIStates = useMemo(() => {
+		// MASTER LOGIC: Centralized button control
+		const shouldHideButton =
+			LOADING_STATES.includes(state) ||
+			PROCESSING_STATES.includes(state) ||
+			context.isActiveUpload ||
+			context.uploadThingInProgress;
+
+		const isUIFrozen =
+			shouldHideButton ||
+			state === CVOptimizerState.SAVING_CHANGES ||
+			state === CVOptimizerState.RESETTING_CHANGES;
+
 		return {
-			id: String(Math.random()),
-			text: keyword,
-			isApplied: false,
-			relevance: 1,
-			pointImpact: 1,
+			shouldHideUploadButton: shouldHideButton,
+			isUIFrozen: isUIFrozen,
+			canInteractWithUI: !isUIFrozen,
+			allowNewUpload: uiStates.canUpload && !shouldHideButton,
+			allowTextInput: uiStates.canInputText && !isUIFrozen,
+			showUploadingAnimation: context.isActiveUpload || uiStates.isUploading,
+			showProcessingAnimation:
+				context.uploadThingInProgress || uiStates.isProcessingFile,
+			showGeneralLoadingAnimation: uiStates.isLoading,
+			shouldReallyHideUploadButton: shouldHideButton,
+			isUploadThingActive:
+				context.isActiveUpload || context.uploadThingInProgress,
+			isInActiveProcessing:
+				PROCESSING_STATES.includes(state) || uiStates.isProcessingFile,
 		};
-	}
+	}, [state, context, uiStates]);
 
-	// Handle keyword as an object with potential varying property names
-	return {
-		id: keyword.id || keyword.keyword_id || String(Math.random()),
-		text: keyword.text || keyword.keyword || "",
-		// Support all possible variations of the applied property
-		isApplied:
-			keyword.isApplied || keyword.is_applied || keyword.applied || false,
-		relevance: keyword.relevance || 1,
-		pointImpact: keyword.pointImpact || keyword.point_impact || 1,
-	};
-}
-
-/**
- * Custom hook for resume optimization management - FINAL ULTRA-OPTIMIZED VERSION WITH SECTION TITLES
- * Provides comprehensive state and operations for resume editing workflow
- *
- * CRITICAL OPTIMIZATIONS FOR STABLE EDITING:
- * - Immutable section updates to prevent editor re-initialization
- * - Debounced content combination to reduce re-render frequency
- * - Stable reference management for all computed values
- * - Optimized dependency arrays in all memoized functions
- * - Focus-preserving update patterns throughout
- * - Section titles from AI for proper multilingual support
- *
- * @param userId - The user ID for data fetching
- * @returns Object containing state and methods for resume optimization
- */
-export const useResumeOptimizer = (userId?: string) => {
-	// ===== CORE RESUME CONTENT STATE =====
-
-	// Resume content state
-	const [resumeData, setResumeData] = useState<OptimizedResumeData | null>(
-		null
-	);
-	const [originalText, setOriginalText] = useState<string>(""); // Original optimized text from AI
-	const [optimizedText, setOptimizedText] = useState<string>(""); // Current displayed text (either original or edited)
-
-	// ===== ENHANCED: SECTION TITLES FROM AI RESPONSE =====
-
-	// Store section titles generated by AI in the correct language
-	const [sectionTitles, setSectionTitles] = useState<Record<string, string>>(
-		{}
-	);
-
-	// Store the resume language for proper section title handling
-	const [resumeLanguage, setResumeLanguage] = useState<string>("English");
-
-	// ===== ULTRA-OPTIMIZED EDITING STATE MANAGEMENT =====
-
-	// SINGLE source of truth for edit mode - no more conflicts!
-	const [isEditing, setIsEditing] = useState<boolean>(false);
-
-	// Temporary content during editing session - preserves changes when switching modes
-	const [tempEditedContent, setTempEditedContent] = useState<string>("");
-
-	// CRITICAL: Stable sections array that prevents editor re-initialization
-	const [tempSections, setTempSections] = useState<Section[]>([]);
-
-	// Ref to track the last stable sections to prevent unnecessary updates
-	const lastStableSectionsRef = useRef<Section[]>([]);
-
-	// Flag to track if temporary content has been modified
-	const [hasTempChanges, setHasTempChanges] = useState<boolean>(false);
-
-	// Debouncing refs for content updates to prevent excessive re-renders
-	const contentUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
-	const pendingContentUpdateRef = useRef<boolean>(false);
-
-	// ===== SCORING AND ENHANCEMENT DATA =====
-
-	const [originalAtsScore, setOriginalAtsScore] = useState<number | null>(null); // Original AI score
-	const [currentAtsScore, setCurrentAtsScore] = useState<number | null>(null); // Current/edited score
-	const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-	const [keywords, setKeywords] = useState<Keyword[]>([]);
-
-	// Track initial score for accurate improvement calculation
-	const initialScoreRef = useRef<number | null>(null);
-
-	// ===== UI STATE =====
-
-	const [selectedTemplate, setSelectedTemplate] = useState<string>("basic");
-	const [contentModified, setContentModified] = useState<boolean>(false);
-	const [scoreModified, setScoreModified] = useState<boolean>(false);
-	const [templateModified, setTemplateModified] = useState<boolean>(false);
-
-	// ===== LOADING STATES =====
-
-	const [isLoading, setIsLoading] = useState<boolean>(false);
-	const [isSaving, setIsSaving] = useState<boolean>(false);
-	const [isResetting, setIsResetting] = useState<boolean>(false);
-
-	// ===== RESUME STATUS =====
-
-	const [hasResume, setHasResume] = useState<boolean | null>(null);
-	const [activeTab, setActiveTab] = useState<string>("upload");
-
-	// ===== INTERNAL REFS AND FLAGS =====
-
-	// Track initial load attempt to prevent infinite loops
-	const loadAttemptRef = useRef<number>(0);
-	const hasLoadedDataRef = useRef<boolean>(false);
-
-	// Toast management to prevent duplicates
-	const [toastShown, setToastShown] = useState<boolean>(false);
-	const welcomeToastDisplayedRef = useRef<boolean>(false);
-	const previousLoadingState = useRef<boolean>(true); // Start as true to prevent immediate toast
-
-	// ===== ULTRA-OPTIMIZED COMPUTED VALUES =====
-
-	/**
-	 * Get the current content to display based on editing state - PERFORMANCE OPTIMIZED
-	 * Priority: temporary content (if editing) > optimized text > empty string
-	 * Uses stable references to prevent cascading re-renders
-	 */
+	// Current display content based on state and editing mode
 	const currentDisplayContent = useMemo(() => {
-		if (isEditing && tempEditedContent) {
-			return tempEditedContent;
+		if (uiStates.isEditing && context.tempEditedContent) {
+			return context.tempEditedContent;
 		}
-		return optimizedText;
-	}, [isEditing, tempEditedContent, optimizedText]);
+		return context.optimizedText;
+	}, [uiStates.isEditing, context.tempEditedContent, context.optimizedText]);
 
-	/**
-	 * Get the current sections based on editing state - ULTRA-STABLE REFERENCES
-	 * Returns the exact same array reference when possible to prevent editor re-initialization
-	 */
+	// Current sections for editing
 	const currentSections = useMemo(() => {
-		if (isEditing && tempSections.length > 0) {
-			// CRITICAL: Check if sections actually changed before returning new reference
-			const sectionsChanged =
-				tempSections.length !== lastStableSectionsRef.current.length ||
-				tempSections.some((section, index) => {
-					const lastSection = lastStableSectionsRef.current[index];
-					return (
-						!lastSection ||
-						section.id !== lastSection.id ||
-						section.content !== lastSection.content ||
-						section.isEmpty !== lastSection.isEmpty
-					);
-				});
-
-			if (!sectionsChanged) {
-				// Return the same reference to prevent re-renders
-				return lastStableSectionsRef.current;
-			}
-
-			// Update the stable reference only when sections actually changed
-			lastStableSectionsRef.current = tempSections;
-			return tempSections;
+		if (uiStates.isEditing && context.tempSections.length > 0) {
+			return context.tempSections;
 		}
 
-		// Parse sections from current content when not editing (only when needed)
 		if (currentDisplayContent) {
 			try {
 				const parsedSections = parseHtmlIntoSections(
@@ -254,1116 +191,2384 @@ export const useResumeOptimizer = (userId?: string) => {
 					SECTION_NAMES,
 					SECTION_ORDER
 				);
-				const allSections = ensureAllStandardSections(parsedSections);
-				lastStableSectionsRef.current = allSections;
-				return allSections;
+				return ensureAllStandardSections(parsedSections);
 			} catch (error) {
 				console.error("Error parsing sections:", error);
-				return lastStableSectionsRef.current || [];
+				return [];
 			}
 		}
 
-		return lastStableSectionsRef.current || [];
-	}, [isEditing, tempSections, currentDisplayContent]);
+		return [];
+	}, [uiStates.isEditing, context.tempSections, currentDisplayContent]);
 
-	/**
-	 * Convert API data to our standardized format
-	 * Handles mapping between different property names and ensures consistent structure
-	 * ENHANCED: Now captures section titles from AI response for multilingual support
-	 *
-	 * @param apiData - Raw data from API
-	 * @returns Formatted data with proper structure
-	 */
-	const convertApiDataToOptimizedFormat = useCallback(
-		(apiData: any): OptimizedResumeData => {
-			console.log("Converting API data to optimized format:", apiData);
-
-			// ENHANCEMENT: Capture section titles from AI response if available
-			if (apiData.sectionTitles && typeof apiData.sectionTitles === "object") {
-				setSectionTitles(apiData.sectionTitles);
-				console.log("Section titles received from AI:", apiData.sectionTitles);
-			} else {
-				console.log(
-					"No section titles found in API response, will use defaults"
-				);
-			}
-
-			// ENHANCEMENT: Capture and store resume language for proper section handling
-			if (apiData.language) {
-				setResumeLanguage(apiData.language);
-				console.log("Resume language detected:", apiData.language);
-			} else {
-				// Fallback to English if no language specified
-				setResumeLanguage("English");
-				console.log("No language specified, defaulting to English");
-			}
-
-			// Convert keywords from API format to application format with enhanced normalization
-			const formattedKeywords: Keyword[] = Array.isArray(apiData.keywords)
-				? apiData.keywords.map(normalizeKeyword)
-				: [];
-
-			// Convert suggestions from API format to application format with enhanced normalization
-			const formattedSuggestions: Suggestion[] = Array.isArray(
-				apiData.suggestions
-			)
-				? apiData.suggestions.map(normalizeSuggestion)
-				: [];
-
-			// Log normalized data for debugging
-			console.log("Normalized suggestions:", formattedSuggestions);
-			console.log("Normalized keywords:", formattedKeywords);
-
-			// Map to our OptimizedResumeData format with correct type handling
-			return {
-				id: apiData.id,
-				original_text: apiData.original_text,
-				optimized_text: apiData.optimized_text,
-				last_saved_text: apiData.last_saved_text ?? undefined,
-				last_saved_score_ats: apiData.last_saved_score_ats ?? undefined,
-				language: apiData.language,
-				file_name: apiData.file_name,
-				file_type: apiData.file_type,
-				file_size: apiData.file_size,
-				ats_score: apiData.ats_score,
-				selected_template: apiData.selected_template,
-				keywords: formattedKeywords,
-				suggestions: formattedSuggestions,
-			};
-		},
-		[]
+	// Tab accessibility
+	const permissions = useMemo(
+		() => ({
+			canAccessUpload: true, // Always accessible
+			canAccessPreview: PREVIEW_TAB_STATES.includes(state),
+			canEdit: EDIT_ALLOWED_STATES.includes(state),
+			canSave: SAVE_ALLOWED_STATES.includes(state),
+			canReset: RESET_ALLOWED_STATES.includes(state),
+			isInLoadingState: LOADING_STATES.includes(state),
+			isInProcessingState: PROCESSING_STATES.includes(state),
+			isInErrorState: isErrorState(state),
+		}),
+		[state]
 	);
 
+	// Upload status and progress
+	const uploadStatus = useMemo(() => {
+		return {
+			overallProgress: calculateOverallProgress(state, context),
+			currentStep: getCurrentStepDescription(state, context),
+			errorMessage: uiStates.isInErrorState
+				? getErrorMessage(state, context)
+				: undefined,
+			canRetry: uiStates.isRetryable,
+			isInUploadPhase: context.isActiveUpload || UPLOAD_STATES.includes(state),
+			isInProcessingPhase:
+				context.uploadThingInProgress || uiStates.isProcessingFile,
+			isInAnalysisPhase: uiStates.isAnalyzing,
+			primaryMessage: getCurrentStepDescription(state, context),
+			secondaryMessage: context.errorMessage || "Ready to upload",
+		};
+	}, [state, context, uiStates.isInErrorState, uiStates.isRetryable]);
+
+	// ===== DATABASE OPERATIONS =====
+
 	/**
-	 * Load the latest resume for a user
-	 * Handles both the initial data loading and subsequent refresh requests
-	 *
-	 * @returns The loaded resume data or null if none found
+	 * Load latest resume from database
 	 */
-	const loadLatestResume = useCallback(async () => {
-		// Don't attempt loading without a user ID
-		if (!userId) {
-			console.log("No user ID provided, skipping resume load");
-			return null;
-		}
+	const loadLatestResume =
+		useCallback(async (): Promise<OptimizedResumeData | null> => {
+			if (!userId) return null;
 
-		// Increment load attempt counter to prevent infinite loops
-		loadAttemptRef.current += 1;
+			try {
+				const { data: apiData, error } = await getLatestOptimizedResume(userId);
 
-		// Prevent excessive load attempts
-		if (loadAttemptRef.current > 3) {
-			console.log("Maximum resume load attempts reached");
-			return null;
-		}
+				if (error) {
+					dispatch(
+						actionCreators.error("Failed to load resume", error, "analysis")
+					);
+					return null;
+				}
 
-		try {
-			// Set loading state to true to show loading UI
-			setIsLoading(true);
+				if (apiData) {
+					console.log("Resume loaded successfully:", apiData.id);
 
-			// Fetch latest resume from service
-			const { data: apiData, error } = await getLatestOptimizedResume(userId);
+					const completeResumeData: OptimizedResumeData = {
+						id: apiData.id,
+						user_id: userId,
+						original_text: apiData.original_text || "",
+						optimized_text: apiData.optimized_text || "",
+						last_saved_text: apiData.last_saved_text ?? undefined,
+						last_saved_score_ats: undefined,
+						language: apiData.language || "English",
+						file_name: apiData.file_name || "",
+						file_type: apiData.file_type || "",
+						file_size: apiData.file_size,
+						file_url: (apiData as any).file_url,
+						ats_score: apiData.ats_score || 0,
+						selected_template: (apiData as any).selected_template,
+						created_at: (apiData as any).created_at,
+						updated_at: (apiData as any).updated_at,
 
-			if (error) {
+						keywords: apiData.keywords
+							? apiData.keywords.map((k: any) => ({
+									id: k.id || String(Math.random()),
+									text: k.text || k.keyword || "",
+									isApplied: k.applied || k.is_applied || false,
+									relevance: k.relevance || 1,
+									pointImpact: k.pointImpact || k.point_impact || 1,
+							  }))
+							: [],
+
+						suggestions: apiData.suggestions
+							? apiData.suggestions.map((s: any) => ({
+									id: s.id || String(Math.random()),
+									text: s.text || "",
+									type: s.type || "general",
+									impact: s.impact || "",
+									isApplied: s.applied || s.is_applied || false,
+									pointImpact: s.pointImpact || s.point_impact || 2,
+							  }))
+							: [],
+					};
+
+					dispatch(actionCreators.resumeFound(completeResumeData));
+					return completeResumeData;
+				} else {
+					console.log("No resume found for user");
+					dispatch(actionCreators.noResumeFound());
+					return null;
+				}
+			} catch (error) {
 				console.error("Error loading resume:", error);
-				throw error;
-			}
-
-			if (apiData) {
-				console.log("Resume loaded successfully:", apiData.id);
-
-				// Convert API data to standard format (this will also capture section titles)
-				const optimizedData = convertApiDataToOptimizedFormat(apiData);
-
-				// Update resume data state
-				setResumeData(optimizedData);
-				setHasResume(true);
-				hasLoadedDataRef.current = true;
-
-				// Store original text from optimized_text for reset functionality
-				setOriginalText(optimizedData.optimized_text || "");
-
-				// Determine which content to display
-				// Priority: last_saved_text > optimized_text
-				const contentToDisplay =
-					optimizedData.last_saved_text || optimizedData.optimized_text || "";
-				setOptimizedText(contentToDisplay);
-
-				// Initialize temporary content with current content
-				setTempEditedContent(contentToDisplay);
-
-				// Set the original and current scores
-				const baseScore = optimizedData.ats_score || 65;
-				setOriginalAtsScore(baseScore);
-
-				// Store initial score in ref for consistent improvement calculations
-				if (initialScoreRef.current === null) {
-					initialScoreRef.current = baseScore;
-					console.log(`Setting initial score reference to ${baseScore}`);
-				}
-
-				// Use saved score if available, otherwise use original score
-				const effectiveScore = isDefined(optimizedData.last_saved_score_ats)
-					? optimizedData.last_saved_score_ats
-					: optimizedData.ats_score;
-				setCurrentAtsScore(effectiveScore);
-
-				// Set suggestions and keywords
-				setSuggestions(optimizedData.suggestions || []);
-				setKeywords(optimizedData.keywords || []);
-
-				// Reset modification states initially
-				setContentModified(false);
-				setScoreModified(false);
-				setHasTempChanges(false);
-
-				// Set template if available
-				if (optimizedData.selected_template) {
-					setSelectedTemplate(optimizedData.selected_template);
-				}
-
-				return optimizedData;
-			} else {
-				// No resume found - this is expected for new users
-				console.log("No resume found for user");
-				setHasResume(false);
-				hasLoadedDataRef.current = true;
-
+				dispatch(
+					actionCreators.error(
+						"Error loading resume",
+						error as Error,
+						"analysis"
+					)
+				);
 				return null;
 			}
-		} catch (error) {
-			console.error("Error loading resume:", error);
-			toast.error("Error loading resume");
-			setHasResume(false);
-			return null;
-		} finally {
-			// Always reset loading state when finished, regardless of outcome
-			setIsLoading(false);
-		}
-	}, [userId, convertApiDataToOptimizedFormat]);
+		}, [userId]);
 
 	/**
-	 * ULTRA-OPTIMIZED EDIT MODE TOGGLE - Single source of truth with stable section management
-	 * Handles entering/exiting edit mode with proper content preservation and NO re-renders
-	 *
-	 * Key improvements:
-	 * - No more state conflicts between components
-	 * - Preserves changes when switching to preview mode
-	 * - Stable section parsing during editing with immutable updates
-	 * - Optimized section initialization to prevent editor re-initialization
-	 */
-	const toggleEditMode = useCallback(() => {
-		console.log(`🔄 Toggling edit mode: ${isEditing} -> ${!isEditing}`);
-
-		if (!isEditing) {
-			// ===== ENTERING EDIT MODE =====
-			console.log("📝 Entering edit mode...");
-			toast.message("📝 Entering edit mode...");
-
-			// Initialize temporary content with current optimized text
-			const contentForEditing = optimizedText || "";
-			setTempEditedContent(contentForEditing);
-
-			// Parse sections ONCE when entering edit mode for stable editing
-			// CRITICAL: This happens only once to prevent editor re-initialization
-			try {
-				const parsedSections = parseHtmlIntoSections(
-					contentForEditing,
-					getSectionName,
-					SECTION_NAMES,
-					SECTION_ORDER
-				);
-				const allSections = ensureAllStandardSections(parsedSections);
-
-				// Set stable sections reference
-				setTempSections(allSections);
-				lastStableSectionsRef.current = allSections;
-
-				console.log(`✅ Parsed ${allSections.length} sections for editing`);
-			} catch (error) {
-				console.error("❌ Error parsing sections for edit mode:", error);
-				// Fallback to empty sections
-				const emptySections: Section[] = [];
-				setTempSections(emptySections);
-				lastStableSectionsRef.current = emptySections;
-			}
-
-			// Reset temp changes flag
-			setHasTempChanges(false);
-		} else {
-			// ===== EXITING EDIT MODE =====
-			console.log("👁️ Exiting to preview mode...");
-			toast.message("👁️ Exiting to preview mode...");
-
-			// PRESERVE CHANGES: Update optimized text with temporary content
-			if (hasTempChanges && tempEditedContent) {
-				console.log("💾 Preserving temporary changes in preview mode");
-				setOptimizedText(tempEditedContent);
-
-				// Mark content as modified since we have unsaved changes
-				setContentModified(true);
-			}
-
-			// Don't clear temporary content - keep it for potential re-editing
-			// This allows seamless switching between edit and preview modes
-		}
-
-		// Toggle the edit mode
-		setIsEditing(!isEditing);
-	}, [isEditing, optimizedText, tempEditedContent, hasTempChanges]);
-
-	/**
-	 * Handle content changes during editing - ULTRA-OPTIMIZED FOR STABLE FOCUS
-	 * Updates temporary content and tracks modifications WITHOUT causing cascading re-renders
-	 *
-	 * CRITICAL OPTIMIZATIONS:
-	 * - Immutable section updates with reference equality checks
-	 * - Deferred content combination to prevent immediate re-renders
-	 * - Stable reference returns when content hasn't changed
-	 * - Debounced combined content updates for performance
-	 *
-	 * @param sectionId - ID of the section being edited
-	 * @param newContent - New content for the section
-	 */
-	const handleSectionEdit = useCallback(
-		(sectionId: string, newContent: string) => {
-			console.log(`📝 Section edit: ${sectionId}`);
-
-			// Clear any pending content update timer
-			if (contentUpdateTimerRef.current) {
-				clearTimeout(contentUpdateTimerRef.current);
-			}
-
-			// Use functional update with ULTRA-OPTIMIZED immutable approach
-			setTempSections((prevSections) => {
-				// Find the section index for efficient update
-				const sectionIndex = prevSections.findIndex(
-					(section) => section.id === sectionId
-				);
-
-				if (sectionIndex === -1) {
-					console.warn(`Section not found: ${sectionId}`);
-					return prevSections; // Return same reference to prevent re-render
-				}
-
-				const currentSection = prevSections[sectionIndex];
-
-				// CRITICAL: Check if content actually changed to avoid unnecessary updates
-				if (currentSection.content === newContent) {
-					return prevSections; // Return same reference to prevent re-render
-				}
-
-				// Create new sections array with ONLY the changed section updated
-				const updatedSections = [...prevSections];
-				const isEmpty = isSectionEmpty(newContent, currentSection.title);
-
-				// Update only the specific section with immutable pattern
-				updatedSections[sectionIndex] = {
-					...currentSection,
-					content: newContent,
-					isEmpty,
-				};
-
-				// DEFERRED CONTENT UPDATE: Combine sections after a short delay to prevent immediate re-renders
-				// This allows the user to continue typing without triggering cascading updates
-				contentUpdateTimerRef.current = setTimeout(() => {
-					if (!pendingContentUpdateRef.current) {
-						pendingContentUpdateRef.current = true;
-
-						// Combine all non-empty sections into complete HTML
-						const combinedContent = updatedSections
-							.filter((section) => !section.isEmpty)
-							.map(
-								(section) =>
-									`<section id="${section.id}">${section.content}</section>`
-							)
-							.join("\n");
-
-						// Update temporary content with the combined HTML
-						setTempEditedContent(combinedContent);
-
-						// Mark that we have temporary changes
-						setHasTempChanges(true);
-						setContentModified(true);
-
-						pendingContentUpdateRef.current = false;
-					}
-				}, 150); // Small delay to allow smooth typing while still being responsive
-
-				return updatedSections;
-			});
-		},
-		[]
-	);
-
-	/**
-	 * Handle general content changes (for compatibility with existing components)
-	 * OPTIMIZED to work with the new section-based editing system
-	 *
-	 * @param newContent - The new content
-	 */
-	const handleContentEdit = useCallback(
-		(newContent: string) => {
-			if (isEditing) {
-				setTempEditedContent(newContent);
-				setHasTempChanges(true);
-			} else {
-				setOptimizedText(newContent);
-			}
-			setContentModified(true);
-
-			// Re-calculate score based on the new content if needed
-			const currentAppliedSuggestions = suggestions.filter(
-				(s) => s.isApplied
-			).length;
-			const currentAppliedKeywords = keywords.filter((k) => k.isApplied).length;
-
-			// Get total point impact from suggestions
-			const suggestionPoints = suggestions
-				.filter((s) => s.isApplied)
-				.reduce((total, s) => total + (s.pointImpact || 2), 0);
-
-			// Get total point impact from keywords
-			const keywordPoints = keywords
-				.filter((k) => k.isApplied)
-				.reduce((total, k) => total + (k.pointImpact || 1), 0);
-
-			// Calculate score using base + exact point impacts
-			const baseScore = initialScoreRef.current || originalAtsScore || 65;
-			const newScore = Math.min(
-				100,
-				baseScore + suggestionPoints + keywordPoints
-			);
-
-			// Update the score and mark it as modified if it changed
-			if (newScore !== currentAtsScore) {
-				console.log(
-					`Recalculating score: ${baseScore} + ${suggestionPoints} + ${keywordPoints} = ${newScore}`
-				);
-				setCurrentAtsScore(newScore);
-				setScoreModified(true);
-			}
-		},
-		[isEditing, suggestions, keywords, originalAtsScore, currentAtsScore]
-	);
-
-	/**
-	 * Save the edited resume content, score, applied enhancements and template
-	 * Updates the database with all current changes via service
-	 *
-	 * @param newContent - Optional content to save instead of current content
-	 * @param templateId - Optional template ID to save
-	 * @returns Boolean indicating if save was successful
+	 * Save resume with all changes atomically
 	 */
 	const saveResume = useCallback(
-		async (newContent?: string, templateId?: string) => {
-			// Use provided content, or temporary content if editing, or optimized text
+		async (newContent?: string, templateId?: string): Promise<boolean> => {
 			const contentToSave =
-				newContent || (isEditing ? tempEditedContent : optimizedText);
+				newContent ||
+				(uiStates.isEditing
+					? context.tempEditedContent
+					: context.optimizedText);
+			const templateToSave = templateId || context.selectedTemplate;
 
-			// Use provided template ID or current selected template
-			const templateToSave = templateId || selectedTemplate;
-
-			// Validate required data
-			if (!userId || !resumeData?.id || !contentToSave) {
-				console.error("Cannot save: Missing data", {
-					userId,
-					resumeId: resumeData?.id,
-					contentLength: contentToSave?.length,
-				});
+			if (!userId || !context.resumeData?.id || !contentToSave) {
+				console.error("Cannot save: Missing data");
 				toast.error("Cannot save: Missing data");
 				return false;
 			}
 
 			try {
-				// Set saving state to show loading indicators
-				setIsSaving(true);
+				dispatch(actionCreators.startSaving());
+				lastOperationRef.current = "save";
 
-				// Get all applied suggestion IDs
-				const appliedSuggestionIds = suggestions
+				const appliedSuggestionIds = context.suggestions
 					.filter((s) => s.isApplied)
 					.map((s) => s.id);
 
-				// Get all applied keywords
-				const appliedKeywords = keywords
+				const appliedKeywords = context.keywords
 					.filter((k) => k.isApplied)
 					.map((k) => k.text);
 
-				// Log saving attempt with complete details
-				console.log("💾 Saving resume with atomic transaction:", {
-					resumeId: resumeData.id,
+				console.log("Saving resume with atomic transaction:", {
+					resumeId: context.resumeData.id,
 					contentLength: contentToSave.length,
-					atsScore: currentAtsScore || 0,
+					atsScore: context.currentAtsScore || 0,
 					appliedSuggestions: appliedSuggestionIds.length,
 					appliedKeywords: appliedKeywords.length,
 					template: templateToSave,
 				});
 
-				// Use the updated atomic save function that handles all changes in a single transaction
 				const { success, error } = await saveResumeComplete(
-					resumeData.id,
+					context.resumeData.id,
 					contentToSave,
-					currentAtsScore || 0,
+					context.currentAtsScore || 0,
 					appliedSuggestionIds,
 					appliedKeywords,
 					templateToSave
 				);
 
-				// Handle errors from the service
 				if (!success) {
-					console.error("Error from saveResumeComplete:", error);
-					throw error;
+					dispatch(
+						actionCreators.error(
+							"Failed to save changes",
+							error || new Error("Unknown save error"),
+							"save"
+						)
+					);
+					return false;
 				}
 
-				// Update local state with the saved data
-				setResumeData({
-					...resumeData,
+				const updatedResumeData = {
+					...context.resumeData,
 					last_saved_text: contentToSave,
-					last_saved_score_ats: currentAtsScore,
+					last_saved_score_ats: context.currentAtsScore,
 					selected_template: templateToSave,
-				});
+				};
 
-				// Update optimized text to reflect the saved content
-				setOptimizedText(contentToSave);
-
-				// Update temporary content to match saved content
-				setTempEditedContent(contentToSave);
-
-				// Update selected template with the saved template
-				setSelectedTemplate(templateToSave);
-
-				// Reset all modification flags since everything is now saved
-				setContentModified(false);
-				setScoreModified(false);
-				setTemplateModified(false);
-				setHasTempChanges(false);
-
-				console.log("✅ Save completed successfully");
-
+				dispatch(actionCreators.saveSuccess(updatedResumeData));
 				return true;
 			} catch (error) {
-				// Handle and display errors
-				console.error("❌ Error saving resume:", error);
-				toast.error("Failed to save changes");
+				console.error("Error saving resume:", error);
+				dispatch(
+					actionCreators.error("Failed to save changes", error as Error, "save")
+				);
 				return false;
-			} finally {
-				// Always reset the saving state when done
-				setIsSaving(false);
 			}
 		},
-		[
-			userId,
-			resumeData,
-			isEditing,
-			tempEditedContent,
-			optimizedText,
-			currentAtsScore,
-			suggestions,
-			keywords,
-			selectedTemplate,
-		]
+		[userId, context, uiStates.isEditing]
 	);
 
 	/**
-	 * Reset changes to the original optimized version
-	 * Clears all edits and applied enhancements via service
-	 *
-	 * @returns Boolean indicating if reset was successful
+	 * Reset resume to original version
 	 */
-	const resetResume = useCallback(async () => {
-		if (!userId || !resumeData?.id) {
+	const resetResume = useCallback(async (): Promise<boolean> => {
+		if (!userId || !context.resumeData?.id) {
 			toast.error("Cannot reset: Missing data");
 			return false;
 		}
 
 		try {
-			setIsResetting(true);
+			dispatch(actionCreators.startReset());
+			lastOperationRef.current = "reset";
 
-			// Use resumeService to reset resume to original version
-			const { success, error } = await resetResumeToOriginal(resumeData.id);
+			const { success, error } = await resetResumeToOriginal(
+				context.resumeData.id
+			);
 
-			if (!success) throw error;
-
-			// Update local state with type safety
-			if (resumeData) {
-				setResumeData({
-					...resumeData,
-					last_saved_text: undefined,
-					last_saved_score_ats: undefined,
-				});
+			if (!success) {
+				dispatch(
+					actionCreators.error(
+						"Failed to reset resume",
+						error || new Error("Unknown reset error"),
+						"reset"
+					)
+				);
+				return false;
 			}
 
-			// Reset all content to original
-			setOptimizedText(originalText);
-			setTempEditedContent(originalText);
+			const resetResumeData = {
+				...context.resumeData,
+				last_saved_text: undefined,
+				last_saved_score_ats: undefined,
+			};
 
-			// Reset score to original
-			setCurrentAtsScore(originalAtsScore);
-
-			// Reset suggestions and keywords state
-			setSuggestions((prevSuggestions) =>
-				prevSuggestions.map((s) => ({ ...s, isApplied: false }))
-			);
-			setKeywords((prevKeywords) =>
-				prevKeywords.map((k) => ({ ...k, isApplied: false, applied: false }))
-			);
-
-			// Reset editing state and modifications
-			setIsEditing(false);
-			setContentModified(false);
-			setScoreModified(false);
-			setTemplateModified(false);
-			setHasTempChanges(false);
-
-			// Clear temporary sections and stable references
-			setTempSections([]);
-			lastStableSectionsRef.current = [];
-
+			dispatch(actionCreators.resetSuccess(resetResumeData));
 			toast.success("Resume reset to original version");
 			return true;
 		} catch (error) {
 			console.error("Error resetting resume:", error);
-			toast.error("Failed to reset resume");
+			dispatch(
+				actionCreators.error("Failed to reset resume", error as Error, "reset")
+			);
 			return false;
-		} finally {
-			setIsResetting(false);
 		}
-	}, [userId, resumeData, originalText, originalAtsScore]);
+	}, [userId, context.resumeData]);
+
+	// ===== UPLOAD OPERATIONS =====
 
 	/**
-	 * Apply or unapply a suggestion - LOCAL STATE ONLY
-	 * Updates ONLY local suggestion state and recalculates ATS score
-	 * Uses the exact point impact from the suggestion for accurate score updates
-	 *
-	 * @param suggestionId - ID of the suggestion to apply/unapply
-	 * @param applyState - Optional boolean to force specific state (true/false)
-	 * @returns Boolean indicating if operation was successful
+	 * Process uploaded file (extract content and analyze)
+	 * ENHANCED: Better integration with UploadThing workflow
 	 */
-	const handleApplySuggestion = useCallback(
-		(suggestionId: string, applyState?: boolean) => {
-			console.log("handleApplySuggestion called with:", {
-				suggestionId,
-				applyState,
-				resumeId: resumeData?.id,
-				currentScore: currentAtsScore,
-				originalScore: originalAtsScore,
+	const processUploadedFile = useCallback(
+		async (fileInfo: UploadedFileInfo): Promise<boolean> => {
+			console.log(
+				"🚀 processUploadedFile: Starting processing for file:",
+				fileInfo.name
+			);
+
+			// CRITICAL: Anti-duplication guard - Check if already completed
+			if (state === CVOptimizerState.OPTIMIZATION_COMPLETE) {
+				console.log(
+					"⚠️ processUploadedFile: Already in OPTIMIZATION_COMPLETE state, skipping API call"
+				);
+				return true; // Return success to avoid error states
+			}
+
+			// Input validation
+			if (!fileInfo || !user?.id) {
+				console.error("❌ processUploadedFile: Missing file info or user ID");
+
+				if (state !== CVOptimizerState.FILE_PROCESSING_ERROR) {
+					dispatch(
+						actionCreators.error(
+							"Cannot process file: Missing required information",
+							new Error("Missing fileInfo or user.id"),
+							"file_processing",
+							{
+								operation: "file_processing",
+								step: "input_validation",
+								retryable: false,
+								userMessage:
+									"Unable to process the uploaded file. Please try uploading again.",
+								technicalDetails: `FileInfo: ${!!fileInfo}, UserId: ${!!user?.id}`,
+							}
+						)
+					);
+				}
+				return false;
+			}
+
+			// State guard - prevent processing if already in error
+			if (isErrorState(state)) {
+				console.warn(
+					"⚠️ processUploadedFile: Already in error state, aborting processing"
+				);
+				return false;
+			}
+
+			// CRITICAL: Additional guard - prevent processing if in completion states
+			const completionStates = [
+				CVOptimizerState.OPTIMIZATION_COMPLETE,
+				CVOptimizerState.PREVIEW_MODE,
+				CVOptimizerState.EDIT_MODE,
+			];
+
+			if (completionStates.includes(state)) {
+				console.log(
+					"⚠️ processUploadedFile: Already in completion state, skipping processing:",
+					state
+				);
+				return true; // Return success to avoid error states
+			}
+
+			// Dispatch start processing
+			dispatch(actionCreators.startFileProcessing());
+			lastOperationRef.current = "file_processing";
+
+			try {
+				console.log("📤 processUploadedFile: Preparing API request");
+
+				const formData = new FormData();
+				formData.append("fileUrl", fileInfo.url);
+				formData.append("fileName", fileInfo.name);
+				formData.append("fileType", fileInfo.type);
+				formData.append("userId", user.id);
+				formData.append("resetLastSavedText", "true");
+
+				console.log("🌐 processUploadedFile: Calling optimization API");
+
+				const optimizeResponse = await fetch("/api/optimize", {
+					method: "POST",
+					body: formData,
+				});
+
+				// CRITICAL: Check again before processing response
+				if (state === CVOptimizerState.OPTIMIZATION_COMPLETE) {
+					console.log(
+						"⚠️ processUploadedFile: State changed to OPTIMIZATION_COMPLETE during API call, discarding result"
+					);
+					return true; // Discard result but return success
+				}
+
+				// Parse response
+				let optimizeResult;
+				try {
+					optimizeResult = await optimizeResponse.json();
+					console.log(
+						"📥 processUploadedFile: API response parsed successfully"
+					);
+				} catch (parseError) {
+					console.error("❌ processUploadedFile: Failed to parse API response");
+
+					dispatch(
+						actionCreators.error(
+							"Invalid response from server",
+							parseError as Error,
+							"file_processing",
+							{
+								operation: "file_processing",
+								step: "response_parsing",
+								retryable: true,
+								userMessage: "Server response was invalid. Please try again.",
+								technicalDetails: `Parse error: ${
+									(parseError as Error).message
+								}`,
+							}
+						)
+					);
+					return false;
+				}
+
+				// Handle 422 validation errors
+				if (optimizeResponse.status === 422 && optimizeResult.validation) {
+					console.log("📋 processUploadedFile: Resume validation failed");
+					dispatch(
+						actionCreators.resumeValidationFailed(optimizeResult.validation)
+					);
+					return false;
+				}
+
+				// Handle other HTTP errors
+				if (!optimizeResponse.ok) {
+					console.error(
+						`❌ processUploadedFile: API Error ${optimizeResponse.status}`
+					);
+
+					const errorMessage =
+						optimizeResult?.error || `API Error: ${optimizeResponse.status}`;
+					const isRetryable =
+						optimizeResponse.status >= 500 || optimizeResponse.status === 429;
+
+					dispatch(
+						actionCreators.error(
+							"File processing failed",
+							new Error(errorMessage),
+							"file_processing",
+							{
+								operation: "file_processing",
+								step: "api_call",
+								retryable: isRetryable,
+								userMessage: isRetryable
+									? "Server is temporarily busy. Please try again."
+									: "Unable to process the file. Please check the file format and try again.",
+								technicalDetails: `Status: ${optimizeResponse.status}, Error: ${errorMessage}`,
+							}
+						)
+					);
+					return false;
+				}
+
+				// Validate success response
+				if (!optimizeResult?.optimizedText || !optimizeResult?.resumeId) {
+					console.error(
+						"❌ processUploadedFile: Invalid optimization response"
+					);
+
+					dispatch(
+						actionCreators.error(
+							"Invalid response from server",
+							new Error("Missing optimized text or resume ID"),
+							"file_processing",
+							{
+								operation: "file_processing",
+								step: "response_validation",
+								retryable: true,
+								userMessage: "Server response was invalid. Please try again.",
+								technicalDetails:
+									"Missing optimizedText or resumeId in response",
+							}
+						)
+					);
+					return false;
+				}
+
+				// CRITICAL: Final guard before dispatching result
+				if (state === CVOptimizerState.OPTIMIZATION_COMPLETE) {
+					console.log(
+						"⚠️ processUploadedFile: State changed to OPTIMIZATION_COMPLETE, discarding API result"
+					);
+					return true; // Discard result but return success
+				}
+
+				// Build resume data object
+				console.log("✅ processUploadedFile: Building resume data object");
+
+				const resumeData: OptimizedResumeData = {
+					id: optimizeResult.resumeId,
+					user_id: user.id,
+					original_text: "",
+					optimized_text: optimizeResult.optimizedText,
+					last_saved_text: undefined,
+					last_saved_score_ats: undefined,
+					language: optimizeResult.language || "English",
+					file_name: fileInfo.name,
+					file_type: fileInfo.type,
+					file_size: fileInfo.size,
+					file_url: fileInfo.url,
+					ats_score: optimizeResult.atsScore || 65,
+					selected_template: "basic",
+					keywords: optimizeResult.keywords
+						? optimizeResult.keywords.map(normalizeKeyword)
+						: [],
+					suggestions: optimizeResult.suggestions
+						? optimizeResult.suggestions.map(normalizeSuggestion)
+						: [],
+				};
+
+				console.log(
+					"🎉 processUploadedFile: Processing completed successfully"
+				);
+				dispatch(actionCreators.analysisComplete(resumeData));
+				return true;
+			} catch (error) {
+				console.error("💥 processUploadedFile: Unexpected error:", error);
+
+				if (!isErrorState(state)) {
+					dispatch(
+						actionCreators.error(
+							"File processing failed",
+							error as Error,
+							"file_processing",
+							{
+								operation: "file_processing",
+								step: "unexpected_error",
+								retryable: true,
+								userMessage: "An unexpected error occurred. Please try again.",
+								technicalDetails: `File: ${fileInfo.name}, Error: ${
+									(error as Error).message
+								}`,
+							}
+						)
+					);
+				}
+				return false;
+			}
+		},
+		[user?.id, state, dispatch] // IMPORTANT: Add state to dependencies
+	);
+
+	/**
+	 * NEW: Handle UploadThing completion callback - SIMPLIFIED VERSION
+	 * This is called by UploadThing's onClientUploadComplete callback
+	 *
+	 * ARCHITECTURE:
+	 * - This function ONLY updates the state machine
+	 * - The actual file processing is triggered by useEffect when state changes
+	 * - This prevents duplicate processing and keeps responsibilities clear
+	 */
+	const handleUploadThingComplete = useCallback(
+		async (results: any[]) => {
+			console.log("📥 Hook: UploadThing completion callback triggered");
+			console.log("📥 Hook: Results received:", {
+				type: typeof results,
+				isArray: Array.isArray(results),
+				length: results?.length,
+				firstResultExists: !!results?.[0],
 			});
 
-			if (!resumeData?.id) {
+			// Basic validation - detailed validation happens in the reducer
+			if (!results) {
+				console.error("❌ Hook: UploadThing results is null/undefined");
+				dispatch(
+					actionCreators.uploadThingError(
+						new Error("Upload completed but no results provided by UploadThing")
+					)
+				);
+				return;
+			}
+
+			if (!Array.isArray(results)) {
+				console.error(
+					"❌ Hook: UploadThing results is not an array:",
+					typeof results
+				);
+				dispatch(
+					actionCreators.uploadThingError(
+						new Error("Upload completed but results format is invalid")
+					)
+				);
+				return;
+			}
+
+			if (results.length === 0) {
+				console.error("❌ Hook: UploadThing results array is empty");
+				dispatch(
+					actionCreators.uploadThingError(
+						new Error(
+							"Upload completed but no file data returned. Check UploadThing configuration."
+						)
+					)
+				);
+				return;
+			}
+
+			const firstResult = results[0];
+			if (!firstResult) {
+				console.error("❌ Hook: First result in array is null/undefined");
+				dispatch(
+					actionCreators.uploadThingError(
+						new Error("Upload completed but first result is empty")
+					)
+				);
+				return;
+			}
+
+			console.log("✅ Hook: UploadThing validation passed");
+			console.log("✅ Hook: First result summary:", {
+				name: firstResult.name || "MISSING",
+				size: firstResult.size || "MISSING",
+				type: firstResult.type || "MISSING",
+				hasUrl: !!firstResult.ufsUrl,
+				hasKey: !!firstResult.key,
+			});
+
+			try {
+				// CRITICAL: This is the ONLY action we take here
+				// The reducer will handle detailed validation and state transition
+				// The useEffect will detect the state change and trigger file processing
+				console.log("📤 Hook: Dispatching UPLOAD_THING_COMPLETE action");
+				dispatch(actionCreators.uploadThingComplete(results));
+
+				console.log("✅ Hook: Action dispatched successfully");
+				console.log(
+					"✅ Hook: State machine will handle file processing automatically"
+				);
+			} catch (error) {
+				console.error(
+					"💥 Hook: Error dispatching UploadThing completion:",
+					error
+				);
+				dispatch(actionCreators.uploadThingError(error as Error));
+			}
+		},
+		[dispatch]
+	);
+
+	/**
+	 * NEW: Handle UploadThing error callback
+	 */
+	const handleUploadThingError = useCallback((error: Error) => {
+		console.error("❌ UploadThing error:", error);
+		dispatch(actionCreators.uploadThingError(error));
+		lastOperationRef.current = "uploadthing_error";
+	}, []);
+
+	/**
+	 * NEW: Handle UploadThing begin callback
+	 */
+	const handleUploadThingBegin = useCallback((files: File[]) => {
+		console.log("UploadThing begin with files:", files);
+		dispatch(actionCreators.uploadThingBegin(files));
+		lastOperationRef.current = "uploadthing_begin";
+	}, []);
+
+	/**
+	 * NEW: Set UploadThing active state
+	 */
+	const setUploadThingActive = useCallback((isActive: boolean) => {
+		dispatch(actionCreators.setUploadThingActive(isActive));
+	}, []);
+
+	/**
+	 * Handle file selection with validation
+	 */
+	const handleFileSelect = useCallback((file: File | null) => {
+		if (!file) {
+			dispatch(actionCreators.selectFile(new File([], "")));
+			return;
+		}
+
+		const validation = validateFile(file);
+		if (!validation.isValid) {
+			dispatch(
+				actionCreators.error(
+					validation.error || "File validation failed",
+					undefined,
+					"upload",
+					{
+						operation: "file_selection",
+						step: "validation",
+						retryable: true,
+						userMessage: validation.error || "Please select a valid file",
+						technicalDetails: `File: ${file.name}, Size: ${file.size}, Type: ${file.type}`,
+					}
+				)
+			);
+			return;
+		}
+
+		dispatch(actionCreators.selectFile(file));
+	}, []);
+
+	/**
+	 * Handle file upload - for processing already uploaded files
+	 */
+	const handleFileUpload = useCallback(
+		async (fileInfo: UploadedFileInfo): Promise<boolean> => {
+			if (!fileInfo || !user?.id) {
+				console.error("Cannot process file: Missing file info or user ID");
+				return false;
+			}
+
+			try {
+				lastOperationRef.current = "file_processing";
+				return await processUploadedFile(fileInfo);
+			} catch (error) {
+				console.error("Error processing uploaded file:", error);
+				dispatch(
+					actionCreators.error(
+						"File processing failed",
+						error as Error,
+						"upload",
+						{
+							operation: "file_processing",
+							step: "processing",
+							retryable: true,
+							userMessage: "Failed to process uploaded file. Please try again.",
+							technicalDetails: `File: ${fileInfo.name}, Error: ${
+								(error as Error).message
+							}`,
+						}
+					)
+				);
+				return false;
+			}
+		},
+		[user?.id, processUploadedFile]
+	);
+
+	/**
+	 * Handle text content changes
+	 */
+	const handleTextContentChange = useCallback((content: string) => {
+		dispatch(actionCreators.updateTextContent(content));
+	}, []);
+
+	/**
+	 * Handle text upload and processing
+	 */
+	const handleTextUpload = useCallback(async (): Promise<boolean> => {
+		const content = context.resumeTextContent;
+
+		if (!content || !user?.id) {
+			console.error("Cannot process text: Missing content or user ID");
+			return false;
+		}
+
+		try {
+			dispatch(actionCreators.startTextUpload(content));
+			lastOperationRef.current = "text_upload";
+
+			// The reducer will validate the content and transition to processing
+			// Then we start the analysis directly
+			return await handleAnalysis(content);
+		} catch (error) {
+			console.error("Error processing text:", error);
+			dispatch(
+				actionCreators.error(
+					"Text processing failed",
+					error as Error,
+					"upload",
+					{
+						operation: "text_processing",
+						step: "validation",
+						retryable: true,
+						userMessage: "Failed to process text content. Please try again.",
+						technicalDetails: `Content length: ${content.length}`,
+					}
+				)
+			);
+			return false;
+		}
+	}, [context.resumeTextContent, user?.id]);
+
+	/**
+	 * Handle drag and drop state
+	 */
+	const handleDragOver = useCallback((isDragOver: boolean) => {
+		dispatch(actionCreators.setDragOver(isDragOver));
+	}, []);
+
+	/**
+	 * Handle AI analysis of resume content
+	 */
+	const handleAnalysis = useCallback(
+		async (content: string): Promise<boolean> => {
+			if (!content || !user?.id) {
+				console.error("Cannot analyze: Missing content or user ID");
+				return false;
+			}
+
+			try {
+				dispatch(actionCreators.startAnalysis());
+				lastOperationRef.current = "analysis";
+
+				const formData = new FormData();
+				formData.append("rawText", content);
+				formData.append("userId", user.id);
+				formData.append("resetLastSavedText", "true");
+
+				const analysisResponse = await fetch("/api/optimize", {
+					method: "POST",
+					body: formData,
+				});
+
+				if (!analysisResponse.ok) {
+					throw new Error("Analysis failed");
+				}
+
+				const analysisResult = await analysisResponse.json();
+
+				if (!analysisResult?.optimizedText) {
+					throw new Error("Invalid analysis response");
+				}
+
+				const resumeData: OptimizedResumeData = {
+					id: analysisResult.resumeId || "",
+					user_id: user.id,
+					original_text: content,
+					optimized_text: analysisResult.optimizedText,
+					last_saved_text: undefined,
+					last_saved_score_ats: undefined,
+					language: analysisResult.language || "English",
+					file_name: context.selectedFile?.name || "text-input.txt",
+					file_type: context.selectedFile?.type || "text/plain",
+					file_size: context.selectedFile?.size,
+					file_url: context.uploadedFileInfo?.url,
+					ats_score: analysisResult.atsScore || 65,
+					selected_template: "basic",
+					keywords: analysisResult.keywords
+						? analysisResult.keywords.map(normalizeKeyword)
+						: [],
+					suggestions: analysisResult.suggestions
+						? analysisResult.suggestions.map(normalizeSuggestion)
+						: [],
+				};
+
+				dispatch(actionCreators.analysisComplete(resumeData));
+				return true;
+			} catch (error) {
+				console.error("Error during analysis:", error);
+				dispatch(
+					actionCreators.error("Analysis failed", error as Error, "analysis", {
+						operation: "analysis",
+						step: "ai_processing",
+						retryable: true,
+						userMessage: "AI analysis failed. Please try again.",
+						technicalDetails: `Content length: ${content.length}, Error: ${
+							(error as Error).message
+						}`,
+					})
+				);
+				return false;
+			}
+		},
+		[user?.id, context.selectedFile, context.uploadedFileInfo]
+	);
+
+	/**
+	 * Retry the last failed operation
+	 */
+	const retryLastOperation = useCallback(async () => {
+		const operation = lastOperationRef.current;
+
+		if (!operation || !uiStates.isRetryable) {
+			console.warn("No retryable operation available");
+			return;
+		}
+
+		dispatch(actionCreators.retryLastOperation());
+		retryCountRef.current += 1;
+
+		try {
+			switch (operation) {
+				case "uploadthing_begin":
+				case "uploadthing_error":
+					setUploadThingActive(false);
+					break;
+				case "file_processing":
+					if (context.uploadedFileInfo) {
+						await processUploadedFile(context.uploadedFileInfo);
+					}
+					break;
+				case "text_upload":
+					await handleTextUpload();
+					break;
+				case "analysis":
+					const contentToAnalyze =
+						context.resumeTextContent || context.originalText;
+					if (contentToAnalyze) {
+						await handleAnalysis(contentToAnalyze);
+					}
+					break;
+				case "save":
+					await saveResume();
+					break;
+				case "reset":
+					await resetResume();
+					break;
+				default:
+					console.warn(`Unknown operation to retry: ${operation}`);
+			}
+		} catch (error) {
+			console.error(`Retry failed for operation ${operation}:`, error);
+		}
+	}, [
+		uiStates.isRetryable,
+		context.uploadedFileInfo,
+		context.resumeTextContent,
+		context.originalText,
+		processUploadedFile,
+		handleTextUpload,
+		handleAnalysis,
+		saveResume,
+		resetResume,
+		setUploadThingActive,
+	]);
+
+	// ===== EDIT MODE AND CONTENT MANAGEMENT =====
+
+	/**
+	 * Toggle edit mode with toast notifications
+	 */
+	const toggleEditMode = useCallback(() => {
+		if (uiStates.isEditing) {
+			dispatch(actionCreators.exitEditMode());
+			toast.message("👁️ Exiting to preview mode...");
+		} else {
+			dispatch(actionCreators.enterEditMode());
+			toast.message("📝 Entering edit mode...");
+		}
+	}, [uiStates.isEditing]);
+
+	/**
+	 * Handle content editing
+	 */
+	const handleContentEdit = useCallback((content: string) => {
+		dispatch(actionCreators.updateContent(content));
+	}, []);
+
+	/**
+	 * Handle section-specific editing
+	 */
+	const handleSectionEdit = useCallback(
+		(sectionId: string, content: string) => {
+			dispatch(actionCreators.updateSection(sectionId, content));
+		},
+		[]
+	);
+
+	/**
+	 * Handle suggestion application
+	 */
+	const handleApplySuggestion = useCallback(
+		(suggestionId: string, applied: boolean): boolean => {
+			if (!context.resumeData?.id) {
 				console.error("Cannot apply suggestion: No resume data available");
 				return false;
 			}
 
-			// Find the suggestion
-			const suggestion = suggestions.find((s) => s.id === suggestionId);
-
-			if (!suggestion) {
-				console.error("Suggestion not found with ID:", suggestionId);
-				return false;
-			}
-
-			// Determine new applied state (toggle if not specified)
-			const newIsApplied =
-				applyState !== undefined ? applyState : !suggestion.isApplied;
-
-			try {
-				// Update local state ONLY - no API call
-				setSuggestions((prevSuggestions) =>
-					prevSuggestions.map((s) =>
-						s.id === suggestionId ? { ...s, isApplied: newIsApplied } : s
-					)
-				);
-
-				// Get the exact point impact from the suggestion, with fallback to default
-				const exactPointImpact = suggestion.pointImpact || 2;
-
-				// Update score locally with exact point impact
-				const scoreDelta = newIsApplied ? exactPointImpact : -exactPointImpact;
-
-				setCurrentAtsScore((prevScore) => {
-					if (!prevScore)
-						return initialScoreRef.current || originalAtsScore || 65;
-					const newScore = prevScore + scoreDelta;
-					console.log(
-						`Score update: ${prevScore} ${
-							newIsApplied ? "+" : "-"
-						} ${exactPointImpact} = ${newScore}`
-					);
-					return Math.min(100, Math.max(0, newScore));
-				});
-
-				// Mark content and score as modified
-				setContentModified(true);
-				setScoreModified(true);
-
-				return true;
-			} catch (error) {
-				console.error("Error applying suggestion locally:", error);
-				toast.error("Failed to apply suggestion");
-				return false;
-			}
+			dispatch(actionCreators.applySuggestion(suggestionId, applied));
+			return true;
 		},
-		[resumeData?.id, suggestions, originalAtsScore]
+		[context.resumeData]
 	);
 
 	/**
-	 * Apply or unapply a keyword - LOCAL STATE ONLY
-	 * Updates ONLY local keyword state and recalculates ATS score
-	 * Uses the exact point impact from the keyword for accurate score updates
-	 *
-	 * @param keywordId - ID of the keyword to apply/unapply
-	 * @param applyState - Optional boolean to force specific state (true/false)
-	 * @returns Boolean indicating if operation was successful
+	 * Handle keyword application
 	 */
 	const handleKeywordApply = useCallback(
-		(keywordId: string, applyState?: boolean) => {
-			console.log("handleKeywordApply called with:", {
-				keywordId,
-				applyState,
-				resumeId: resumeData?.id,
-				currentScore: currentAtsScore,
-				originalScore: originalAtsScore,
-			});
-
-			if (!resumeData?.id) {
+		(keywordId: string, applied: boolean): boolean => {
+			if (!context.resumeData?.id) {
 				console.error("Cannot apply keyword: No resume data available");
 				return false;
 			}
 
-			// Find the keyword
-			const keyword = keywords.find((k) => k.id === keywordId);
-
-			if (!keyword) {
-				console.error("Keyword not found with ID:", keywordId);
-				return false;
-			}
-
-			// Determine new applied state (toggle if not specified)
-			const newIsApplied =
-				applyState !== undefined ? applyState : !keyword.isApplied;
-
-			try {
-				// Update local state ONLY - no API call
-				setKeywords((prevKeywords) =>
-					prevKeywords.map((k) =>
-						k.id === keywordId
-							? { ...k, isApplied: newIsApplied, applied: newIsApplied }
-							: k
-					)
-				);
-
-				// Get the exact point impact from the keyword, with fallback to default
-				const exactPointImpact = keyword.pointImpact || 1;
-
-				// Update score locally with exact point impact
-				const scoreDelta = newIsApplied ? exactPointImpact : -exactPointImpact;
-
-				setCurrentAtsScore((prevScore) => {
-					if (!prevScore)
-						return initialScoreRef.current || originalAtsScore || 65;
-					const newScore = prevScore + scoreDelta;
-					console.log(
-						`Score update: ${prevScore} ${
-							newIsApplied ? "+" : "-"
-						} ${exactPointImpact} = ${newScore}`
-					);
-					return Math.min(100, Math.max(0, newScore));
-				});
-
-				// Mark content and score as modified
-				setContentModified(true);
-				setScoreModified(true);
-
-				return true;
-			} catch (error) {
-				console.error("Error applying keyword locally:", error);
-				toast.error("Failed to apply keyword");
-				return false;
-			}
+			dispatch(actionCreators.applyKeyword(keywordId, applied));
+			return true;
 		},
-		[resumeData?.id, keywords, originalAtsScore]
+		[context.resumeData]
 	);
 
 	/**
-	 * Update resume state with optimized data from API or upload
-	 * Used after initial optimization to populate all components
-	 * ENHANCED: Now handles section titles from AI response
-	 *
-	 * @param optimizedTextContent - The optimized text content
-	 * @param resumeId - ID of the resume
-	 * @param scoreValue - ATS score value
-	 * @param suggestionsData - Array of suggestions
-	 * @param keywordsData - Array of keywords
-	 * @param aiResponse - Optional full AI response object containing section titles
+	 * Update selected template
+	 */
+	const updateSelectedTemplate = useCallback((templateId: string): boolean => {
+		dispatch(actionCreators.updateTemplate(templateId));
+		return true;
+	}, []);
+
+	/**
+	 * Update resume with optimized data from API
 	 */
 	const updateResumeWithOptimizedData = useCallback(
 		(
-			optimizedTextContent: string,
+			optimizedText: string,
 			resumeId: string,
-			scoreValue: number,
-			suggestionsData: any[], // Type any[] to accept different structures
-			keywordsData: any[], // Type any[] to accept different structures
-			aiResponse?: any // ENHANCEMENT: Full AI response to capture section titles
+			atsScore: number,
+			suggestions: Suggestion[],
+			keywords: Keyword[],
+			aiResponse?: any
 		) => {
-			console.log("Updating resume with optimized data:", {
-				resumeId,
-				scoreValue,
-				suggestionsCount: suggestionsData?.length || 0,
-				keywordsCount: keywordsData?.length || 0,
-				hasSectionTitles: !!aiResponse?.sectionTitles,
-			});
-
-			// ENHANCEMENT: Capture section titles from AI response if available
-			if (
-				aiResponse?.sectionTitles &&
-				typeof aiResponse.sectionTitles === "object"
-			) {
-				setSectionTitles(aiResponse.sectionTitles);
-				console.log(
-					"Section titles captured from AI response:",
-					aiResponse.sectionTitles
-				);
-			} else {
-				console.log(
-					"No section titles found in AI response, will use defaults"
-				);
-			}
-
-			// ENHANCEMENT: Capture resume language if available
-			if (aiResponse?.language) {
-				setResumeLanguage(aiResponse.language);
-				console.log(
-					"Resume language captured from AI response:",
-					aiResponse.language
-				);
-			}
-
-			// Normalize suggestions to ensure consistent structure
-			const normalizedSuggestions = Array.isArray(suggestionsData)
-				? suggestionsData.map((suggestion, index) => {
-						if (!suggestion.id) {
-							console.warn(
-								`Suggestion without ID detected (index ${index}):`,
-								suggestion
-							);
-						}
-						return normalizeSuggestion(suggestion);
-				  })
-				: [];
-
-			// Normalize keywords to ensure consistent structure
-			const normalizedKeywords = Array.isArray(keywordsData)
-				? keywordsData.map((keyword, index) => {
-						if (typeof keyword !== "string" && !keyword.id) {
-							console.warn(
-								`Keyword without ID detected (index ${index}):`,
-								keyword
-							);
-						}
-						return normalizeKeyword(keyword);
-				  })
-				: [];
-
-			console.log("Normalized suggestions:", normalizedSuggestions);
-			console.log("Normalized keywords:", normalizedKeywords);
-
-			// Update content state
-			setOriginalText(optimizedTextContent);
-			setOptimizedText(optimizedTextContent);
-			setTempEditedContent(optimizedTextContent); // Initialize temporary content
-
-			// Update score state and track initial score for future reference
-			setOriginalAtsScore(scoreValue);
-			setCurrentAtsScore(scoreValue);
-
-			// Set initial score reference for accurate improvement calculations
-			if (initialScoreRef.current === null) {
-				initialScoreRef.current = scoreValue;
-				console.log(`Setting initial score reference to ${scoreValue}`);
-			}
-
-			// Update enhancements state with normalized data
-			setSuggestions(normalizedSuggestions);
-			setKeywords(normalizedKeywords);
-
-			// Reset modification tracking
-			setContentModified(false);
-			setScoreModified(false);
-			setHasTempChanges(false);
-
-			// Clear any temporary sections and stable references
-			setTempSections([]);
-			lastStableSectionsRef.current = [];
-
-			// Fetch the complete resume data if not already available
-			if (!resumeData || resumeData.id !== resumeId) {
-				getLatestOptimizedResume(userId || "")
-					.then(({ data: apiData }) => {
-						if (apiData) {
-							const optimizedData = convertApiDataToOptimizedFormat(apiData);
-							setResumeData(optimizedData);
-							setHasResume(true);
-
-							if (optimizedData.selected_template) {
-								setSelectedTemplate(optimizedData.selected_template);
-							}
-						}
-					})
-					.catch((error) =>
-						console.error("Error fetching resume data:", error)
-					);
-			}
-
-			// Mark that we now have resume data
-			setHasResume(true);
-			hasLoadedDataRef.current = true;
-
-			// Switch to preview tab
-			setActiveTab("preview");
-
-			// Show optimization success toast
-			toast.success("Resume optimized successfully!", {
-				description: "Your resume has been analyzed and improved by our AI.",
-				duration: 5000,
-			});
+			dispatch(
+				actionCreators.updateResumeData(
+					optimizedText,
+					resumeId,
+					atsScore,
+					suggestions,
+					keywords,
+					aiResponse
+				)
+			);
 		},
-		[resumeData, userId, convertApiDataToOptimizedFormat]
+		[]
 	);
 
 	/**
-	 * Update template selection
-	 *
-	 * @param templateId - ID of the template to select
-	 * @returns Boolean indicating if operation was successful
+	 * Set active tab
 	 */
-	const updateSelectedTemplate = useCallback(
-		(templateId: string) => {
-			try {
-				// Skip if template hasn't changed
-				if (templateId === selectedTemplate) {
-					return true;
-				}
+	const setActiveTab = useCallback((tab: "upload" | "preview") => {
+		dispatch(actionCreators.switchTab(tab));
+	}, []);
 
-				// Update local state only - template will be saved with other changes
-				setSelectedTemplate(templateId);
+	// ===== UTILITY FUNCTIONS =====
 
-				// Mark template as modified to enable save button
-				setTemplateModified(true);
-				setContentModified(true);
-
-				console.log(`Template changed to ${templateId}, marked as modified`);
-
-				return true;
-			} catch (error) {
-				console.error("Error updating template:", error);
-				toast.error("Failed to update template");
-				return false;
-			}
-		},
-		[selectedTemplate]
-	);
+	/**
+	 * Get array of applied keywords
+	 */
+	const getAppliedKeywords = useCallback((): string[] => {
+		return context.keywords
+			.filter((keyword) => keyword.isApplied)
+			.map((keyword) => keyword.text);
+	}, [context.keywords]);
 
 	/**
 	 * Check if there are unsaved changes
-	 * Used to warn users before navigating away
-	 *
-	 * @returns Boolean indicating if there are unsaved changes
 	 */
-	const hasUnsavedChanges = useCallback(() => {
-		return (
-			contentModified || scoreModified || templateModified || hasTempChanges
-		);
-	}, [contentModified, scoreModified, templateModified, hasTempChanges]);
+	const hasUnsavedChanges = useCallback((): boolean => {
+		return context.hasUnsavedChanges;
+	}, [context.hasUnsavedChanges]);
 
 	/**
-	 * Get array of applied keywords for templates
-	 *
-	 * @returns Array of applied keyword texts
+	 * Calculate completion score based on applied suggestions and keywords
 	 */
-	const getAppliedKeywords = useCallback(() => {
-		return keywords
-			.filter((keyword) => keyword.isApplied)
-			.map((keyword) => keyword.text);
-	}, [keywords]);
+	const calculateCompletionScore = useCallback((): number => {
+		if (!context.suggestions.length && !context.keywords.length) return 0;
 
-	/**
-	 * Calculate the current completion score
-	 * Based on applied suggestions and keywords
-	 *
-	 * @returns Score between 0-100
-	 */
-	const calculateCompletionScore = useCallback(() => {
-		if (!suggestions.length && !keywords.length) return 0;
+		const appliedSuggestions = context.suggestions.filter(
+			(s) => s.isApplied
+		).length;
+		const appliedKeywords = context.keywords.filter((k) => k.isApplied).length;
 
-		const appliedSuggestions = suggestions.filter((s) => s.isApplied).length;
-		const appliedKeywords = keywords.filter((k) => k.isApplied).length;
-
-		const totalItems = suggestions.length + keywords.length;
+		const totalItems = context.suggestions.length + context.keywords.length;
 		const appliedItems = appliedSuggestions + appliedKeywords;
 
 		return Math.round((appliedItems / totalItems) * 100);
-	}, [suggestions, keywords]);
+	}, [context.suggestions, context.keywords]);
 
 	/**
-	 * Checks if the save button should be enabled
-	 * Called by UI components to determine button state
-	 *
-	 * @returns Boolean indicating if save button should be enabled
+	 * Check if save button should be enabled
 	 */
-	const shouldEnableSaveButton = useCallback(() => {
-		return (
-			contentModified || scoreModified || templateModified || hasTempChanges
+	const shouldEnableSaveButton = useCallback((): boolean => {
+		return context.hasUnsavedChanges;
+	}, [context.hasUnsavedChanges]);
+
+	// ===== LEGACY SETTERS (kept for compatibility) =====
+
+	const setOptimizedText = useCallback((text: string) => {
+		dispatch(actionCreators.updateContent(text));
+	}, []);
+
+	const setCurrentAtsScore = useCallback((score: number) => {
+		console.warn("Direct score setting should be handled through actions");
+	}, []);
+
+	const setSuggestions = useCallback((suggestions: Suggestion[]) => {
+		console.warn(
+			"Direct suggestions setting should be handled through actions"
 		);
-	}, [contentModified, scoreModified, templateModified, hasTempChanges]);
+	}, []);
+
+	const setKeywords = useCallback((keywords: Keyword[]) => {
+		console.warn("Direct keywords setting should be handled through actions");
+	}, []);
+
+	const setContentModified = useCallback((modified: boolean) => {
+		console.warn(
+			"Content modification is now handled automatically by the state machine"
+		);
+	}, []);
+
+	const setScoreModified = useCallback((modified: boolean) => {
+		console.warn(
+			"Score modification is now handled automatically by the state machine"
+		);
+	}, []);
+
+	const setSelectedTemplate = useCallback((template: string) => {
+		dispatch(actionCreators.updateTemplate(template));
+	}, []);
+
+	const setTemplateModified = useCallback((modified: boolean) => {
+		console.warn(
+			"Template modification is now handled automatically by the state machine"
+		);
+	}, []);
+
+	const setSectionTitles = useCallback((titles: Record<string, string>) => {
+		console.warn(
+			"Section titles should be set through updateResumeWithOptimizedData"
+		);
+	}, []);
+
+	const setResumeLanguage = useCallback((language: string) => {
+		console.warn(
+			"Resume language should be set through updateResumeWithOptimizedData"
+		);
+	}, []);
+
+	// Helper function to determine authentication status
+	const isUserAuthenticated = useCallback(() => {
+		if (user?.id) return true;
+		if (context.userId) return true;
+		return false;
+	}, [user?.id, context.userId]);
 
 	// ===== EFFECTS =====
 
-	// Cleanup effect for timers
+	console.log("🔧 Debug Initialize:", {
+		userId,
+		hasInitialized: hasInitialized.current,
+		currentState: state,
+	});
+
+	// Initialize the hook - handles both authenticated and unauthenticated users
 	useEffect(() => {
-		return () => {
-			if (contentUpdateTimerRef.current) {
-				clearTimeout(contentUpdateTimerRef.current);
+		console.log("🚀 Initialize Effect Triggered:", {
+			userId,
+			hasInitialized: hasInitialized.current,
+			currentState: state,
+			contextUserId: context.userId,
+			timestamp: new Date().toISOString(),
+		});
+
+		if (!hasInitialized.current) {
+			if (userId) {
+				console.log(
+					"✅ FIRST TIME: Dispatching initialize action for authenticated user"
+				);
+				dispatch(actionCreators.initialize(userId));
+			} else {
+				console.log(
+					"ℹ️ FIRST TIME: User not authenticated, going to WELCOME_NEW_USER"
+				);
+				dispatch(actionCreators.setWelcomeState());
 			}
-		};
-	}, []);
-
-	// Check for session storage welcome toast on mount
-	useEffect(() => {
-		try {
-			const lastToastTime = sessionStorage.getItem("welcomeToastTime");
-
-			if (lastToastTime) {
-				const lastTime = parseInt(lastToastTime, 10);
-				const currentTime = Date.now();
-
-				// If a toast was shown in the last 15 minutes, mark it as already displayed
-				if (currentTime - lastTime < 15 * 60 * 1000) {
-					// 15 minutes in ms
-					welcomeToastDisplayedRef.current = true;
-					setToastShown(true);
-				}
-			}
-		} catch (e) {
-			// Ignore session storage errors
+			hasInitialized.current = true;
+		} else if (
+			userId &&
+			state === CVOptimizerState.WELCOME_NEW_USER &&
+			!context.userId
+		) {
+			console.log(
+				"🔄 SECOND TIME: User signed in after initial load, re-initializing..."
+			);
+			dispatch(actionCreators.initialize(userId));
 		}
+	}, [userId, state, context.userId]);
 
-		return () => {
-			// On unmount, save the toast time if a toast has been displayed
-			if (welcomeToastDisplayedRef.current) {
-				try {
-					sessionStorage.setItem("welcomeToastTime", Date.now().toString());
-				} catch (e) {
-					// Ignore session storage errors
-				}
-			}
-		};
-	}, []);
-
-	// Load resume on initial mount if userId is available
+	// Handle automatic resume loading
 	useEffect(() => {
-		if (userId && hasResume === null && !hasLoadedDataRef.current) {
+		if (state === CVOptimizerState.CHECKING_EXISTING_RESUME && userId) {
 			loadLatestResume();
 		}
-	}, [userId, hasResume, loadLatestResume]);
+	}, [state, userId, loadLatestResume]);
 
-	// Improved effect for welcome toasts that handles loading transitions correctly
+	// ===== CRITICAL: AUTO-PROCESSING EFFECT FOR UPLOADTHING COMPLETION =====
+	/**
+	 * CRITICAL EFFECT: Auto-trigger file processing after UploadThing completion
+	 *
+	 * PURPOSE:
+	 * - Bridges the gap between UploadThing upload and file processing
+	 * - Maintains clean separation of concerns (upload vs processing)
+	 * - Ensures automatic flow without user intervention
+	 *
+	 * TRIGGER CONDITIONS:
+	 * - State is FILE_UPLOAD_COMPLETE (set by reducer after UPLOAD_THING_COMPLETE)
+	 * - Valid uploadedFileInfo exists in context
+	 * - No ongoing UploadThing processing
+	 * - User is authenticated
+	 */
 	useEffect(() => {
-		// Skip if toast has already been shown in this component instance
-		if (toastShown) {
+		console.log("🔄 AutoProcess useEffect triggered");
+		console.log("🔄 Current state:", state);
+		console.log("🔄 Has uploadedFileInfo:", !!context.uploadedFileInfo);
+		console.log("🔄 UploadThing in progress:", context.uploadThingInProgress);
+		console.log("🔄 User authenticated:", !!userId);
+
+		// Guard: Check target state
+		if (state !== CVOptimizerState.FILE_UPLOAD_COMPLETE) {
+			console.log(
+				"🔄 AutoProcess: Not in FILE_UPLOAD_COMPLETE state, skipping"
+			);
 			return;
 		}
 
-		// The key logic: Only show toast when loading transitions from true to false
-		const wasLoading = previousLoadingState.current;
-		previousLoadingState.current = isLoading;
-
-		// If we weren't loading before and we're still not loading now, skip
-		// Or if we're still loading, skip
-		if ((!wasLoading && !isLoading) || isLoading) {
+		// Guard: Check file info exists
+		if (!context.uploadedFileInfo) {
+			console.warn(
+				"⚠️ AutoProcess: FILE_UPLOAD_COMPLETE state but no uploadedFileInfo"
+			);
 			return;
 		}
 
-		// At this point, we know:
-		// 1. Toast has not been shown yet in this session/component
-		// 2. We just finished loading (transition from loading=true to loading=false)
-		// 3. We know whether the user has a resume or not
-
-		// Skip if we still don't know resume status
-		if (hasResume === null) {
+		// Guard: Check UploadThing not still processing
+		if (context.uploadThingInProgress) {
+			console.log("🔄 AutoProcess: UploadThing still in progress, waiting...");
 			return;
 		}
 
-		// Mark toast as shown
-		setToastShown(true);
-		welcomeToastDisplayedRef.current = true;
-
-		// Save toast time to session storage
-		try {
-			sessionStorage.setItem("welcomeToastTime", Date.now().toString());
-		} catch (e) {
-			// Ignore session storage errors
+		// Guard: Check user authentication
+		if (!userId) {
+			console.error(
+				"❌ AutoProcess: Cannot process file without authenticated user"
+			);
+			dispatch(
+				actionCreators.error(
+					"Authentication required for file processing",
+					new Error("User not authenticated during auto-processing"),
+					"file_processing",
+					{
+						operation: "file_processing",
+						step: "auto_processing_auth_check",
+						retryable: false,
+						userMessage: "Please sign in to process uploaded files",
+						technicalDetails: "userId is null during auto-processing trigger",
+					}
+				)
+			);
+			return;
 		}
-	}, [hasResume, isLoading, toastShown]);
 
-	// Return the hook interface with all state values and functions
+		// Guard: Prevent duplicate processing
+		if (PROCESSING_STATES.includes(state)) {
+			console.log("🔄 AutoProcess: Already in processing state, skipping");
+			return;
+		}
+
+		// Main processing trigger
+		console.log(
+			"🚀 AutoProcess: All guards passed, triggering file processing"
+		);
+		console.log("🚀 AutoProcess: File details:", {
+			name: context.uploadedFileInfo.name,
+			size: context.uploadedFileInfo.size,
+			type: context.uploadedFileInfo.type,
+			hasUrl: !!context.uploadedFileInfo.url,
+		});
+
+		// Async processing execution
+		const executeAutoProcessing = async () => {
+			try {
+				console.log("📤 AutoProcess: Calling processUploadedFile");
+
+				// CRITICAL: This is the single point where file processing is triggered
+				const success = await processUploadedFile(context.uploadedFileInfo!);
+
+				if (success) {
+					console.log("✅ AutoProcess: File processing completed successfully");
+				} else {
+					console.error("❌ AutoProcess: File processing returned false");
+
+					toast.error("File processing failed", {
+						description:
+							"Please try uploading again or use text input instead.",
+						duration: 6000,
+					});
+				}
+			} catch (error) {
+				console.error(
+					"💥 AutoProcess: Unexpected error during file processing:",
+					error
+				);
+
+				dispatch(
+					actionCreators.error(
+						"Auto-processing failed unexpectedly",
+						error as Error,
+						"file_processing",
+						{
+							operation: "file_processing",
+							step: "auto_processing_execution",
+							retryable: true,
+							userMessage:
+								"File processing failed unexpectedly. Please try again.",
+							technicalDetails: `Auto-processing error: ${
+								(error as Error).message
+							}, File: ${context.uploadedFileInfo?.name}`,
+						}
+					)
+				);
+			}
+		};
+
+		// Execute the async processing
+		executeAutoProcessing();
+	}, [
+		state,
+		context.uploadedFileInfo,
+		context.uploadThingInProgress,
+		userId,
+		processUploadedFile,
+		dispatch,
+	]);
+
+	// ===== UPLOADTHING STATE CLEANUP EFFECT =====
+	/**
+	 * CLEANUP EFFECT: Reset UploadThing states when leaving upload flow
+	 */
+	useEffect(() => {
+		const isInUploadFlow = [
+			CVOptimizerState.AWAITING_UPLOAD,
+			CVOptimizerState.UPLOADING_FILE,
+			CVOptimizerState.FILE_UPLOAD_COMPLETE,
+			CVOptimizerState.PROCESSING_FILE,
+			CVOptimizerState.ANALYZING_CONTENT,
+		].includes(state);
+
+		const isInUploadErrorState = [
+			CVOptimizerState.UPLOAD_ERROR,
+			CVOptimizerState.FILE_PROCESSING_ERROR,
+			CVOptimizerState.ANALYSIS_ERROR,
+		].includes(state);
+
+		const isInSuccessState = [
+			CVOptimizerState.OPTIMIZATION_COMPLETE,
+			CVOptimizerState.PREVIEW_MODE,
+			CVOptimizerState.EDIT_MODE,
+		].includes(state);
+
+		// Cleanup UploadThing states when appropriate
+		if (isInSuccessState || (!isInUploadFlow && !isInUploadErrorState)) {
+			const needsCleanup =
+				context.isActiveUpload ||
+				context.uploadThingInProgress ||
+				context.uploadThingFiles.length > 0;
+
+			if (needsCleanup) {
+				console.log(
+					"🧹 Cleanup: Resetting UploadThing states for state:",
+					state
+				);
+
+				if (context.isActiveUpload) {
+					dispatch(actionCreators.setUploadThingActive(false));
+				}
+			}
+		}
+
+		if (isInUploadErrorState) {
+			if (context.isActiveUpload || context.uploadThingInProgress) {
+				dispatch(actionCreators.setUploadThingActive(false));
+			}
+		}
+	}, [
+		state,
+		context.isActiveUpload,
+		context.uploadThingInProgress,
+		context.uploadThingFiles.length,
+		dispatch,
+	]);
+
+	// Add refs for toast protection
+	const toastProtectionRef = useRef<{
+		lastToastState: CVOptimizerState | null;
+		lastToastTime: number;
+		currentToastId: string | null;
+	}>({
+		lastToastState: null,
+		lastToastTime: 0,
+		currentToastId: null,
+	});
+
+	// Handle state transitions for notifications using constants
+	useEffect(() => {
+		console.log(`🔄 Toast Effect: State changed to: ${state}`);
+
+		const toastConfig = TOAST_CONFIGURATIONS[state];
+
+		if (!toastConfig) {
+			console.log(
+				`🔄 Toast Effect: No toast config for state ${state}, skipping`
+			);
+			return;
+		}
+
+		console.log(`🎯 Toast Effect: Found toast config for ${state}:`, {
+			type: toastConfig.type,
+			title: toastConfig.title,
+			description: toastConfig.description,
+			condition: toastConfig.condition,
+		});
+
+		// Protection: Prevent duplicate toasts
+		const now = Date.now();
+		const timeSinceLastToast = now - toastProtectionRef.current.lastToastTime;
+
+		if (
+			toastProtectionRef.current.lastToastState === state &&
+			timeSinceLastToast < 2000
+		) {
+			console.log(
+				`🛡️ Toast Protection: Preventing duplicate toast for state ${state}`,
+				{
+					lastState: toastProtectionRef.current.lastToastState,
+					timeSinceLastToast,
+					threshold: 2000,
+				}
+			);
+			return;
+		}
+
+		// Conditional logic: Check if toast should be shown
+		let shouldShowToast = true;
+
+		if (toastConfig.condition) {
+			switch (toastConfig.condition) {
+				case "unauthenticated":
+					shouldShowToast = !isUserAuthenticated();
+					console.log(
+						`🔍 Toast Condition: unauthenticated = ${shouldShowToast}`
+					);
+					break;
+				case "authenticated_no_resume":
+					shouldShowToast = isUserAuthenticated() && !context.hasExistingResume;
+					console.log(
+						`🔍 Toast Condition: authenticated_no_resume = ${shouldShowToast}`,
+						{
+							isAuthenticated: isUserAuthenticated(),
+							hasResume: context.hasExistingResume,
+						}
+					);
+					break;
+				default:
+					shouldShowToast = true;
+					console.log(`🔍 Toast Condition: default = true`);
+			}
+		} else {
+			console.log(`🔍 Toast Condition: no condition, showing toast`);
+		}
+
+		if (!shouldShowToast) {
+			console.log(
+				`🚫 Toast Effect: Condition not met, skipping toast for ${state}`
+			);
+			return;
+		}
+
+		// Dismiss previous toast
+		if (toastProtectionRef.current.currentToastId) {
+			console.log(
+				`🗑️ Toast Effect: Dismissing previous toast:`,
+				toastProtectionRef.current.currentToastId
+			);
+			toast.dismiss();
+		}
+
+		// Show toast based on type
+		let toastId: string | null = null;
+
+		console.log(
+			`🎬 Toast Effect: About to show ${toastConfig.type} toast for ${state}`
+		);
+
+		switch (toastConfig.type) {
+			case "info":
+				toastId = String(
+					toast.info(toastConfig.title, {
+						description: toastConfig.description,
+						duration: toastConfig.duration,
+					})
+				);
+				console.log(`ℹ️ Toast Effect: Showed INFO toast:`, {
+					id: toastId,
+					title: toastConfig.title,
+					duration: toastConfig.duration,
+				});
+				break;
+			case "success":
+				toastId = String(
+					toast.success(toastConfig.title, {
+						description: toastConfig.description,
+						duration: toastConfig.duration,
+					})
+				);
+				console.log(`✅ Toast Effect: Showed SUCCESS toast:`, {
+					id: toastId,
+					title: toastConfig.title,
+					duration: toastConfig.duration,
+				});
+				break;
+			case "loading":
+				toastId = String(
+					toast.loading(toastConfig.title, {
+						description: toastConfig.description,
+					})
+				);
+				console.log(`⏳ Toast Effect: Showed LOADING toast:`, {
+					id: toastId,
+					title: toastConfig.title,
+					description: toastConfig.description,
+					note: "Loading toasts have infinite duration until dismissed",
+				});
+				break;
+			case "error":
+				toastId = String(
+					toast.error(toastConfig.title, {
+						description: toastConfig.description,
+						duration: toastConfig.duration,
+					})
+				);
+				console.log(`❌ Toast Effect: Showed ERROR toast:`, {
+					id: toastId,
+					title: toastConfig.title,
+					duration: toastConfig.duration,
+				});
+				break;
+			case "message":
+				toastId = String(toast.message(toastConfig.title));
+				console.log(`💬 Toast Effect: Showed MESSAGE toast:`, {
+					id: toastId,
+					title: toastConfig.title,
+				});
+				break;
+			default:
+				console.warn(
+					`⚠️ Toast Effect: Unknown toast type: ${toastConfig.type}`
+				);
+		}
+
+		// Update protection state
+		toastProtectionRef.current = {
+			lastToastState: state,
+			lastToastTime: now,
+			currentToastId: toastId,
+		};
+
+		console.log(`🔒 Toast Protection: Updated protection state:`, {
+			lastToastState: state,
+			lastToastTime: now,
+			currentToastId: toastId,
+			protectionActive: true,
+		});
+	}, [
+		state,
+		context.userId,
+		context.hasExistingResume,
+		user?.id,
+		isUserAuthenticated,
+	]);
+
+	// Handle upload timeouts and cleanup
+	useEffect(() => {
+		if (
+			UPLOAD_STATES.includes(state) ||
+			FILE_PROCESSING_STATES.includes(state) ||
+			ANALYSIS_STATES.includes(state)
+		) {
+			const timeoutDuration = ANALYSIS_STATES.includes(state)
+				? TIMING_CONFIG.ANALYSIS_TIMEOUT
+				: FILE_PROCESSING_STATES.includes(state)
+				? TIMING_CONFIG.FILE_PROCESSING_TIMEOUT
+				: TIMING_CONFIG.UPLOAD_TIMEOUT;
+
+			uploadTimeoutRef.current = setTimeout(() => {
+				const errorType = ANALYSIS_STATES.includes(state)
+					? "analysis"
+					: FILE_PROCESSING_STATES.includes(state)
+					? "file_processing"
+					: "upload";
+
+				dispatch(
+					actionCreators.error(
+						`${errorType} timeout`,
+						new Error("Operation timed out"),
+						errorType,
+						{
+							operation: errorType,
+							step: "timeout",
+							retryable: true,
+							userMessage: `${errorType} timed out. Please try again.`,
+							technicalDetails: `Timeout after ${timeoutDuration}ms`,
+						}
+					)
+				);
+			}, timeoutDuration);
+		}
+
+		return () => {
+			if (uploadTimeoutRef.current) {
+				clearTimeout(uploadTimeoutRef.current);
+				uploadTimeoutRef.current = null;
+			}
+		};
+	}, [state]);
+
+	// Reset retry count on successful operations
+	useEffect(() => {
+		if (
+			state === CVOptimizerState.OPTIMIZATION_COMPLETE ||
+			state === CVOptimizerState.PREVIEW_MODE
+		) {
+			retryCountRef.current = 0;
+			lastOperationRef.current = null;
+		}
+	}, [state]);
+
+	// Handle user sign out - reset to unauthenticated state
+	useEffect(() => {
+		if (!userId && hasInitialized.current && context.userId) {
+			console.log("🚪 User signed out, triggering logout action");
+			dispatch(actionCreators.logout());
+			hasInitialized.current = false;
+		}
+	}, [userId, context.userId]);
+
+	// Cleanup effect
+	useEffect(() => {
+		return () => {
+			if (updateTimeoutRef.current) {
+				clearTimeout(updateTimeoutRef.current);
+			}
+			if (uploadTimeoutRef.current) {
+				clearTimeout(uploadTimeoutRef.current);
+			}
+		};
+	}, []);
+
+	useEffect(() => {
+		console.log("🔍 Hook State Update - selectedFile changed:", {
+			hasFile: !!context.selectedFile,
+			fileName: context.selectedFile?.name || "none",
+			fileSize: context.selectedFile?.size || 0,
+			uploadMethod: context.uploadMethod || "none",
+			currentState: state,
+			timestamp: new Date().toISOString(),
+		});
+	}, [context.selectedFile, context.uploadMethod, state]);
+
+	// Update action history with final states
+	useEffect(() => {
+		if (actionHistoryRef.current.length > 0) {
+			const lastEntry =
+				actionHistoryRef.current[actionHistoryRef.current.length - 1];
+			if (lastEntry.toState !== state) {
+				actionHistoryRef.current[actionHistoryRef.current.length - 1] = {
+					...lastEntry,
+					toState: state,
+				};
+			}
+		}
+	}, [state]);
+
+	// ===== DEBUG FUNCTIONS =====
+
+	/**
+	 * Complete simulateActionForDebug function - WITH PUBLIC FILE SOLUTION
+	 *
+	 * This function simulates all debug actions using real local files in public/test-files/
+	 * This approach allows the API to download real files instead of mock URLs.
+	 */
+	const simulateActionForDebug = useCallback(
+		(actionType: string, payload?: any) => {
+			console.log(`🎯 Debug Simulation: ${actionType}`, payload);
+
+			// Log current state before dispatch
+			console.log("🎯 Debug: State BEFORE dispatch:", {
+				currentState: state,
+				selectedFile: context.selectedFile?.name || "none",
+				uploadMethod: context.uploadMethod || "none",
+				hasUploadedFileInfo: !!context.uploadedFileInfo,
+				timestamp: new Date().toISOString(),
+			});
+
+			// ✅ SOLUTION: Helper function to get local file URLs
+			const getDebugFileUrl = (fileType: string, fileName: string): string => {
+				const baseUrl =
+					process.env.NODE_ENV === "development"
+						? "http://localhost:3000/test-files"
+						: "/test-files"; // For production, if needed
+
+				// Determine file extension based on type
+				switch (fileType) {
+					case "text/plain":
+						return `${baseUrl}/debug-resume.txt`;
+					case "application/pdf":
+						return `${baseUrl}/debug-resume.pdf`;
+					case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+						return `${baseUrl}/debug-resume.docx`;
+					case "application/msword":
+						return `${baseUrl}/debug-resume.doc`;
+					default:
+						return `${baseUrl}/debug-resume.txt`; // Default to text file
+				}
+			};
+
+			// Create realistic mock file content (this won't be used since we use real files)
+			const createRealisticResumeContent = () => {
+				return `John Doe
+Senior Software Developer
+
+CONTACT INFORMATION
+Email: john.doe@email.com
+Phone: (555) 123-4567
+Location: Montreal, QC, Canada
+LinkedIn: linkedin.com/in/johndoe
+GitHub: github.com/johndoe
+
+PROFESSIONAL SUMMARY
+Experienced Full-Stack Developer with 5+ years of expertise in modern web technologies. 
+Proven track record of building scalable applications using React, Node.js, and TypeScript. 
+Strong problem-solving skills and passion for clean, efficient code. Demonstrated ability 
+to lead development teams and deliver high-quality software solutions on time.
+
+TECHNICAL SKILLS
+• Frontend Technologies: React, Vue.js, Angular, TypeScript, JavaScript, HTML5, CSS3, SASS
+• Backend Technologies: Node.js, Express.js, Python, Django, RESTful APIs, GraphQL
+• Databases: PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch
+• Cloud & DevOps: AWS (EC2, S3, Lambda), Docker, Kubernetes, Jenkins, CI/CD
+• Development Tools: Git, Webpack, Babel, Jest, Cypress, VS Code
+• Project Management: Agile, Scrum, Jira, Confluence
+
+PROFESSIONAL EXPERIENCE
+
+Senior Full-Stack Developer | TechCorp Inc. | Montreal, QC | 2021 - Present
+• Led development of customer-facing web application serving 100,000+ active users
+• Implemented microservices architecture reducing system latency by 40%
+• Mentored team of 3 junior developers and conducted code reviews
+• Collaborated with product managers and UX designers to define technical requirements
+• Increased application performance by 50% through code optimization and caching strategies
+• Technologies: React, Node.js, PostgreSQL, AWS, Docker
+
+Full-Stack Developer | StartupXYZ | Montreal, QC | 2019 - 2021
+• Built responsive web applications using React and Redux for state management
+• Developed and maintained RESTful APIs serving mobile and web clients
+• Designed and implemented database schemas for complex business logic
+• Improved application performance by 35% through query optimization
+• Participated in agile development process and sprint planning
+• Implemented automated testing suite increasing code coverage to 85%
+• Technologies: React, Express.js, MongoDB, Docker, Jest
+
+Software Developer | WebSolutions Ltd. | Montreal, QC | 2018 - 2019
+• Developed frontend components using modern JavaScript frameworks
+• Fixed critical bugs and implemented new features in legacy applications
+• Collaborated with senior developers to learn best practices
+• Participated in code reviews and technical discussions
+• Improved user experience through responsive design implementation
+• Technologies: JavaScript, HTML5, CSS3, jQuery, Bootstrap, Git
+
+EDUCATION
+Bachelor of Science in Computer Science
+University of Montreal | Montreal, QC | 2014 - 2018
+• Relevant Coursework: Data Structures, Algorithms, Software Engineering, Database Systems
+• Senior Project: E-commerce platform with payment integration
+• GPA: 3.7/4.0
+• Dean's List: Fall 2016, Spring 2017, Fall 2017
+
+PROJECTS
+
+E-Commerce Platform | Personal Project | 2023
+• Built full-stack e-commerce solution with payment integration and inventory management
+• Implemented user authentication, shopping cart, and order processing
+• Used Next.js for server-side rendering and improved SEO
+• Integrated Stripe API for secure payment processing
+• Technologies: Next.js, React, Node.js, PostgreSQL, Stripe API
+
+Task Management Application | Team Project | 2022
+• Created collaborative task management application with real-time updates
+• Implemented user roles, project organization, and notification system
+• Used WebSocket for real-time collaboration features
+• Deployed using Docker containers on AWS
+• Technologies: React, Node.js, Socket.io, MongoDB, Docker, AWS
+
+Real Estate Portal | Freelance Project | 2021
+• Developed property listing and search platform for local real estate agency
+• Implemented advanced search filters and interactive map integration
+• Created admin panel for property management
+• Optimized for mobile devices and search engines
+• Technologies: Vue.js, Laravel, MySQL, Google Maps API
+
+CERTIFICATIONS
+• AWS Certified Developer Associate | Amazon Web Services | 2023
+• React Developer Certification | Meta | 2022
+• Node.js Certified Developer | OpenJS Foundation | 2021
+• Scrum Master Certification | Scrum Alliance | 2020
+
+ACHIEVEMENTS
+• Led team that won "Best Innovation" award at TechCorp hackathon 2023
+• Increased team productivity by 30% through implementation of code review process
+• Reduced customer support tickets by 25% through improved error handling
+• Contributed to open-source projects with over 1,000 GitHub stars
+
+LANGUAGES
+• English (Native)
+• French (Fluent)
+• Spanish (Conversational)
+
+VOLUNTEER EXPERIENCE
+Code Mentor | Girls Who Code Montreal | 2020 - Present
+• Mentor young women interested in technology careers
+• Teach programming fundamentals and web development
+• Organize coding workshops and career guidance sessions
+
+INTERESTS
+• Open Source Contribution
+• Tech Blogging
+• Photography
+• Hiking and Outdoor Activities
+• Continuous Learning and Professional Development`;
+			};
+
+			// Create mock file based on action type
+			const mockFileContent =
+				actionType === "SIMULATE_FILE_SELECT"
+					? new Blob([createRealisticResumeContent()], { type: "text/plain" })
+					: new Blob([createRealisticResumeContent()], {
+							type: "application/pdf",
+					  });
+
+			const mockFile = new File(
+				[mockFileContent],
+				actionType === "SIMULATE_FILE_SELECT"
+					? "debug-resume.txt"
+					: "debug-resume.pdf",
+				{
+					type:
+						actionType === "SIMULATE_FILE_SELECT"
+							? "text/plain"
+							: "application/pdf",
+					lastModified: Date.now(),
+				}
+			);
+
+			// Log file creation details
+			if (actionType === "SIMULATE_FILE_SELECT") {
+				console.log("🎯 Debug: Creating realistic mock file:", {
+					name: mockFile.name,
+					size: mockFile.size,
+					type: mockFile.type,
+					sizeInKB: Math.round(mockFile.size / 1024),
+					isRealisticSize: mockFile.size > 1000,
+				});
+			}
+
+			// ✅ CRITICAL: Use real local file URLs instead of mock URLs
+			const mockFileInfo: UploadedFileInfo = {
+				name: mockFile.name,
+				size: mockFile.size,
+				type: mockFile.type,
+				// ✅ SOLUTION: Use local file URL that actually exists
+				url: getDebugFileUrl(mockFile.type, mockFile.name),
+			};
+
+			// Log the URL that will be used
+			console.log("🎯 Debug: File URL for API:", {
+				url: mockFileInfo.url,
+				accessible: "Should be accessible via browser",
+				note: "Make sure public/test-files/debug-resume.txt exists",
+			});
+
+			// Create comprehensive mock resume data for analysis completion
+			const mockResumeData: OptimizedResumeData = {
+				id: `debug-resume-${Date.now()}`,
+				user_id: userId || "mock-user-id",
+				original_text: createRealisticResumeContent(),
+				optimized_text: `
+<div class="resume-content">
+	<header class="resume-header">
+		<h1>John Doe</h1>
+		<h2>Senior Software Developer</h2>
+		<div class="contact-info">
+			<p>Email: john.doe@email.com | Phone: (555) 123-4567</p>
+			<p>Location: Montreal, QC, Canada</p>
+			<p>LinkedIn: linkedin.com/in/johndoe | GitHub: github.com/johndoe</p>
+		</div>
+	</header>
+
+	<section class="resume-section">
+		<h3>Professional Summary</h3>
+		<p>Experienced Full-Stack Developer with 5+ years of expertise in modern web technologies. Proven track record of building scalable applications using React, Node.js, and TypeScript. Strong problem-solving skills and passion for clean, efficient code. Demonstrated ability to lead development teams and deliver high-quality software solutions on time.</p>
+	</section>
+
+	<section class="resume-section">
+		<h3>Technical Skills</h3>
+		<div class="skills-grid">
+			<div class="skill-category">
+				<h4>Frontend Technologies</h4>
+				<ul>
+					<li>React, Vue.js, Angular</li>
+					<li>TypeScript, JavaScript</li>
+					<li>HTML5, CSS3, SASS</li>
+				</ul>
+			</div>
+			<div class="skill-category">
+				<h4>Backend Technologies</h4>
+				<ul>
+					<li>Node.js, Express.js</li>
+					<li>Python, Django</li>
+					<li>RESTful APIs, GraphQL</li>
+				</ul>
+			</div>
+			<div class="skill-category">
+				<h4>Databases & Cloud</h4>
+				<ul>
+					<li>PostgreSQL, MongoDB</li>
+					<li>AWS, Docker, Kubernetes</li>
+					<li>CI/CD, Jenkins</li>
+				</ul>
+			</div>
+		</div>
+	</section>
+
+	<section class="resume-section">
+		<h3>Professional Experience</h3>
+		
+		<div class="job-entry">
+			<h4>Senior Full-Stack Developer</h4>
+			<div class="job-details">
+				<span class="company">TechCorp Inc.</span>
+				<span class="location">Montreal, QC</span>
+				<span class="duration">2021 - Present</span>
+			</div>
+			<ul class="achievements">
+				<li>Led development of customer-facing web application serving 100,000+ active users</li>
+				<li>Implemented microservices architecture reducing system latency by 40%</li>
+				<li>Mentored team of 3 junior developers and conducted code reviews</li>
+				<li>Collaborated with product managers and UX designers to define technical requirements</li>
+				<li>Increased application performance by 50% through code optimization and caching strategies</li>
+			</ul>
+			<p class="technologies"><strong>Technologies:</strong> React, Node.js, PostgreSQL, AWS, Docker</p>
+		</div>
+
+		<div class="job-entry">
+			<h4>Full-Stack Developer</h4>
+			<div class="job-details">
+				<span class="company">StartupXYZ</span>
+				<span class="location">Montreal, QC</span>
+				<span class="duration">2019 - 2021</span>
+			</div>
+			<ul class="achievements">
+				<li>Built responsive web applications using React and Redux for state management</li>
+				<li>Developed and maintained RESTful APIs serving mobile and web clients</li>
+				<li>Designed and implemented database schemas for complex business logic</li>
+				<li>Improved application performance by 35% through query optimization</li>
+				<li>Implemented automated testing suite increasing code coverage to 85%</li>
+			</ul>
+			<p class="technologies"><strong>Technologies:</strong> React, Express.js, MongoDB, Docker, Jest</p>
+		</div>
+	</section>
+
+	<section class="resume-section">
+		<h3>Education</h3>
+		<div class="education-entry">
+			<h4>Bachelor of Science in Computer Science</h4>
+			<div class="education-details">
+				<span class="school">University of Montreal</span>
+				<span class="location">Montreal, QC</span>
+				<span class="duration">2014 - 2018</span>
+			</div>
+			<p><strong>GPA:</strong> 3.7/4.0</p>
+			<p><strong>Relevant Coursework:</strong> Data Structures, Algorithms, Software Engineering, Database Systems</p>
+		</div>
+	</section>
+
+	<section class="resume-section">
+		<h3>Projects</h3>
+		
+		<div class="project-entry">
+			<h4>E-Commerce Platform</h4>
+			<span class="project-year">2023</span>
+			<p>Built full-stack e-commerce solution with payment integration and inventory management</p>
+			<p><strong>Technologies:</strong> Next.js, React, Node.js, PostgreSQL, Stripe API</p>
+		</div>
+
+		<div class="project-entry">
+			<h4>Task Management Application</h4>
+			<span class="project-year">2022</span>
+			<p>Created collaborative task management application with real-time updates</p>
+			<p><strong>Technologies:</strong> React, Node.js, Socket.io, MongoDB, Docker, AWS</p>
+		</div>
+	</section>
+
+	<section class="resume-section">
+		<h3>Certifications</h3>
+		<ul>
+			<li>AWS Certified Developer Associate (2023)</li>
+			<li>React Developer Certification - Meta (2022)</li>
+			<li>Node.js Certified Developer (2021)</li>
+			<li>Scrum Master Certification (2020)</li>
+		</ul>
+	</section>
+</div>
+			`.trim(),
+				last_saved_text: undefined,
+				last_saved_score_ats: undefined,
+				language: "English",
+				file_name: mockFile.name,
+				file_type: mockFile.type,
+				file_size: mockFile.size,
+				ats_score: 87, // Higher realistic score
+				selected_template: "basic",
+				keywords: [
+					{
+						id: "debug-keyword-1",
+						text: "React",
+						isApplied: false,
+						relevance: 1,
+						pointImpact: 2,
+					},
+					{
+						id: "debug-keyword-2",
+						text: "TypeScript",
+						isApplied: false,
+						relevance: 1,
+						pointImpact: 2,
+					},
+					{
+						id: "debug-keyword-3",
+						text: "Node.js",
+						isApplied: false,
+						relevance: 1,
+						pointImpact: 2,
+					},
+					{
+						id: "debug-keyword-4",
+						text: "AWS",
+						isApplied: false,
+						relevance: 1,
+						pointImpact: 2,
+					},
+					{
+						id: "debug-keyword-5",
+						text: "PostgreSQL",
+						isApplied: false,
+						relevance: 1,
+						pointImpact: 1,
+					},
+					{
+						id: "debug-keyword-6",
+						text: "Docker",
+						isApplied: false,
+						relevance: 1,
+						pointImpact: 1,
+					},
+					{
+						id: "debug-keyword-7",
+						text: "Microservices",
+						isApplied: false,
+						relevance: 1,
+						pointImpact: 2,
+					},
+					{
+						id: "debug-keyword-8",
+						text: "Full-Stack",
+						isApplied: false,
+						relevance: 1,
+						pointImpact: 2,
+					},
+				],
+				suggestions: [
+					{
+						id: "debug-suggestion-1",
+						text: "Add more quantifiable achievements to demonstrate measurable impact",
+						type: "improvement",
+						impact:
+							"Including specific numbers and metrics will make your resume more impactful for ATS systems and hiring managers. Quantified achievements show concrete value.",
+						isApplied: false,
+						pointImpact: 3,
+					},
+					{
+						id: "debug-suggestion-2",
+						text: "Include relevant industry keywords for better ATS matching",
+						type: "addition",
+						impact:
+							"Adding more industry-specific keywords can improve your resume's visibility in applicant tracking systems and help match job requirements more effectively.",
+						isApplied: false,
+						pointImpact: 2,
+					},
+					{
+						id: "debug-suggestion-3",
+						text: "Highlight leadership and mentoring experience more prominently",
+						type: "restructure",
+						impact:
+							"Emphasizing leadership skills and team management experience will make you stand out for senior and lead developer positions.",
+						isApplied: false,
+						pointImpact: 2,
+					},
+					{
+						id: "debug-suggestion-4",
+						text: "Add a skills section with proficiency levels and years of experience",
+						type: "addition",
+						impact:
+							"A detailed skills section with proficiency indicators helps recruiters quickly assess your technical capabilities and experience depth.",
+						isApplied: false,
+						pointImpact: 2,
+					},
+					{
+						id: "debug-suggestion-5",
+						text: "Include links to your portfolio projects and GitHub repositories",
+						type: "enhancement",
+						impact:
+							"Direct links to your work provide tangible proof of your skills and allow employers to review your coding style and project quality.",
+						isApplied: false,
+						pointImpact: 1,
+					},
+				],
+			};
+
+			let action: CVOptimizerAction;
+
+			// Create actions based on simulation type
+			switch (actionType) {
+				case "SIMULATE_FILE_SELECT":
+					action = actionCreators.selectFile(mockFile);
+					console.log(
+						"🎯 Debug: About to dispatch SELECT_FILE with realistic mock file:",
+						{
+							fileName: mockFile.name,
+							fileSize: mockFile.size,
+							fileSizeKB: Math.round(mockFile.size / 1024),
+							fileType: mockFile.type,
+							isValidSize: mockFile.size > 1000,
+							currentState: state,
+						}
+					);
+					break;
+
+				case "SIMULATE_UPLOAD_START":
+					action = actionCreators.uploadThingBegin([mockFile]);
+					console.log("🎯 Debug: Starting UploadThing simulation with files:", [
+						mockFile.name,
+					]);
+					break;
+
+				case "SIMULATE_UPLOAD_COMPLETE":
+					action = actionCreators.uploadThingComplete([
+						{
+							name: mockFileInfo.name,
+							size: mockFileInfo.size,
+							type: mockFileInfo.type,
+							ufsUrl: mockFileInfo.url, // This will be the local file URL
+							key: `debug-file-key-${Date.now()}`,
+							url: mockFileInfo.url,
+						},
+					]);
+					console.log(
+						"🎯 Debug: Completing UploadThing simulation with file info:",
+						{
+							name: mockFileInfo.name,
+							url: mockFileInfo.url,
+							accessible: "Should be downloadable by API",
+						}
+					);
+					break;
+
+				case "SIMULATE_PROCESSING_START":
+					action = actionCreators.startFileProcessing();
+					console.log("🎯 Debug: Starting file processing simulation");
+					break;
+
+				case "SIMULATE_PROCESSING_COMPLETE":
+					const extractedContent = createRealisticResumeContent();
+					action = actionCreators.fileProcessingComplete(extractedContent);
+					console.log(
+						"🎯 Debug: Completing file processing with extracted content length:",
+						extractedContent.length
+					);
+					break;
+
+				case "SIMULATE_ANALYSIS_START":
+					action = actionCreators.startAnalysis();
+					console.log("🎯 Debug: Starting AI analysis simulation");
+					break;
+
+				case "SIMULATE_ANALYSIS_COMPLETE":
+					action = actionCreators.analysisComplete(mockResumeData);
+					console.log(
+						"🎯 Debug: Completing analysis with comprehensive resume data:",
+						{
+							resumeId: mockResumeData.id,
+							atsScore: mockResumeData.ats_score,
+							keywordsCount: mockResumeData.keywords.length,
+							suggestionsCount: mockResumeData.suggestions.length,
+							contentLength: mockResumeData.optimized_text.length,
+						}
+					);
+					break;
+
+				case "SIMULATE_ERROR":
+					action = actionCreators.error(
+						"Simulated error for testing purposes",
+						new Error("This is a simulated error for debug testing"),
+						"analysis",
+						{
+							operation: "debug_simulation",
+							step: "simulate_error",
+							retryable: true,
+							userMessage: "This is a simulated error for testing purposes",
+							technicalDetails: "Debug simulation error - not a real issue",
+						}
+					);
+					console.log("🎯 Debug: Simulating error state");
+					break;
+
+				case "SIMULATE_RESET":
+					action = actionCreators.logout();
+					console.log("🎯 Debug: Resetting to initial state");
+					break;
+
+				case "SIMULATE_ENTER_EDIT_MODE":
+					action = actionCreators.enterEditMode();
+					console.log("🎯 Debug: Entering edit mode");
+					break;
+
+				case "SIMULATE_EXIT_EDIT_MODE":
+					action = actionCreators.exitEditMode();
+					console.log("🎯 Debug: Exiting edit mode");
+					break;
+
+				default:
+					console.warn(`Unknown simulation action: ${actionType}`);
+					return;
+			}
+
+			// Create action history entry
+			const historyEntry = {
+				action,
+				fromState: state,
+				toState: state,
+				timestamp: new Date(),
+				success: true,
+				error: undefined,
+			};
+
+			try {
+				console.log("🎯 Debug: Dispatching action:", action.type);
+
+				// Dispatch the action
+				dispatch(action);
+
+				// Update action history
+				actionHistoryRef.current.push(historyEntry);
+
+				// Keep history size manageable
+				if (actionHistoryRef.current.length > 20) {
+					actionHistoryRef.current = actionHistoryRef.current.slice(-20);
+				}
+
+				console.log(`✅ Debug simulation ${actionType} completed successfully`);
+
+				// Special logging for file selection
+				if (actionType === "SIMULATE_FILE_SELECT") {
+					console.log(
+						"🎯 Debug: SELECT_FILE action dispatched, check useEffect logs for state update"
+					);
+				}
+
+				// Special logging for upload complete with URL info
+				if (actionType === "SIMULATE_UPLOAD_COMPLETE") {
+					console.log(
+						"🎯 Debug: UPLOAD_COMPLETE action dispatched with local file URL"
+					);
+					console.log(
+						"🎯 Debug: API should now be able to download from:",
+						mockFileInfo.url
+					);
+					console.log(
+						"🎯 Debug: Verify file exists at: public/test-files/debug-resume.txt"
+					);
+				}
+			} catch (error) {
+				historyEntry.success = false;
+				(historyEntry as { error?: string }).error = (error as Error).message;
+				actionHistoryRef.current.push(historyEntry);
+				console.error(`❌ Debug simulation ${actionType} failed:`, error);
+			}
+		},
+		[state, userId, context.selectedFile, context.uploadMethod, dispatch]
+	);
+
+	// ===== RETURN INTERFACE =====
+
 	return {
-		// ===== CORE STATE =====
-		resumeData,
-		originalText,
-		optimizedText,
-		originalAtsScore,
-		currentAtsScore,
-		suggestions,
-		keywords,
-		selectedTemplate,
-		hasResume,
-		activeTab,
+		// Core state
+		resumeData: context.resumeData,
+		optimizedText: context.optimizedText,
+		originalAtsScore: context.originalAtsScore,
+		currentAtsScore: context.currentAtsScore,
+		suggestions: context.suggestions,
+		keywords: context.keywords,
+		selectedTemplate: context.selectedTemplate,
+		hasResume: context.hasExistingResume,
+		activeTab: context.activeTab,
 
-		// ===== ENHANCED: SECTION TITLES AND LANGUAGE SUPPORT =====
-		sectionTitles, // Section titles generated by AI in correct language
-		resumeLanguage, // Language of the resume detected/set by AI
+		// Multilingual section titles support
+		sectionTitles: context.sectionTitles,
+		resumeLanguage: context.resumeLanguage,
 
-		// ===== ULTRA-OPTIMIZED EDITING STATE (CENTRALIZED) =====
-		isEditing,
-		tempEditedContent,
-		tempSections,
-		hasTempChanges,
+		// Editing state
+		isEditing: uiStates.isEditing,
+		tempEditedContent: context.tempEditedContent,
+		tempSections: context.tempSections,
+		hasTempChanges: context.hasTempChanges,
 
-		// ===== COMPUTED STATE WITH STABLE REFERENCES =====
+		// Computed state
 		currentDisplayContent,
 		currentSections,
 
-		// ===== MODIFICATION FLAGS =====
-		contentModified,
-		scoreModified,
-		templateModified,
+		// Modification flags
+		contentModified: context.contentModified,
+		scoreModified: context.scoreModified,
+		templateModified: context.templateModified,
 
-		// ===== LOADING STATES =====
-		isLoading,
-		isSaving,
-		isResetting,
+		// Upload state - enhanced with UploadThing
+		selectedFile: context.selectedFile,
+		uploadedFileInfo: context.uploadedFileInfo,
+		resumeTextContent: context.resumeTextContent,
+		uploadProgress: context.uploadProgress,
+		isDragOver: context.isDragOver,
+		uploadMethod: context.uploadMethod,
 
-		// ===== CORE ACTIONS =====
+		// UploadThing integration states
+		isActiveUpload: context.isActiveUpload,
+		uploadThingInProgress: context.uploadThingInProgress,
+		uploadThingFiles: context.uploadThingFiles,
+
+		// Validation state
+		validationErrors: context.validationErrors,
+		showValidationDialog: !!context.validationErrors,
+
+		// Loading states - granular
+		isLoading: uiStates.isLoading,
+		isSaving: uiStates.isSaving,
+		isResetting: uiStates.isResetting,
+		isUploading: uiStates.isUploading,
+		isProcessingFile: uiStates.isProcessingFile,
+		isAnalyzing: uiStates.isAnalyzing,
+
+		// SIMPLIFIED: Upload UI states
+		uploadUIStates: uploadUIStates,
+
+		// State-calculated permissions
+		canAccessUpload: permissions.canAccessUpload,
+		canAccessPreview: permissions.canAccessPreview,
+		canEdit: permissions.canEdit,
+		canSave: permissions.canSave,
+		canReset: permissions.canReset,
+		isInLoadingState: permissions.isInLoadingState,
+		isInProcessingState: permissions.isInProcessingState,
+		isInErrorState: permissions.isInErrorState,
+
+		// Direct state access
+		currentState: state,
+
+		// Upload actions - fully integrated
+		handleFileSelect,
+		handleFileUpload,
+		handleTextContentChange,
+		handleTextUpload,
+		handleDragOver,
+		processUploadedFile,
+		retryLastOperation,
+
+		// UploadThing integration actions
+		handleUploadThingBegin,
+		handleUploadThingComplete,
+		handleUploadThingError,
+		setUploadThingActive,
+
+		// Validation actions
+		clearValidationErrors: useCallback(() => {
+			dispatch(actionCreators.clearError());
+		}, []),
+
+		// Upload status
+		uploadStatus: uploadStatus,
+
+		// Legacy properties for backward compatibility
+		canUploadFile: uploadUIStates.allowNewUpload,
+		canInputText: uploadUIStates.allowTextInput,
+		isRetryable: uiStates.isRetryable,
+
+		// Core actions
 		setActiveTab,
-		toggleEditMode, // CENTRALIZED - replaces setIsEditing
+		toggleEditMode,
 		loadLatestResume,
 		saveResume,
 		resetResume,
 
-		// ===== ULTRA-OPTIMIZED EDITING ACTIONS =====
+		// Editing actions
 		handleContentEdit,
-		handleSectionEdit, // ULTRA-OPTIMIZED - for section-specific editing
+		handleSectionEdit,
 		handleApplySuggestion,
 		handleKeywordApply,
-		updateResumeWithOptimizedData, // ENHANCED - now supports section titles
+		updateResumeWithOptimizedData,
 		updateSelectedTemplate,
 
-		// ===== UTILITY FUNCTIONS =====
+		// Utility functions
 		getAppliedKeywords,
 		hasUnsavedChanges,
 		calculateCompletionScore,
 		shouldEnableSaveButton,
 
-		// ===== DIRECT STATE SETTERS (LIMITED ACCESS) =====
+		// Legacy setters (with warnings)
 		setOptimizedText,
 		setCurrentAtsScore,
 		setSuggestions,
@@ -1372,8 +2577,203 @@ export const useResumeOptimizer = (userId?: string) => {
 		setScoreModified,
 		setSelectedTemplate,
 		setTemplateModified,
-		setSectionTitles, // ENHANCEMENT: Allow manual setting of section titles
-		setResumeLanguage, // ENHANCEMENT: Allow manual setting of resume language
+		setSectionTitles,
+		setResumeLanguage,
+
+		// Debug/development helpers - enhanced with step-by-step
+		debug: {
+			currentState: state,
+			context: context,
+			isValidTransition: (to: CVOptimizerState) => {
+				const allowedTransitions: Partial<
+					Record<CVOptimizerState, CVOptimizerState[]>
+				> = {
+					[CVOptimizerState.INITIALIZING]: [
+						CVOptimizerState.CHECKING_EXISTING_RESUME,
+						CVOptimizerState.WELCOME_NEW_USER,
+					],
+					[CVOptimizerState.CHECKING_EXISTING_RESUME]: [
+						CVOptimizerState.EXISTING_RESUME_LOADED,
+						CVOptimizerState.AWAITING_UPLOAD,
+					],
+					[CVOptimizerState.WELCOME_NEW_USER]: [
+						CVOptimizerState.AWAITING_UPLOAD,
+					],
+					[CVOptimizerState.EXISTING_RESUME_LOADED]: [
+						CVOptimizerState.PREVIEW_MODE,
+					],
+					[CVOptimizerState.AWAITING_UPLOAD]: [
+						CVOptimizerState.UPLOADING_FILE,
+						CVOptimizerState.ANALYZING_CONTENT,
+					],
+					[CVOptimizerState.UPLOADING_FILE]: [
+						CVOptimizerState.FILE_UPLOAD_COMPLETE,
+						CVOptimizerState.UPLOAD_ERROR,
+					],
+					[CVOptimizerState.FILE_UPLOAD_COMPLETE]: [
+						CVOptimizerState.PROCESSING_FILE,
+					],
+					[CVOptimizerState.PROCESSING_FILE]: [
+						CVOptimizerState.ANALYZING_CONTENT,
+						CVOptimizerState.FILE_PROCESSING_ERROR,
+					],
+					[CVOptimizerState.ANALYZING_CONTENT]: [
+						CVOptimizerState.OPTIMIZATION_COMPLETE,
+						CVOptimizerState.ANALYSIS_ERROR,
+					],
+					[CVOptimizerState.OPTIMIZATION_COMPLETE]: [
+						CVOptimizerState.PREVIEW_MODE,
+					],
+					[CVOptimizerState.PREVIEW_MODE]: [
+						CVOptimizerState.EDIT_MODE,
+						CVOptimizerState.RESETTING_CHANGES,
+					],
+					[CVOptimizerState.EDIT_MODE]: [
+						CVOptimizerState.PREVIEW_MODE,
+						CVOptimizerState.SAVING_CHANGES,
+					],
+					[CVOptimizerState.SAVING_CHANGES]: [
+						CVOptimizerState.PREVIEW_MODE,
+						CVOptimizerState.SAVE_ERROR,
+					],
+					[CVOptimizerState.RESETTING_CHANGES]: [
+						CVOptimizerState.PREVIEW_MODE,
+						CVOptimizerState.RESET_ERROR,
+					],
+					[CVOptimizerState.UPLOAD_ERROR]: [CVOptimizerState.AWAITING_UPLOAD],
+					[CVOptimizerState.FILE_PROCESSING_ERROR]: [
+						CVOptimizerState.AWAITING_UPLOAD,
+					],
+					[CVOptimizerState.ANALYSIS_ERROR]: [CVOptimizerState.AWAITING_UPLOAD],
+					[CVOptimizerState.SAVE_ERROR]: [
+						CVOptimizerState.EDIT_MODE,
+						CVOptimizerState.PREVIEW_MODE,
+					],
+					[CVOptimizerState.RESET_ERROR]: [CVOptimizerState.PREVIEW_MODE],
+				};
+
+				return allowedTransitions[state]?.includes(to) || false;
+			},
+			stateHistory: actionHistoryRef.current.map((entry) => entry.fromState),
+			uploadStatus,
+			uploadUIStates: uploadUIStates,
+			canRetry: uiStates.isRetryable,
+			lastOperation: lastOperationRef.current,
+			retryCount: retryCountRef.current,
+
+			// UploadThing specific debug info
+			uploadThingStatus: {
+				status: context.isActiveUpload
+					? "uploading"
+					: context.uploadThingInProgress
+					? "processing"
+					: "idle",
+				filesCount: context.uploadThingFiles.length,
+				hasUploadedFile: !!context.uploadedFileInfo,
+			},
+			uploadThingValidation: {
+				valid: true, // Simplified validation
+				reason: "State machine managed",
+			},
+			shouldPreventUpload: uploadUIStates.shouldHideUploadButton,
+			uploadThingRetryCount: 0, // Simplified
+
+			// Validation debug info
+			validationState: {
+				hasValidationErrors: !!context.validationErrors,
+				validationErrorsCount: context.validationErrors
+					? Object.keys(context.validationErrors).length
+					: 0,
+				showDialog: !!context.validationErrors,
+			},
+
+			// Enhanced error debugging
+			errorState: {
+				hasError: permissions.isInErrorState,
+				errorMessage: context.errorMessage,
+				errorType: context.errorContext?.operation,
+				isRetryable: uiStates.isRetryable,
+				lastError: context.lastError?.message,
+			},
+
+			// Debug simulation functions for step-by-step testing
+			dispatch: dispatch,
+			actionHistory: actionHistoryRef.current,
+			simulateAction: simulateActionForDebug,
+
+			// Pre-built simulation functions for easy debug
+			simulateActions: {
+				selectFile: () => simulateActionForDebug("SIMULATE_FILE_SELECT"),
+				startUpload: () => simulateActionForDebug("SIMULATE_UPLOAD_START"),
+				completeUpload: () =>
+					simulateActionForDebug("SIMULATE_UPLOAD_COMPLETE"),
+				startProcessing: () =>
+					simulateActionForDebug("SIMULATE_PROCESSING_START"),
+				completeProcessing: () =>
+					simulateActionForDebug("SIMULATE_PROCESSING_COMPLETE"),
+				startAnalysis: () => simulateActionForDebug("SIMULATE_ANALYSIS_START"),
+				completeAnalysis: () =>
+					simulateActionForDebug("SIMULATE_ANALYSIS_COMPLETE"),
+				simulateError: () => simulateActionForDebug("SIMULATE_ERROR"),
+				resetToInitial: () => simulateActionForDebug("SIMULATE_RESET"),
+				enterEditMode: () => simulateActionForDebug("SIMULATE_ENTER_EDIT_MODE"),
+				exitEditMode: () => simulateActionForDebug("SIMULATE_EXIT_EDIT_MODE"),
+			},
+
+			// Validation functions for testing
+			validateCurrentState: () => {
+				const issues: string[] = [];
+
+				// Check state-context consistency
+				if (context.hasExistingResume && !context.resumeData) {
+					issues.push("hasExistingResume is true but resumeData is null");
+				}
+
+				if (context.isActiveUpload && !context.uploadThingFiles.length) {
+					issues.push("isActiveUpload is true but no files tracked");
+				}
+
+				if (context.uploadThingInProgress && !context.uploadedFileInfo) {
+					issues.push("uploadThingInProgress but no file info");
+				}
+
+				// Check UI state consistency
+				if (
+					uploadUIStates.shouldHideUploadButton !==
+					(LOADING_STATES.includes(state) ||
+						PROCESSING_STATES.includes(state) ||
+						context.isActiveUpload ||
+						context.uploadThingInProgress)
+				) {
+					issues.push("uploadUIStates.shouldHideUploadButton inconsistent");
+				}
+
+				return {
+					isValid: issues.length === 0,
+					issues,
+					timestamp: new Date().toISOString(),
+				};
+			},
+
+			// Transition testing
+			getNextValidStates: () => {
+				const validStates = [
+					CVOptimizerState.AWAITING_UPLOAD,
+					CVOptimizerState.UPLOADING_FILE,
+					CVOptimizerState.PROCESSING_FILE,
+					CVOptimizerState.ANALYZING_CONTENT,
+					CVOptimizerState.OPTIMIZATION_COMPLETE,
+					CVOptimizerState.PREVIEW_MODE,
+					CVOptimizerState.EDIT_MODE,
+				];
+
+				return validStates.map((nextState) => ({
+					state: nextState,
+					canTransition: true, // Simplified validation
+					description: getCurrentStepDescription(nextState, context),
+				}));
+			},
+		},
 	};
 };
 

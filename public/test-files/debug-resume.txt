@@ -1,0 +1,113 @@
+John Doe
+Senior Software Developer
+
+CONTACT INFORMATION
+Email: john.doe@email.com
+Phone: (555) 123-4567
+Location: Montreal, QC, Canada
+LinkedIn: linkedin.com/in/johndoe
+GitHub: github.com/johndoe
+
+PROFESSIONAL SUMMARY
+Experienced Full-Stack Developer with 5+ years of expertise in modern web technologies. 
+Proven track record of building scalable applications using React, Node.js, and TypeScript. 
+Strong problem-solving skills and passion for clean, efficient code. Demonstrated ability 
+to lead development teams and deliver high-quality software solutions on time.
+
+TECHNICAL SKILLS
+• Frontend Technologies: React, Vue.js, Angular, TypeScript, JavaScript, HTML5, CSS3, SASS
+• Backend Technologies: Node.js, Express.js, Python, Django, RESTful APIs, GraphQL
+• Databases: PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch
+• Cloud & DevOps: AWS (EC2, S3, Lambda), Docker, Kubernetes, Jenkins, CI/CD
+• Development Tools: Git, Webpack, Babel, Jest, Cypress, VS Code
+• Project Management: Agile, Scrum, Jira, Confluence
+
+PROFESSIONAL EXPERIENCE
+
+Senior Full-Stack Developer | TechCorp Inc. | Montreal, QC | 2021 - Present
+• Led development of customer-facing web application serving 100,000+ active users
+• Implemented microservices architecture reducing system latency by 40%
+• Mentored team of 3 junior developers and conducted code reviews
+• Collaborated with product managers and UX designers to define technical requirements
+• Increased application performance by 50% through code optimization and caching strategies
+• Technologies: React, Node.js, PostgreSQL, AWS, Docker
+
+Full-Stack Developer | StartupXYZ | Montreal, QC | 2019 - 2021
+• Built responsive web applications using React and Redux for state management
+• Developed and maintained RESTful APIs serving mobile and web clients
+• Designed and implemented database schemas for complex business logic
+• Improved application performance by 35% through query optimization
+• Participated in agile development process and sprint planning
+• Implemented automated testing suite increasing code coverage to 85%
+• Technologies: React, Express.js, MongoDB, Docker, Jest
+
+Software Developer | WebSolutions Ltd. | Montreal, QC | 2018 - 2019
+• Developed frontend components using modern JavaScript frameworks
+• Fixed critical bugs and implemented new features in legacy applications
+• Collaborated with senior developers to learn best practices
+• Participated in code reviews and technical discussions
+• Improved user experience through responsive design implementation
+• Technologies: JavaScript, HTML5, CSS3, jQuery, Bootstrap, Git
+
+EDUCATION
+Bachelor of Science in Computer Science
+University of Montreal | Montreal, QC | 2014 - 2018
+• Relevant Coursework: Data Structures, Algorithms, Software Engineering, Database Systems
+• Senior Project: E-commerce platform with payment integration
+• GPA: 3.7/4.0
+• Dean's List: Fall 2016, Spring 2017, Fall 2017
+
+PROJECTS
+
+E-Commerce Platform | Personal Project | 2023
+• Built full-stack e-commerce solution with payment integration and inventory management
+• Implemented user authentication, shopping cart, and order processing
+• Used Next.js for server-side rendering and improved SEO
+• Integrated Stripe API for secure payment processing
+• Technologies: Next.js, React, Node.js, PostgreSQL, Stripe API
+• GitHub: github.com/johndoe/ecommerce-platform
+
+Task Management Application | Team Project | 2022
+• Created collaborative task management application with real-time updates
+• Implemented user roles, project organization, and notification system
+• Used WebSocket for real-time collaboration features
+• Deployed using Docker containers on AWS
+• Technologies: React, Node.js, Socket.io, MongoDB, Docker, AWS
+• Live Demo: taskapp.johndoe.com
+
+Real Estate Portal | Freelance Project | 2021
+• Developed property listing and search platform for local real estate agency
+• Implemented advanced search filters and interactive map integration
+• Created admin panel for property management
+• Optimized for mobile devices and search engines
+• Technologies: Vue.js, Laravel, MySQL, Google Maps API
+
+CERTIFICATIONS
+• AWS Certified Developer Associate | Amazon Web Services | 2023
+• React Developer Certification | Meta | 2022
+• Node.js Certified Developer | OpenJS Foundation | 2021
+• Scrum Master Certification | Scrum Alliance | 2020
+
+ACHIEVEMENTS
+• Led team that won "Best Innovation" award at TechCorp hackathon 2023
+• Increased team productivity by 30% through implementation of code review process
+• Reduced customer support tickets by 25% through improved error handling
+• Contributed to open-source projects with over 1,000 GitHub stars
+
+LANGUAGES
+• English (Native)
+• French (Fluent)
+• Spanish (Conversational)
+
+VOLUNTEER EXPERIENCE
+Code Mentor | Girls Who Code Montreal | 2020 - Present
+• Mentor young women interested in technology careers
+• Teach programming fundamentals and web development
+• Organize coding workshops and career guidance sessions
+
+INTERESTS
+• Open Source Contribution
+• Tech Blogging
+• Photography
+• Hiking and Outdoor Activities
+• Continuous Learning and Professional Development

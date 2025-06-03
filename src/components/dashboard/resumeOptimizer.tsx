@@ -1,27 +1,23 @@
 /**
- * ResumeOptimizer Component - COMPLETELY REFACTORED FOR NEW ARCHITECTURE WITH MULTILINGUAL SECTION TITLES
+ * ResumeOptimizer Component - ENHANCED WITH STEP-BY-STEP DEBUG SYSTEM
  *
  * Main component that manages the resume optimization workflow for CareerBoost SaaS.
- * Uses custom hooks for separation of concerns between uploading and editing.
+ * Now uses only the unified state machine hook with enhanced debug capabilities.
  *
- * MAJOR UPDATES FOR NEW ARCHITECTURE:
- * - Updated to work with refactored useResumeOptimizer hook
- * - Fixed all TypeScript errors by using correct property names and signatures
- * - Simplified state management with centralized edit mode
- * - Compatible with temporary content preservation system
- * - Enhanced props passing to ResumePreview component
- * - Maintained all original functionality while improving stability
- * - ENHANCED: Added multilingual section titles support for proper empty section display
- * - FIXED: All callback signatures now match their respective interfaces
+ * MAJOR ENHANCEMENT FOR DEBUG:
+ * - Added step-by-step debug system using new hook functions
+ * - Replaced old debug buttons with new simulation functions
+ * - Enhanced error tracking and state validation
+ * - Interactive debug panel for troubleshooting workflow issues
+ * - Maintains all original functionality while adding debug capabilities
  */
 
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 
 // Import UI components for the resume optimization workflow
 import UploadSection from "@/components/ResumeOptimizerSection/uploadSection";
@@ -33,338 +29,183 @@ import TemplateGallery from "@/components/ResumeOptimizerSection/templateGallery
 import ResetConfirmationDialog from "@/components/Dialogs/resetConfirmationDialog";
 import LoadingState from "@/components/ResumeOptimizerSection/loadingState";
 import EmptyPreviewState from "@/components/ResumeOptimizerSection/emptyPreviewState";
+import ErrorState from "@/components/Dialogs/errorStateDialog";
+import AuthRequiredState from "@/components/ResumeOptimizerSection/authRequiredState";
 import { resumeTemplates } from "@/constants/templates";
 
-// Import custom hooks for state management
+// Import the unified state machine hook with enhanced debug capabilities
 import useResumeOptimizer from "@/hooks/optimizer/useResumeOptimizer";
-import useUploadSection from "@/hooks/optimizer/useUploadSection";
 
 // Import types for type safety
-import { Suggestion, Keyword, OptimizedResumeData } from "@/types/resumeTypes";
-import { SuggestionImpact } from "@/types/suggestionTypes";
+import { Suggestion, Keyword } from "@/types/resumeTypes";
 
 /**
- * EmptyPreviewStateProps interface
- * Props for the empty state component when no resume is available
- */
-interface EmptyPreviewStateProps {
-	onGoToUpload: () => void; // Action to navigate to upload section
-}
-
-/**
- * Normalizes a suggestion object to ensure consistent structure
- * Handles different property naming conventions and ensures IDs exist
- * This is crucial for the CareerBoost AI optimization system
- *
- * @param suggestion - Suggestion object from AI optimization response
- * @param index - Index for fallback ID generation
- * @returns Normalized suggestion with consistent property names
- */
-function normalizeSuggestion(suggestion: any, index: number): Suggestion {
-	// Generate debug output for suggestions without ID
-	if (!suggestion.id) {
-		console.warn(`Suggestion without ID at index ${index}:`, suggestion);
-	}
-
-	return {
-		// Ensure ID exists with multiple fallback strategies
-		id:
-			suggestion.id ||
-			suggestion.suggestion_id ||
-			`suggestion-${index}-${Date.now()}`,
-		// Ensure text property exists (the actual suggestion content)
-		text: suggestion.text || suggestion.original_text || "",
-		// Provide defaults for optional properties
-		type: suggestion.type || "general",
-		impact: suggestion.impact || "",
-		// Handle both naming conventions for applied state
-		isApplied: suggestion.isApplied || suggestion.is_applied || false,
-		// Include pointImpact for ATS score calculations
-		pointImpact: suggestion.pointImpact || suggestion.point_impact || 2,
-	};
-}
-
-/**
- * Normalizes a keyword object to ensure consistent structure
- * Handles different property naming conventions and formats
- * Essential for CareerBoost's keyword optimization feature
- *
- * @param keyword - Keyword to normalize (can be string or object)
- * @param index - Index for fallback ID generation
- * @returns Normalized keyword with consistent property names
- */
-function normalizeKeyword(keyword: any, index: number): Keyword {
-	// Handle case where keyword is just a string (simple format)
-	if (typeof keyword === "string") {
-		return {
-			id: `keyword-${index}-${Date.now()}`,
-			text: keyword,
-			isApplied: false,
-			relevance: 1,
-			pointImpact: 1,
-		};
-	}
-
-	// Generate debug output for keywords without ID
-	if (!keyword.id) {
-		console.warn(`Keyword object without ID at index ${index}:`, keyword);
-	}
-
-	// Handle keyword as an object with potential varying property names
-	return {
-		id: keyword.id || keyword.keyword_id || `keyword-${index}-${Date.now()}`,
-		text: keyword.text || keyword.keyword || "",
-		// Support all possible variations of the applied property
-		isApplied:
-			keyword.isApplied || keyword.is_applied || keyword.applied || false,
-		relevance: keyword.relevance || 1,
-		pointImpact: keyword.pointImpact || keyword.point_impact || 1,
-	};
-}
-
-/**
- * ResumeOptimizer Component - REFACTORED FOR NEW ARCHITECTURE WITH MULTILINGUAL SECTION TITLES
+ * ResumeOptimizer Component - ENHANCED DEBUG VERSION
  *
  * Main component for CareerBoost's resume optimization feature.
+ * Now includes step-by-step debug capabilities for troubleshooting.
  * Handles the complete lifecycle of resume optimization including:
- * - File upload and content extraction
- * - AI optimization and analysis
+ * - File upload and content extraction (now integrated)
+ * - AI optimization and analysis (now integrated)
  * - Rendering preview with template selection
- * - Managing suggestions and keywords with centralized state
+ * - Managing suggestions and keywords with unified state
  * - Saving and resetting user changes
- * - ENHANCED: Multilingual section titles for proper empty section display
+ * - Error handling with retry mechanism (now integrated)
+ * - Enhanced debug system for troubleshooting (NEW)
  */
 const ResumeOptimizer: React.FC = () => {
 	// Get user authentication state from Clerk
 	const { user } = useUser();
 
-	// Ref to track previous loading state for tab navigation and UI updates
-	const previousIsLoading = useRef(false);
-
-	// State to track if welcome toast has been shown to prevent spam
-	const welcomeToastShownRef = useRef(false);
-
-	// ===== USE THE REFACTORED HOOK WITH NEW PROPERTIES INCLUDING SECTION TITLES =====
-
-	// Use the main optimizer hook to handle resume optimization state and actions
+	// ===== UNIFIED STATE MACHINE HOOK - ENHANCED WITH DEBUG =====
 	const {
 		// ===== CORE STATE =====
-		resumeData, // Complete resume data from database
-		optimizedText, // AI-optimized resume content
-		originalAtsScore, // Initial ATS score before modifications
-		currentAtsScore, // Current ATS score with applied changes
-		suggestions, // AI-generated improvement suggestions
-		keywords, // AI-recommended keywords for ATS optimization
-		selectedTemplate, // Currently selected resume template
-		hasResume, // Boolean indicating if user has resume data
-		activeTab, // Current active tab (upload/preview)
+		resumeData,
+		optimizedText,
+		originalAtsScore,
+		currentAtsScore,
+		suggestions,
+		keywords,
+		selectedTemplate,
+		hasResume,
+		activeTab,
 
-		// ===== ENHANCED: MULTILINGUAL SECTION TITLES SUPPORT =====
-		sectionTitles, // Section titles generated by AI in correct language
-		resumeLanguage, // Language of the resume detected/set by AI
+		// ===== MULTILINGUAL SECTION TITLES SUPPORT =====
+		sectionTitles,
+		resumeLanguage,
 
-		// ===== CENTRALIZED EDITING STATE =====
-		isEditing, // NEW: centralized edit mode state
-		tempEditedContent, // NEW: temporary content during editing
-		tempSections, // NEW: stable sections during editing
-		hasTempChanges, // NEW: tracks temporary modifications
+		// ===== EDITING STATE =====
+		isEditing,
+		tempEditedContent,
+		tempSections,
+		hasTempChanges,
 
 		// ===== COMPUTED STATE =====
-		currentDisplayContent, // NEW: computed display content based on mode
-		currentSections, // NEW: computed sections based on mode
+		currentDisplayContent,
+		currentSections,
 
 		// ===== MODIFICATION FLAGS =====
-		contentModified, // Flag indicating content has been modified
-		scoreModified, // Flag indicating score has been modified
-		templateModified, // Flag indicating template has been modified
+		contentModified,
+		scoreModified,
+		templateModified,
 
-		// ===== LOADING STATES =====
-		isLoading, // Main loading state for initial data
-		isSaving, // Saving state for database operations
-		isResetting, // Resetting state for reset operations
+		// ===== UPLOAD STATE - NOW INTEGRATED =====
+		selectedFile,
+		uploadedFileInfo,
+		resumeTextContent,
+		uploadProgress,
+		isDragOver,
+		uploadMethod,
+
+		// ===== UPLOADTHING STATES =====
+		isActiveUpload,
+		uploadThingInProgress,
+		uploadThingFiles,
+
+		// ===== LOADING STATES - GRANULAR =====
+		isLoading,
+		isSaving,
+		isResetting,
+		isUploading,
+		isProcessingFile,
+		isAnalyzing,
+
+		// ===== UPLOAD UI STATES =====
+		uploadUIStates,
+
+		// ===== STATE-CALCULATED PERMISSIONS =====
+		canAccessUpload,
+		canAccessPreview,
+		canEdit,
+		canSave,
+		canReset,
+		isInLoadingState,
+		isInProcessingState,
+		isInErrorState,
+
+		// ===== DIRECT STATE ACCESS =====
+		currentState,
+
+		// ===== UPLOAD ACTIONS - NOW INTEGRATED =====
+		handleFileSelect,
+		handleFileUpload,
+		handleTextContentChange,
+		handleTextUpload,
+		handleDragOver,
+		processUploadedFile,
+		retryLastOperation,
+
+		// ===== UPLOADTHING ACTIONS =====
+		handleUploadThingBegin,
+		handleUploadThingComplete,
+		handleUploadThingError,
+		setUploadThingActive,
+
+		// ===== UPLOAD STATUS =====
+		uploadStatus,
+		canUploadFile,
+		canInputText,
+		isRetryable,
 
 		// ===== CORE ACTIONS =====
-		setActiveTab, // Function to change active tab
-		toggleEditMode, // NEW: centralized edit mode toggle
-		loadLatestResume, // Function to load latest resume from database
-		saveResume, // Function to save current state to database
-		resetResume, // Function to reset resume to original state
+		setActiveTab,
+		toggleEditMode,
+		loadLatestResume,
+		saveResume,
+		resetResume,
 
 		// ===== EDITING ACTIONS =====
-		handleContentEdit, // Function to handle content editing
-		handleSectionEdit, // NEW: section-specific editing
-		handleApplySuggestion, // Function to apply/unapply suggestions
-		handleKeywordApply, // Function to apply/unapply keywords
-		updateResumeWithOptimizedData, // Function to update with new optimization data
-		updateSelectedTemplate, // Function to update selected template
+		handleContentEdit,
+		handleSectionEdit,
+		handleApplySuggestion,
+		handleKeywordApply,
+		updateResumeWithOptimizedData,
+		updateSelectedTemplate,
 
 		// ===== UTILITY FUNCTIONS =====
-		getAppliedKeywords, // Function to get list of applied keywords
-		hasUnsavedChanges, // Function to check for unsaved changes
-		calculateCompletionScore, // Function to calculate completion percentage
-		shouldEnableSaveButton, // Function to determine if save button should be enabled
+		getAppliedKeywords,
+		hasUnsavedChanges,
+		calculateCompletionScore,
+		shouldEnableSaveButton,
 
-		// ===== DIRECT STATE SETTERS (limited access for specific use cases) =====
-		setOptimizedText,
-		setCurrentAtsScore,
-		setSuggestions,
-		setKeywords,
-		setContentModified,
-		setScoreModified,
-		setSelectedTemplate,
-		setTemplateModified,
+		// ===== ENHANCED DEBUG SYSTEM =====
+		debug,
 	} = useResumeOptimizer(user?.id);
 
-	// Use the upload section hook to handle file upload and initial optimization
-	const {
-		// Upload section state
-		selectedFile, // Selected file for upload
-		resumeContent, // Extracted content from file
-		isUploading, // File upload in progress
-		isOptimizing, // AI optimization in progress
-
-		// Upload section actions
-		setSelectedFile, // Set selected file
-		handleContentChange, // Handle content changes in upload
-		handleFileUpload, // Handle file upload process
-		processUploadedFile, // Process uploaded file
-		handleTextAnalysis, // Send content for AI analysis
-	} = useUploadSection({
-		// FIXED: Corrected callback signature to match UploadSectionProps interface
-		onOptimizationComplete: (
-			optimizedText?: string,
-			resumeId?: string,
-			atsScore?: number,
-			suggestionsData?: any[],
-			keywordsData?: any[]
-		) => {
-			console.log("🎉 Optimization complete, processing results:", {
-				resumeId,
-				atsScore,
-				suggestionsCount: suggestionsData?.length || 0,
-				keywordsCount: keywordsData?.length || 0,
-			});
-
-			// Normalize suggestions to ensure consistent structure for UI components
-			const normalizedSuggestions = Array.isArray(suggestionsData)
-				? suggestionsData.map(normalizeSuggestion)
-				: [];
-
-			// Normalize keywords to ensure consistent structure for UI components
-			const normalizedKeywords = Array.isArray(keywordsData)
-				? keywordsData.map(normalizeKeyword)
-				: [];
-
-			console.log("✅ Normalized data for UI:", {
-				suggestionsNormalized: normalizedSuggestions.length,
-				keywordsNormalized: normalizedKeywords.length,
-			});
-
-			// Update the main state with optimization results
-			// Note: Using null for aiResponse since this callback doesn't provide it
-			updateResumeWithOptimizedData(
-				optimizedText || "",
-				resumeId || "",
-				atsScore || 65,
-				normalizedSuggestions,
-				normalizedKeywords,
-				null // No AI response available in this callback signature
-			);
-
-			// Automatically switch to preview tab after processing is complete
-			setActiveTab("preview");
-
-			// Show success notification to user
-			toast.success("Resume optimized successfully!", {
-				description: "Your resume has been analyzed and improved by our AI.",
-				duration: 5000,
-			});
-		},
-	});
-
-	// ===== LOCAL UI STATE =====
-
-	// State for managing loading display during analysis
-	const [showLoadingState, setShowLoadingState] = useState(false);
+	// ===== LOCAL UI STATE - MINIMIZED =====
 
 	// State for reset confirmation dialog
-	const [showResetDialog, setShowResetDialog] = useState(false);
+	const [showResetDialog, setShowResetDialog] = React.useState(false);
+
+	// Debug panel expansion state
+	const [isDebugExpanded, setIsDebugExpanded] = React.useState(false);
+
+	// ===== EVENT HANDLERS - SIMPLIFIED WITH UNIFIED STATE =====
 
 	/**
-	 * Centralized function to handle UI updates after loading
-	 * Handles tab navigation, loading state, and welcome toasts in one place
-	 * This ensures consistent behavior across the CareerBoost application
-	 */
-	const handleLoadingStateChange = useCallback(() => {
-		// Check if loading just finished (was loading before, not loading now)
-		const loadingJustFinished = !isLoading && previousIsLoading.current;
-
-		// Update previous loading state for next render
-		previousIsLoading.current = isLoading;
-
-		// If loading didn't just finish, nothing to do
-		if (!loadingJustFinished) return;
-
-		// Automatic tab navigation based on resume data availability
-		if (hasResume && (currentDisplayContent || optimizedText)) {
-			// If we have resume data, switch to preview tab
-			setActiveTab("preview");
-			console.log("🎯 Auto-switching to preview tab after loading");
-
-			// Show success notification for returning users
-			toast.success("Last resume loaded successfully!", {
-				description:
-					"You can continue optimizing your resume or upload a new one.",
-				duration: 5000,
-			});
-		} else {
-			// If no resume data, stay on upload tab
-			setActiveTab("upload");
-			console.log("📁 Staying on upload tab - no resume found");
-
-			// Show welcome message for new users
-			toast.info("Welcome to CareerBoost!", {
-				description: "Upload your resume to get started with AI optimization.",
-				duration: 7000,
-			});
-		}
-	}, [
-		isLoading,
-		hasResume,
-		currentDisplayContent,
-		optimizedText,
-		setActiveTab,
-	]);
-
-	/**
-	 * Handle tab change with data loading if needed
-	 * Prevents tab switching during processing and loads data when required
-	 * Essential for CareerBoost's user experience flow
-	 *
-	 * @param value - Tab value to switch to ('upload' or 'preview')
+	 * Handle tab change with unified state validation
+	 * Now uses state-calculated permissions instead of complex conditions
 	 */
 	const handleTabChange = useCallback(
 		(value: string) => {
-			// Prevent switching to preview if analysis in progress
-			if (value === "preview" && (isUploading || isOptimizing || isLoading)) {
+			// Use state-calculated permission instead of complex condition
+			if (value === "preview" && !canAccessPreview) {
 				toast.info("Please wait until analysis is complete");
 				return;
 			}
 
 			// Update active tab
-			setActiveTab(value);
+			setActiveTab(value as "upload" | "preview");
 
 			// When switching to preview tab, load the latest resume data if needed
 			if (value === "preview" && user?.id && !currentDisplayContent) {
 				loadLatestResume();
-				console.log("🔄 Loading latest resume data");
+				console.log("Loading latest resume data");
 			}
 		},
 		[
 			user?.id,
-			isUploading,
-			isOptimizing,
-			isLoading,
+			canAccessPreview,
 			loadLatestResume,
 			currentDisplayContent,
 			setActiveTab,
@@ -372,55 +213,22 @@ const ResumeOptimizer: React.FC = () => {
 	);
 
 	/**
-	 * Handle analysis start - show loading state
-	 * Called when the AI optimization process begins
-	 */
-	const handleAnalysisStart = useCallback(() => {
-		setShowLoadingState(true);
-	}, []);
-
-	/**
-	 * Calculate if preview tab should be disabled
-	 * Prevents access during processing states to avoid UI bugs
-	 */
-	const isPreviewTabDisabled =
-		isLoading || isUploading || isOptimizing || showLoadingState;
-
-	/**
-	 * Get current ATS score to display
-	 * Uses current score if available, falls back to original score
-	 */
-	const atsScore =
-		currentAtsScore !== null ? currentAtsScore : originalAtsScore;
-
-	/**
-	 * Get array of applied keywords for templates
-	 * Uses the utility function from the hook
-	 */
-	const appliedKeywordsArray = getAppliedKeywords();
-
-	/**
-	 * Centralized reset handler to ensure all components are synchronized
-	 * Handles the reset confirmation and execution for CareerBoost
+	 * Centralized reset handler with unified state management
 	 */
 	const handleCompleteReset = useCallback(() => {
 		// Hide confirmation dialog
 		setShowResetDialog(false);
 
-		// Call the reset function from the hook
+		// Call the unified reset function
 		resetResume().then((success) => {
 			if (success) {
-				console.log(
-					"✅ Reset completed successfully - all components synchronized"
-				);
+				console.log("Reset completed successfully - unified state updated");
 			}
 		});
 	}, [resetResume]);
 
 	/**
-	 * Handle resume download
-	 * Creates an HTML file with the current content and selected template
-	 * Important feature for CareerBoost users to export their optimized resumes
+	 * Handle resume download with current display content
 	 */
 	const handleDownload = useCallback(() => {
 		// Use current display content for download
@@ -439,35 +247,35 @@ const ResumeOptimizer: React.FC = () => {
 
 		// Create complete HTML document with template styling
 		const htmlContent = `<!DOCTYPE html>
-   <html>
-   <head>
-     <meta charset="utf-8">
-     <title>Resume - CareerBoost Optimized</title>
-     <style>
-       body {
-         font-family: Arial, sans-serif;
-         line-height: 1.6;
-         margin: 0;
-         padding: 20px;
-         max-width: 800px;
-         margin: 0 auto;
-       }
-       ${
-					template.previewClass
-						? `.resume-content { ${template.previewClass.replace(
-								/border[^;]+;/g,
-								""
-						  )} }`
-						: ""
-				}
-     </style>
-   </head>
-   <body>
-     <div class="resume-content">
-       ${contentForDownload}
-     </div>
-   </body>
-   </html>`;
+<html>
+<head>
+<meta charset="utf-8">
+<title>Resume - CareerBoost Optimized</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  ${
+		template.previewClass
+			? `.resume-content { ${template.previewClass.replace(
+					/border[^;]+;/g,
+					""
+			  )} }`
+			: ""
+	}
+</style>
+</head>
+<body>
+<div class="resume-content">
+  ${contentForDownload}
+</div>
+</body>
+</html>`;
 
 		// Create and trigger download
 		const blob = new Blob([htmlContent], { type: "text/html" });
@@ -485,259 +293,122 @@ const ResumeOptimizer: React.FC = () => {
 	}, [currentDisplayContent, optimizedText, selectedTemplate]);
 
 	/**
-	 * Maps the database-format suggestions to component-format suggestions
-	 * Ensures each suggestion has required properties including ID
-	 * Critical for CareerBoost's suggestion system functionality
-	 */
-	const mappedSuggestions = suggestions.map((s, index) => {
-		// Log warning for suggestions without ID for debugging
-		if (!s.id) {
-			console.warn(`Suggestion without ID in mapping (index ${index}):`, s);
-		}
-
-		return {
-			// Ensure ID with fallback for UI component requirements
-			id: s.id || `mapped-suggestion-${index}-${Date.now()}`,
-			text: s.text || "",
-			type: s.type || "general",
-			impact: s.impact || "",
-			// Handle both naming conventions for applied state
-			isApplied: s.isApplied || false,
-			pointImpact: s.pointImpact || 2,
-		};
-	});
-
-	/**
-	 * Maps the database-format keywords to component-format keywords
-	 * Adding the 'applied' property required by KeywordsList component
-	 * Essential for CareerBoost's keyword optimization feature
-	 */
-	const mappedKeywords = keywords.map((k, index) => {
-		// Log warning for keywords without ID for debugging
-		if (!k.id) {
-			console.warn(`Keyword without ID in mapping (index ${index}):`, k);
-		}
-
-		return {
-			// Ensure ID with fallback for UI component requirements
-			id: k.id || `mapped-keyword-${index}-${Date.now()}`,
-			text: k.text || "",
-			isApplied: k.isApplied || false,
-			// Add the 'applied' property required by the KeywordsList component
-			applied: k.isApplied || false,
-			relevance: k.relevance || 1,
-			pointImpact: k.pointImpact || 1,
-		};
-	});
-
-	/**
-	 * Enhanced adapter function for applying keywords
-	 * Updates only local state without saving to database immediately
-	 * Uses the exact point impact from the keyword for accurate score updates
-	 * Part of CareerBoost's atomic save architecture
-	 *
-	 * @param index - Index of keyword in the mappedKeywords array
+	 * Enhanced adapter function for applying keywords with unified state
 	 */
 	const handleKeywordApplyAdapter = useCallback(
 		(index: number) => {
-			console.log(`🏷️ handleKeywordApplyAdapter called with index ${index}`);
+			console.log(`Keyword apply adapter called with index ${index}`);
 
-			// Only proceed with keyword application if in edit mode
-			if (isEditing && index >= 0 && index < mappedKeywords.length) {
-				const keyword = mappedKeywords[index];
+			// Use state-calculated permission instead of manual check
+			if (!canEdit) {
+				toast.info("Enter edit mode to apply keywords");
+				return;
+			}
 
-				console.log(`🏷️ Applying keyword (local only):`, keyword);
+			if (index >= 0 && index < keywords.length) {
+				const keyword = keywords[index];
 
-				// Handle missing ID with warning
 				if (!keyword.id) {
 					console.warn(`Keyword at index ${index} has no ID:`, keyword);
 					toast.error("Cannot apply keyword: Missing ID");
 					return;
 				}
 
-				// Get the exact point impact from the keyword, with fallback to default
-				const exactPointImpact = keyword.pointImpact || 1;
-
-				// Log the operation with impact details for debugging
-				console.log("🎯 Applying keyword with impact:", {
+				console.log("Applying keyword with unified state:", {
 					keywordId: keyword.id,
 					keyword: keyword.text,
-					pointImpact: exactPointImpact,
-					currentScore: atsScore,
+					currentScore: currentAtsScore,
 				});
 
-				// Apply the keyword using the hook's handler - now only updates local state
+				// Use unified state handler
 				handleKeywordApply(keyword.id, !keyword.isApplied);
-
-				// Explicitly mark score as modified when applying keyword
-				setScoreModified(true);
-				setContentModified(true);
-			} else if (!isEditing) {
-				// Notify user that editing is required to apply keywords
-				toast.info("Enter edit mode to apply keywords");
 			} else {
 				console.error(
-					`❌ Invalid keyword index: ${index}. Max: ${
-						mappedKeywords.length - 1
-					}`
+					`Invalid keyword index: ${index}. Max: ${keywords.length - 1}`
 				);
 			}
 		},
-		[
-			isEditing,
-			mappedKeywords,
-			atsScore,
-			handleKeywordApply,
-			setScoreModified,
-			setContentModified,
-		]
+		[canEdit, keywords, currentAtsScore, handleKeywordApply]
 	);
 
 	/**
-	 * Enhanced adapter function for applying suggestions
-	 * Updates only local state without saving to database immediately
-	 * Uses the exact point impact from the suggestion for accurate score updates
-	 * Part of CareerBoost's atomic save architecture
-	 *
-	 * @param index - The index of the suggestion in the mappedSuggestions array
-	 * @returns Boolean indicating if operation was successful
+	 * Enhanced adapter function for applying suggestions with unified state
 	 */
 	const handleApplySuggestionAdapter = useCallback(
 		(index: number) => {
-			console.log(`💡 handleApplySuggestionAdapter called with index ${index}`);
+			console.log(`Suggestion apply adapter called with index ${index}`);
 
-			// Only proceed if in edit mode and index is valid
-			if (isEditing && index >= 0 && index < mappedSuggestions.length) {
-				const suggestion = mappedSuggestions[index];
+			// Use state-calculated permission instead of manual check
+			if (!canEdit) {
+				toast.info("Enter edit mode to apply suggestions");
+				return false;
+			}
 
-				console.log(`💡 Applying suggestion (local only):`, suggestion);
+			if (index >= 0 && index < suggestions.length) {
+				const suggestion = suggestions[index];
 
-				// Validate that the suggestion has a valid ID
 				if (!suggestion.id) {
 					console.error(
-						"❌ Cannot apply suggestion: Missing suggestion ID",
+						"Cannot apply suggestion: Missing suggestion ID",
 						suggestion
 					);
-
-					// Generate temporary ID for this operation
-					const tempId = `temp-suggestion-${index}-${Date.now()}`;
-					console.log(`🔧 Generated temporary ID: ${tempId}`);
-
-					// Assign the temporary ID to the suggestion
-					suggestion.id = tempId;
-
 					toast.error("Cannot apply suggestion: Missing ID");
 					return false;
 				}
 
-				// Validate the resume data exists and has an ID
 				if (!resumeData?.id) {
-					console.error("❌ Cannot apply suggestion: Missing resume ID");
+					console.error("Cannot apply suggestion: Missing resume ID");
 					toast.error("Cannot apply suggestion: Resume not found");
 					return false;
 				}
 
-				// Get the exact point impact from the suggestion, with fallback to default
-				const exactPointImpact = suggestion.pointImpact || 2;
-
-				// Log the operation for debugging
-				console.log("🎯 Applying suggestion (local state only):", {
+				console.log("Applying suggestion with unified state:", {
 					resumeId: resumeData.id,
 					suggestionId: suggestion.id,
 					suggestion: suggestion.text,
 					currentState: suggestion.isApplied,
 					newState: !suggestion.isApplied,
-					pointImpact: exactPointImpact,
 				});
 
-				// Call the parent handler with suggestion ID and toggle applied state
-				// Now only updates local state without making API calls
+				// Use unified state handler
 				handleApplySuggestion(suggestion.id, !suggestion.isApplied);
-
-				// Explicitly mark score as modified when applying suggestion
-				setScoreModified(true);
-				setContentModified(true);
-
 				return true;
-			} else if (!isEditing) {
-				// User needs to be in edit mode to apply suggestions
-				toast.info("Enter edit mode to apply suggestions");
-				return false;
 			} else {
-				// Invalid index
 				console.error(
-					"❌ Invalid suggestion index:",
+					"Invalid suggestion index:",
 					index,
 					"Max:",
-					mappedSuggestions.length - 1
+					suggestions.length - 1
 				);
 				return false;
 			}
 		},
-		[
-			isEditing,
-			mappedSuggestions,
-			resumeData,
-			handleApplySuggestion,
-			setScoreModified,
-			setContentModified,
-		]
+		[canEdit, suggestions, resumeData, handleApplySuggestion]
 	);
 
 	/**
-	 * Adapter for file upload to match expected signature
-	 * Provides default values for optional parameters
-	 * Ensures compatibility with UploadSection component requirements
-	 *
-	 * @param url - URL of the uploaded file
-	 * @param name - Name of the file
-	 * @param size - Size of the file in bytes (optional)
-	 * @param type - MIME type of the file (optional)
-	 */
-	const handleFileUploadAdapter = useCallback(
-		(url: string, name: string, size?: number, type?: string) => {
-			// Call the original handler with defaults for optional parameters
-			handleFileUpload(url, name, size || 0, type || "");
-		},
-		[handleFileUpload]
-	);
-
-	/**
-	 * Enhanced save handler that handles all changes in a single atomic transaction
-	 * Collects all applied suggestions and keywords and saves them with the content
-	 * Now also includes the selected template in the save operation
-	 * Core feature of CareerBoost's atomic save architecture
-	 *
-	 * @param content - Content to save to database
-	 * @returns Promise resolving to the save result boolean
+	 * Enhanced save handler with unified state management
 	 */
 	const handleSaveWithUpdates = useCallback(
 		async (content: string) => {
-			// Create a unique ID for this save operation's toast
 			const toastId = "saving-changes-toast";
 
-			// Show processing state to user with the toast ID
 			toast.loading("Saving all changes...", {
 				id: toastId,
 				description:
 					"Saving resume content, keywords, suggestions, and template.",
 			});
 
-			// Call the atomic save method from the hook with the selected template
+			// Use unified save method with atomic transaction
 			const result = await saveResume(content, selectedTemplate);
 
-			// Handle save result and update user feedback
 			if (result) {
-				// Reset modification states are handled by the hook automatically
-
-				// Update the toast to show success using the same ID
 				toast.success("All changes saved successfully", {
 					id: toastId,
 					description:
 						"Your resume, keywords, suggestions, and template have been updated.",
 				});
 			} else {
-				// Update the toast to show error using the same ID
 				toast.error("Failed to save changes", {
 					id: toastId,
 					description:
@@ -751,54 +422,42 @@ const ResumeOptimizer: React.FC = () => {
 	);
 
 	/**
-	 * Handle template selection
-	 * Updates the selected template and marks content as modified
-	 * Important for CareerBoost's template system
-	 *
-	 * @param templateId - ID of the selected template
+	 * Handle template selection with unified state validation
 	 */
 	const handleTemplateSelection = useCallback(
 		(templateId: string) => {
-			// Only allow template selection in edit mode
-			if (!isEditing) {
+			// Use state-calculated permission
+			if (!canEdit) {
 				toast.info("Switch to Edit mode to change templates");
 				return;
 			}
 
-			// Check if the template is already selected
 			if (templateId === selectedTemplate) {
 				return;
 			}
 
-			// Find the template for display purposes
 			const template = resumeTemplates.find((t) => t.id === templateId);
 
-			// Update the template using hook function
+			// Use unified state handler
 			updateSelectedTemplate(templateId);
 
-			// Show confirmation toast to user
 			toast.success(`${template?.name || "Template"} selected`, {
 				description: "Remember to save your changes to apply this template.",
 			});
 		},
-		[isEditing, selectedTemplate, updateSelectedTemplate]
+		[canEdit, selectedTemplate, updateSelectedTemplate]
 	);
 
 	/**
-	 * Handle edit mode change from ResumePreview
-	 * Delegates to the centralized hook function
-	 * Part of CareerBoost's centralized edit mode management
-	 *
-	 * @param newEditingState - New editing state boolean
+	 * Handle edit mode change with unified state management
 	 */
 	const handleEditModeChange = useCallback(
 		(newEditingState: boolean) => {
 			console.log(
-				`🔄 Edit mode change requested: ${isEditing} -> ${newEditingState}`
+				`Edit mode change requested: ${isEditing} -> ${newEditingState}`
 			);
 
-			// Use the centralized toggle function from the hook
-			// Note: toggleEditMode already handles the logic of entering/exiting edit mode
+			// Use the unified toggle function
 			if (newEditingState !== isEditing) {
 				toggleEditMode();
 			}
@@ -808,18 +467,11 @@ const ResumeOptimizer: React.FC = () => {
 
 	/**
 	 * Default function for simulating keyword impact
-	 * Used when no custom simulation function is provided to KeywordsList
-	 *
-	 * @param keywordText - The keyword text
-	 * @param resumeContent - Current resume content
-	 * @param currentScore - Current ATS score
-	 * @returns Impact simulation result
 	 */
 	const simulateKeywordImpact = useCallback(
 		(keywordText: string, resumeContent: string, currentScore: number) => {
-			// Simple simulation logic - in a real app this might call an API
-			const baseImpact = 2; // Base point improvement
-			const randomVariation = Math.random() * 2; // Add some variation
+			const baseImpact = 2;
+			const randomVariation = Math.random() * 2;
 			const pointImpact = Math.round(baseImpact + randomVariation);
 
 			return {
@@ -831,39 +483,232 @@ const ResumeOptimizer: React.FC = () => {
 		[]
 	);
 
-	// ===== EFFECTS =====
+	// ===== ENHANCED DEBUG FUNCTIONS - NOW USING NEW HOOK SYSTEM =====
 
 	/**
-	 * Check for previous toast shown in session storage
-	 * Prevents showing welcome toast multiple times in the same session
+	 * Helper function to show toast with step info
 	 */
-	useEffect(() => {
-		try {
-			const lastToastTime = sessionStorage.getItem("welcomeToastTime");
-			if (lastToastTime) {
-				const lastTime = parseInt(lastToastTime, 10);
-				const currentTime = Date.now();
-
-				// If a toast was shown in the last 15 minutes, mark it as already displayed
-				if (currentTime - lastTime < 15 * 60 * 1000) {
-					// 15 minutes in milliseconds
-					welcomeToastShownRef.current = true;
-				}
-			}
-		} catch (e) {
-			// Ignore session storage errors in case of privacy settings
+	const showDebugToast = useCallback((stepName: string, success: boolean) => {
+		if (success) {
+			toast.success(`Debug: ${stepName} completed`, {
+				description: "Check the debug panel for state changes",
+				duration: 3000,
+			});
+		} else {
+			toast.error(`Debug: ${stepName} failed`, {
+				description: "Check console for error details",
+				duration: 5000,
+			});
 		}
 	}, []);
 
 	/**
-	 * Effect to handle loading state changes
-	 * Manages automatic tab navigation and welcome messages
+	 * Validate state before attempting simulation
 	 */
-	useEffect(() => {
-		handleLoadingStateChange();
-	}, [handleLoadingStateChange]);
+	const validateDebugAction = useCallback(
+		(actionName: string, requiredState?: string): boolean => {
+			if (requiredState && currentState !== requiredState) {
+				toast.warning(`Debug: Cannot ${actionName}`, {
+					description: `Current state: ${currentState}. Required: ${requiredState}`,
+					duration: 4000,
+				});
+				return false;
+			}
+			return true;
+		},
+		[currentState]
+	);
 
-	// ===== RENDER =====
+	// ===== ENHANCED DEBUG HANDLERS USING NEW HOOK FUNCTIONS =====
+
+	const handleDebugSelectFile = useCallback(() => {
+		console.log("🎯 Debug: Starting file selection simulation");
+		try {
+			debug.simulateActions.selectFile();
+			showDebugToast("File Selection", true);
+		} catch (error) {
+			console.error("Debug file selection failed:", error);
+			showDebugToast("File Selection", false);
+		}
+	}, [debug.simulateActions.selectFile, showDebugToast]);
+
+	const handleDebugStartUpload = useCallback(() => {
+		if (!validateDebugAction("start upload", "awaiting_upload")) return;
+
+		console.log("🎯 Debug: Starting upload simulation");
+		try {
+			debug.simulateActions.startUpload();
+			showDebugToast("Upload Start", true);
+		} catch (error) {
+			console.error("Debug upload start failed:", error);
+			showDebugToast("Upload Start", false);
+		}
+	}, [debug.simulateActions.startUpload, showDebugToast, validateDebugAction]);
+
+	const handleDebugCompleteUpload = useCallback(() => {
+		if (!validateDebugAction("complete upload", "uploading_file")) return;
+
+		console.log("🎯 Debug: Completing upload simulation");
+		try {
+			debug.simulateActions.completeUpload();
+			showDebugToast("Upload Complete", true);
+		} catch (error) {
+			console.error("Debug upload complete failed:", error);
+			showDebugToast("Upload Complete", false);
+		}
+	}, [
+		debug.simulateActions.completeUpload,
+		showDebugToast,
+		validateDebugAction,
+	]);
+
+	const handleDebugStartProcessing = useCallback(() => {
+		if (!validateDebugAction("start processing", "file_upload_complete"))
+			return;
+
+		console.log("🎯 Debug: Starting processing simulation");
+		try {
+			debug.simulateActions.startProcessing();
+			showDebugToast("Processing Start", true);
+		} catch (error) {
+			console.error("Debug processing start failed:", error);
+			showDebugToast("Processing Start", false);
+		}
+	}, [
+		debug.simulateActions.startProcessing,
+		showDebugToast,
+		validateDebugAction,
+	]);
+
+	const handleDebugCompleteProcessing = useCallback(() => {
+		if (!validateDebugAction("complete processing", "processing_file")) return;
+
+		console.log("🎯 Debug: Completing processing simulation");
+		try {
+			debug.simulateActions.completeProcessing();
+			showDebugToast("Processing Complete", true);
+		} catch (error) {
+			console.error("Debug processing complete failed:", error);
+			showDebugToast("Processing Complete", false);
+		}
+	}, [
+		debug.simulateActions.completeProcessing,
+		showDebugToast,
+		validateDebugAction,
+	]);
+
+	const handleDebugStartAnalysis = useCallback(() => {
+		if (!validateDebugAction("start analysis", "processing_file")) return;
+
+		console.log("🎯 Debug: Starting analysis simulation");
+		try {
+			debug.simulateActions.startAnalysis();
+			showDebugToast("Analysis Start", true);
+		} catch (error) {
+			console.error("Debug analysis start failed:", error);
+			showDebugToast("Analysis Start", false);
+		}
+	}, [
+		debug.simulateActions.startAnalysis,
+		showDebugToast,
+		validateDebugAction,
+	]);
+
+	const handleDebugCompleteAnalysis = useCallback(() => {
+		if (!validateDebugAction("complete analysis", "analyzing_content")) return;
+
+		console.log("🎯 Debug: Completing analysis simulation");
+		try {
+			debug.simulateActions.completeAnalysis();
+			showDebugToast("Analysis Complete", true);
+		} catch (error) {
+			console.error("Debug analysis complete failed:", error);
+			showDebugToast("Analysis Complete", false);
+		}
+	}, [
+		debug.simulateActions.completeAnalysis,
+		showDebugToast,
+		validateDebugAction,
+	]);
+
+	const handleDebugSimulateError = useCallback(() => {
+		console.log("🎯 Debug: Simulating error state");
+		try {
+			debug.simulateActions.simulateError();
+			showDebugToast("Error Simulation", true);
+		} catch (error) {
+			console.error("Debug error simulation failed:", error);
+			showDebugToast("Error Simulation", false);
+		}
+	}, [debug.simulateActions.simulateError, showDebugToast]);
+
+	const handleDebugReset = useCallback(() => {
+		console.log("🎯 Debug: Resetting to initial state");
+		try {
+			debug.simulateActions.resetToInitial();
+			showDebugToast("Reset", true);
+		} catch (error) {
+			console.error("Debug reset failed:", error);
+			showDebugToast("Reset", false);
+		}
+	}, [debug.simulateActions.resetToInitial, showDebugToast]);
+
+	const handleDebugValidateState = useCallback(() => {
+		console.log("🎯 Debug: Validating current state");
+		try {
+			const validation = debug.validateCurrentState();
+			console.log("State validation result:", validation);
+
+			if (validation.isValid) {
+				toast.success("State validation passed", {
+					description: "No issues found with current state",
+					duration: 3000,
+				});
+			} else {
+				toast.warning("State validation issues found", {
+					description: `${validation.issues.length} issues detected. Check console.`,
+					duration: 5000,
+				});
+			}
+		} catch (error) {
+			console.error("Debug state validation failed:", error);
+			showDebugToast("State Validation", false);
+		}
+	}, [debug.validateCurrentState, showDebugToast]);
+
+	const handleDebugLogFullState = useCallback(() => {
+		console.log("🎯 Debug: Logging full state");
+		console.group("📋 Full Debug State");
+		console.log("Current State:", currentState);
+		console.log("Context:", debug.context);
+		console.log("Action History:", debug.actionHistory);
+		console.log("Upload UI States:", uploadUIStates);
+		console.log("Permissions:", {
+			canAccessUpload,
+			canAccessPreview,
+			canEdit,
+			canSave,
+			canReset,
+		});
+		console.groupEnd();
+
+		toast.info("Full state logged to console", {
+			description: "Check browser console for complete state dump",
+			duration: 3000,
+		});
+	}, [
+		currentState,
+		debug.context,
+		debug.actionHistory,
+		uploadUIStates,
+		canAccessUpload,
+		canAccessPreview,
+		canEdit,
+		canSave,
+		canReset,
+	]);
+
+	// ===== RENDER - ENHANCED WITH NEW DEBUG SYSTEM =====
 
 	return (
 		<div className="py-8">
@@ -889,13 +734,13 @@ const ResumeOptimizer: React.FC = () => {
 				onValueChange={handleTabChange}
 				className="max-w-5xl mx-auto"
 			>
-				{/* Tab navigation */}
+				{/* Tab navigation with unified state validation */}
 				<TabsList className="grid w-full grid-cols-2 mb-8">
 					<TabsTrigger value="upload">Upload Resume</TabsTrigger>
-					<TabsTrigger value="preview" disabled={isPreviewTabDisabled}>
+					<TabsTrigger value="preview" disabled={!canAccessPreview}>
 						Optimize & Preview
-						{/* Loading indicator for preview tab */}
-						{(isUploading || isOptimizing || isLoading || showLoadingState) && (
+						{/* Loading indicator using unified state */}
+						{isInProcessingState && (
 							<span className="ml-2 inline-flex items-center">
 								<svg
 									className="animate-spin h-4 w-4"
@@ -922,115 +767,113 @@ const ResumeOptimizer: React.FC = () => {
 					</TabsTrigger>
 				</TabsList>
 
-				{/* Upload tab - File upload and content analysis */}
+				{/* Upload tab - Now uses integrated upload functionality */}
 				<TabsContent value="upload" className="space-y-4">
-					<UploadSection
-						// File upload state
-						isUploading={isUploading}
-						isParsing={isOptimizing}
-						selectedFile={selectedFile}
-						resumeContent={resumeContent}
-						// File upload handlers
-						onFileChange={setSelectedFile}
-						onContentChange={handleContentChange}
-						onContinue={handleTextAnalysis}
-						onFileUpload={handleFileUploadAdapter}
-						// Navigation and state management
-						setActiveTab={setActiveTab}
-						onAnalysisStart={handleAnalysisStart}
-						showLoadingState={setShowLoadingState}
-						// FIXED: Corrected callback signature to match interface
-						onAnalysisComplete={(
-							optimizedText?: string,
-							resumeId?: string,
-							atsScore?: number,
-							suggestions?: any[],
-							keywords?: any[]
-						) => {
-							// Normalize suggestions and keywords before updating state
-							const normalizedSuggestions = Array.isArray(suggestions)
-								? suggestions.map((s, i) => normalizeSuggestion(s, i))
-								: [];
+					{/* Error state with retry functionality */}
+					{isInErrorState && (
+						<ErrorState
+							message={uploadStatus.errorMessage || "An error occurred"}
+							canRetry={isRetryable}
+							onRetry={retryLastOperation}
+							currentStep={uploadStatus.currentStep}
+						/>
+					)}
 
-							const normalizedKeywords = Array.isArray(keywords)
-								? keywords.map((k, i) => normalizeKeyword(k, i))
-								: [];
-
-							// Update state with normalized data (no AI response in this callback)
-							updateResumeWithOptimizedData(
-								optimizedText || "",
-								resumeId || "",
-								atsScore || 65,
-								normalizedSuggestions,
-								normalizedKeywords,
-								null // No AI response available in this callback signature
-							);
-
-							// Hide loading state when analysis is complete
-							setShowLoadingState(false);
-						}}
-						// Loading state for existing resume check
-						checkingForExistingResumes={isLoading}
-					/>
+					{/* Upload section with complete UploadThing integration */}
+					{!isInErrorState && (
+						<UploadSection
+							uploadState={{
+								isUploading,
+								isProcessingFile,
+								isAnalyzing,
+								selectedFile,
+								resumeTextContent,
+								uploadProgress,
+								isDragOver,
+								canUploadFile,
+								canInputText,
+								isActiveUpload,
+								uploadThingInProgress,
+								uploadThingFiles,
+							}}
+							uploadActions={{
+								onFileSelect: handleFileSelect,
+								onFileUpload: handleFileUpload,
+								onTextContentChange: handleTextContentChange,
+								onTextUpload: handleTextUpload,
+								onDragOver: handleDragOver,
+								onUploadThingBegin: handleUploadThingBegin,
+								onUploadThingComplete: handleUploadThingComplete,
+								onUploadThingError: handleUploadThingError,
+								onSetUploadThingActive: setUploadThingActive,
+							}}
+							uploadStatus={uploadStatus}
+							uploadUIStates={uploadUIStates}
+							onTabSwitch={setActiveTab}
+							isInLoadingState={isInLoadingState}
+							isInErrorState={isInErrorState}
+						/>
+					)}
 				</TabsContent>
 
 				{/* Preview tab - Resume optimization and preview */}
 				<TabsContent value="preview" className="space-y-6">
-					{/*
-					 * Display appropriate content based on state:
-					 * 1. Show loading spinner during initial data load
-					 * 2. Show loading spinner during AI analysis
-					 * 3. Show empty state when no content exists
-					 * 4. Show optimization interface when content is available
-					 */}
-					{isLoading || showLoadingState || isOptimizing ? (
+					{/* Conditional rendering based on unified state */}
+					{isInLoadingState ? (
 						<LoadingState />
+					) : isInErrorState ? (
+						<ErrorState
+							message={uploadStatus.errorMessage || "An error occurred"}
+							canRetry={isRetryable}
+							onRetry={retryLastOperation}
+							currentStep={uploadStatus.currentStep}
+						/>
 					) : !currentDisplayContent && !optimizedText ? (
 						<EmptyPreviewState onGoToUpload={() => setActiveTab("upload")} />
 					) : (
 						<>
-							{/* Main content area with responsive 5-column grid layout */}
+							{/* Main content area with responsive layout */}
 							<div className="grid md:grid-cols-5 gap-6">
-								{/* Resume preview section - takes 3 columns on desktop */}
+								{/* Resume preview section */}
 								<div className="col-span-3">
 									<ResumePreview
-										// ===== CONTENT PROPS =====
+										// Content props
 										optimizedText={currentDisplayContent || optimizedText}
 										originalOptimizedText={optimizedText}
-										// ===== TEMPLATE AND DISPLAY =====
+										// Template and display
 										selectedTemplate={selectedTemplate}
 										templates={resumeTemplates}
-										appliedKeywords={appliedKeywordsArray}
-										suggestions={mappedSuggestions}
-										// ===== ACTION CALLBACKS =====
+										appliedKeywords={getAppliedKeywords()}
+										suggestions={suggestions}
+										// Action callbacks
 										onDownload={handleDownload}
 										onSave={handleSaveWithUpdates}
 										onTextChange={handleContentEdit}
 										onReset={() => setShowResetDialog(true)}
-										// ===== STATE PROPS =====
-										isOptimizing={isOptimizing}
+										// State props using unified state
+										isOptimizing={isAnalyzing}
 										isApplyingChanges={isSaving}
 										language={resumeData?.language || "English"}
 										resumeData={resumeData || undefined}
-										// ===== CENTRALIZED EDIT MODE MANAGEMENT =====
+										// Unified edit mode management
 										isEditing={isEditing}
 										onEditModeChange={handleEditModeChange}
-										// ===== MODIFICATION FLAGS =====
+										// Modification flags
 										scoreModified={scoreModified}
 										templateModified={templateModified}
-										// ===== MULTILINGUAL SECTION TITLES SUPPORT =====
-										sectionTitles={sectionTitles} // AI-generated section titles in correct language
+										// Multilingual section titles support
+										sectionTitles={sectionTitles}
 										resumeLanguage={
 											resumeLanguage || resumeData?.language || "English"
-										} // Resume language for proper section handling
+										}
 									/>
 								</div>
 
-								{/* Sidebar with optimization controls - takes 2 columns on desktop */}
+								{/* Sidebar with optimization controls */}
 								<div className="col-span-2 flex flex-col gap-4">
-									{/* ATS Score card - shows current score and potential improvements */}
+									{/* ATS Score card */}
 									<ScoreCard
-										optimizationScore={atsScore || 0}
+										optimizationScore={currentAtsScore || originalAtsScore || 0}
 										resumeContent={currentDisplayContent || optimizedText}
 										suggestionsApplied={
 											suggestions.filter((s) => s.isApplied).length
@@ -1038,36 +881,39 @@ const ResumeOptimizer: React.FC = () => {
 										keywordsApplied={keywords.filter((k) => k.isApplied).length}
 										scoreBreakdown={null}
 										potentialScore={100}
-										initialScore={65}
-										isCalculating={isOptimizing}
+										initialScore={originalAtsScore || 65}
+										isCalculating={isAnalyzing}
 									/>
 
-									{/* AI Suggestions list - shows improvement suggestions */}
+									{/* AI Suggestions list */}
 									<SuggestionsList
-										suggestions={mappedSuggestions}
-										isOptimizing={isOptimizing}
+										suggestions={suggestions}
+										isOptimizing={isAnalyzing}
 										onApplySuggestion={handleApplySuggestionAdapter}
 										resumeContent={currentDisplayContent || optimizedText}
-										currentScore={atsScore || 0}
-										isEditing={isEditing} // Pass editing state to control suggestion application
+										currentScore={currentAtsScore || originalAtsScore || 0}
+										isEditing={isEditing}
 									/>
 
-									{/* Keywords list - shows recommended ATS keywords */}
+									{/* Keywords list */}
 									<KeywordsList
-										keywords={mappedKeywords}
+										keywords={keywords.map((k) => ({
+											...k,
+											applied: k.isApplied, // Add compatibility property
+										}))}
 										onKeywordApply={handleKeywordApplyAdapter}
 										showImpactDetails={true}
-										currentScore={atsScore || 0}
-										isEditing={isEditing} // Pass editing state to control keyword application
-										simulateKeywordImpact={simulateKeywordImpact} // FIXED: Added missing prop
+										currentScore={currentAtsScore || originalAtsScore || 0}
+										isEditing={isEditing}
+										simulateKeywordImpact={simulateKeywordImpact}
 									/>
 
-									{/* Template selection gallery - shows available resume templates */}
+									{/* Template selection gallery */}
 									<TemplateGallery
 										templates={resumeTemplates}
 										selectedTemplate={selectedTemplate}
 										onTemplateSelect={handleTemplateSelection}
-										isEditing={isEditing} // Pass editing state to control template changes
+										isEditing={isEditing}
 									/>
 								</div>
 							</div>
@@ -1075,6 +921,529 @@ const ResumeOptimizer: React.FC = () => {
 					)}
 				</TabsContent>
 			</Tabs>
+
+			{/* ENHANCED DEBUG PANEL - NOW USING NEW HOOK SYSTEM */}
+			{process.env.NODE_ENV === "development" && (
+				<div className="mt-8 bg-gray-50 border rounded-lg">
+					{/* Debug Panel Header */}
+					<div
+						className="p-4 bg-gray-100 rounded-t-lg cursor-pointer hover:bg-gray-200 transition-colors"
+						onClick={() => setIsDebugExpanded(!isDebugExpanded)}
+					>
+						<div className="flex items-center justify-between">
+							<h3 className="font-bold text-gray-800">
+								🔧 Enhanced Debug Panel (Development Only)
+							</h3>
+							<div className="flex items-center gap-2">
+								<span className="text-sm text-gray-600">
+									State: {currentState}
+								</span>
+								<span
+									className={`transform transition-transform ${
+										isDebugExpanded ? "rotate-180" : ""
+									}`}
+								>
+									▼
+								</span>
+							</div>
+						</div>
+					</div>
+
+					{/* Debug Panel Content - Collapsible */}
+					{isDebugExpanded && (
+						<div className="p-4 space-y-6">
+							{/* Current State Information */}
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+								<div className="bg-white p-4 rounded border">
+									<h4 className="font-semibold mb-3 text-blue-800">
+										📊 Current State Info
+									</h4>
+									<div className="text-sm space-y-2">
+										<div className="flex justify-between">
+											<span className="font-medium">Current State:</span>
+											<span className="bg-blue-100 px-2 py-1 rounded text-blue-800 font-mono text-xs">
+												{currentState}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Active Tab:</span>
+											<span className="bg-gray-100 px-2 py-1 rounded text-gray-700">
+												{activeTab}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Can Access Preview:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													canAccessPreview ? "bg-green-500" : "bg-red-500"
+												}`}
+											>
+												{canAccessPreview.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Can Edit:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													canEdit ? "bg-green-500" : "bg-red-500"
+												}`}
+											>
+												{canEdit.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Is In Loading State:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													isInLoadingState ? "bg-orange-500" : "bg-gray-500"
+												}`}
+											>
+												{isInLoadingState.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Is In Error State:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													isInErrorState ? "bg-red-500" : "bg-green-500"
+												}`}
+											>
+												{isInErrorState.toString()}
+											</span>
+										</div>
+									</div>
+								</div>
+
+								<div className="bg-white p-4 rounded border">
+									<h4 className="font-semibold mb-3 text-green-800">
+										📤 Upload State Info
+									</h4>
+									<div className="text-sm space-y-2">
+										<div className="flex justify-between">
+											<span className="font-medium">Upload Progress:</span>
+											<span className="bg-blue-100 px-2 py-1 rounded text-blue-800">
+												{uploadProgress}%
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Current Step:</span>
+											<span
+												className="bg-gray-100 px-2 py-1 rounded text-gray-700 text-xs max-w-32 truncate"
+												title={uploadStatus.currentStep}
+											>
+												{uploadStatus.currentStep}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Is Active Upload:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													isActiveUpload ? "bg-orange-500" : "bg-gray-500"
+												}`}
+											>
+												{isActiveUpload?.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">
+												UploadThing In Progress:
+											</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													uploadThingInProgress
+														? "bg-orange-500"
+														: "bg-gray-500"
+												}`}
+											>
+												{uploadThingInProgress?.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Selected File:</span>
+											<span
+												className="bg-gray-100 px-2 py-1 rounded text-gray-700 text-xs max-w-32 truncate"
+												title={selectedFile?.name}
+											>
+												{selectedFile?.name || "None"}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Has Resume Data:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													!!resumeData ? "bg-green-500" : "bg-red-500"
+												}`}
+											>
+												{(!!resumeData).toString()}
+											</span>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							{/* Enhanced Step-by-Step Controls */}
+							<div className="bg-white p-4 rounded border">
+								<h4 className="font-semibold mb-3 text-purple-800">
+									🎮 Step-by-Step Debug Controls
+								</h4>
+								<p className="text-sm text-gray-600 mb-4">
+									Use these buttons to simulate each step of the upload process.
+									Buttons are automatically enabled/disabled based on current
+									state.
+								</p>
+
+								{/* Primary Flow Controls */}
+								<div className="space-y-3">
+									<div className="flex items-center gap-2 text-sm">
+										<span className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+											1
+										</span>
+										<span className="font-medium">File Selection & Upload</span>
+									</div>
+									<div className="grid grid-cols-2 md:grid-cols-4 gap-2 ml-6 mb-4">
+										<button
+											onClick={handleDebugSelectFile}
+											className="bg-blue-500 text-white px-3 py-2 rounded text-xs hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={
+												![
+													"welcome_new_user",
+													"awaiting_upload",
+													"initializing",
+												].includes(currentState)
+											}
+										>
+											Select File
+										</button>
+										<button
+											onClick={handleDebugStartUpload}
+											className="bg-green-500 text-white px-3 py-2 rounded text-xs hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={currentState !== "awaiting_upload"}
+										>
+											Start Upload
+										</button>
+										<button
+											onClick={handleDebugCompleteUpload}
+											className="bg-emerald-500 text-white px-3 py-2 rounded text-xs hover:bg-emerald-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={currentState !== "uploading_file"}
+										>
+											Complete Upload
+										</button>
+									</div>
+
+									<div className="flex items-center gap-2 text-sm">
+										<span className="w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+											2
+										</span>
+										<span className="font-medium">File Processing</span>
+									</div>
+									<div className="grid grid-cols-2 md:grid-cols-4 gap-2 ml-6 mb-4">
+										<button
+											onClick={handleDebugStartProcessing}
+											className="bg-yellow-500 text-white px-3 py-2 rounded text-xs hover:bg-yellow-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={currentState !== "file_upload_complete"}
+										>
+											Start Processing
+										</button>
+										<button
+											onClick={handleDebugCompleteProcessing}
+											className="bg-orange-500 text-white px-3 py-2 rounded text-xs hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={currentState !== "processing_file"}
+										>
+											Complete Processing
+										</button>
+									</div>
+
+									<div className="flex items-center gap-2 text-sm">
+										<span className="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+											3
+										</span>
+										<span className="font-medium">AI Analysis</span>
+									</div>
+									<div className="grid grid-cols-2 md:grid-cols-4 gap-2 ml-6 mb-4">
+										<button
+											onClick={handleDebugStartAnalysis}
+											className="bg-purple-500 text-white px-3 py-2 rounded text-xs hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={currentState !== "processing_file"}
+										>
+											Start Analysis
+										</button>
+										<button
+											onClick={handleDebugCompleteAnalysis}
+											className="bg-indigo-500 text-white px-3 py-2 rounded text-xs hover:bg-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={currentState !== "analyzing_content"}
+										>
+											Complete Analysis
+										</button>
+									</div>
+								</div>
+
+								{/* Utility Controls */}
+								<div className="border-t pt-4 mt-4">
+									<h5 className="font-medium mb-2 text-gray-700">
+										🛠️ Utility Controls
+									</h5>
+									<div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+										<button
+											onClick={handleDebugReset}
+											className="bg-gray-500 text-white px-3 py-2 rounded text-xs hover:bg-gray-600 transition-colors"
+										>
+											🔄 Reset All
+										</button>
+										<button
+											onClick={handleDebugSimulateError}
+											className="bg-red-500 text-white px-3 py-2 rounded text-xs hover:bg-red-600 transition-colors"
+										>
+											❌ Simulate Error
+										</button>
+										<button
+											onClick={handleDebugValidateState}
+											className="bg-teal-500 text-white px-3 py-2 rounded text-xs hover:bg-teal-600 transition-colors"
+										>
+											✅ Validate State
+										</button>
+										<button
+											onClick={handleDebugLogFullState}
+											className="bg-orange-500 text-white px-3 py-2 rounded text-xs hover:bg-orange-600 transition-colors"
+										>
+											📝 Log Full State
+										</button>
+									</div>
+								</div>
+							</div>
+
+							{/* Action History */}
+							<div className="bg-white p-4 rounded border">
+								<h4 className="font-semibold mb-3 text-indigo-800">
+									📋 Recent Action History
+								</h4>
+								<div className="max-h-40 overflow-y-auto">
+									{debug.actionHistory && debug.actionHistory.length > 0 ? (
+										<div className="space-y-1">
+											{debug.actionHistory
+												.slice(-10)
+												.reverse()
+												.map((entry, index) => (
+													<div
+														key={index}
+														className="text-xs bg-gray-50 p-2 rounded border-l-4 border-indigo-500"
+													>
+														<div className="flex justify-between items-start">
+															<span className="font-mono text-indigo-600">
+																{entry.action.type}
+															</span>
+															<span className="text-gray-500">
+																{new Date(entry.timestamp).toLocaleTimeString()}
+															</span>
+														</div>
+														<div className="flex justify-between text-gray-600 mt-1">
+															<span>
+																{entry.fromState} → {entry.toState}
+															</span>
+															<span
+																className={`px-1 rounded ${
+																	entry.success
+																		? "bg-green-100 text-green-800"
+																		: "bg-red-100 text-red-800"
+																}`}
+															>
+																{entry.success ? "✓" : "✗"}
+															</span>
+														</div>
+														{entry.error && (
+															<div className="text-red-600 mt-1 text-xs">
+																Error: {entry.error}
+															</div>
+														)}
+													</div>
+												))}
+										</div>
+									) : (
+										<p className="text-gray-500 text-sm italic">
+											No actions recorded yet
+										</p>
+									)}
+								</div>
+							</div>
+
+							{/* Next Valid States */}
+							<div className="bg-white p-4 rounded border">
+								<h4 className="font-semibold mb-3 text-green-800">
+									🎯 Available Transitions
+								</h4>
+								<div className="text-sm">
+									{debug.getNextValidStates &&
+									debug.getNextValidStates().length > 0 ? (
+										<div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+											{debug.getNextValidStates().map((stateInfo, index) => (
+												<div
+													key={index}
+													className="bg-green-50 p-2 rounded border border-green-200"
+												>
+													<div className="font-mono text-green-700 text-xs">
+														{stateInfo.state}
+													</div>
+													<div className="text-green-600 text-xs mt-1">
+														{stateInfo.description}
+													</div>
+												</div>
+											))}
+										</div>
+									) : (
+										<p className="text-gray-500 italic">
+											No valid transitions available
+										</p>
+									)}
+								</div>
+							</div>
+
+							{/* Upload UI States Detail */}
+							<div className="bg-white p-4 rounded border">
+								<h4 className="font-semibold mb-3 text-orange-800">
+									🎛️ Upload UI States Detail
+								</h4>
+								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+									<div className="text-xs bg-gray-50 p-3 rounded border font-mono">
+										<div className="font-bold mb-2 text-gray-700">
+											Button States:
+										</div>
+										<div className="space-y-1">
+											<div>
+												shouldHideUploadButton:{" "}
+												<span
+													className={
+														uploadUIStates?.shouldHideUploadButton
+															? "text-red-600"
+															: "text-green-600"
+													}
+												>
+													{uploadUIStates?.shouldHideUploadButton?.toString()}
+												</span>
+											</div>
+											<div>
+												shouldReallyHideUploadButton:{" "}
+												<span
+													className={
+														uploadUIStates?.shouldReallyHideUploadButton
+															? "text-red-600"
+															: "text-green-600"
+													}
+												>
+													{uploadUIStates?.shouldReallyHideUploadButton?.toString()}
+												</span>
+											</div>
+											<div>
+												allowNewUpload:{" "}
+												<span
+													className={
+														uploadUIStates?.allowNewUpload
+															? "text-green-600"
+															: "text-red-600"
+													}
+												>
+													{uploadUIStates?.allowNewUpload?.toString()}
+												</span>
+											</div>
+											<div>
+												allowTextInput:{" "}
+												<span
+													className={
+														uploadUIStates?.allowTextInput
+															? "text-green-600"
+															: "text-red-600"
+													}
+												>
+													{uploadUIStates?.allowTextInput?.toString()}
+												</span>
+											</div>
+										</div>
+									</div>
+									<div className="text-xs bg-gray-50 p-3 rounded border font-mono">
+										<div className="font-bold mb-2 text-gray-700">
+											UI States:
+										</div>
+										<div className="space-y-1">
+											<div>
+												isUIFrozen:{" "}
+												<span
+													className={
+														uploadUIStates?.isUIFrozen
+															? "text-red-600"
+															: "text-green-600"
+													}
+												>
+													{uploadUIStates?.isUIFrozen?.toString()}
+												</span>
+											</div>
+											<div>
+												canInteractWithUI:{" "}
+												<span
+													className={
+														uploadUIStates?.canInteractWithUI
+															? "text-green-600"
+															: "text-red-600"
+													}
+												>
+													{uploadUIStates?.canInteractWithUI?.toString()}
+												</span>
+											</div>
+											<div>
+												showUploadingAnimation:{" "}
+												<span
+													className={
+														uploadUIStates?.showUploadingAnimation
+															? "text-orange-600"
+															: "text-gray-600"
+													}
+												>
+													{uploadUIStates?.showUploadingAnimation?.toString()}
+												</span>
+											</div>
+											<div>
+												showProcessingAnimation:{" "}
+												<span
+													className={
+														uploadUIStates?.showProcessingAnimation
+															? "text-orange-600"
+															: "text-gray-600"
+													}
+												>
+													{uploadUIStates?.showProcessingAnimation?.toString()}
+												</span>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							{/* Full Debug Object Inspector */}
+							<div className="bg-white p-4 rounded border">
+								<h4 className="font-semibold mb-3 text-gray-800">
+									🔍 Debug Object Inspector
+								</h4>
+								<details className="text-xs">
+									<summary className="cursor-pointer hover:text-blue-600 font-medium mb-2">
+										Click to expand full debug object (Warning: Large data)
+									</summary>
+									<div className="bg-gray-50 p-3 rounded border max-h-60 overflow-auto font-mono">
+										<pre>
+											{JSON.stringify(
+												debug,
+												(key, value) => {
+													// Exclude circular references and functions
+													if (typeof value === "function") return "[Function]";
+													if (key === "dispatch") return "[Dispatch Function]";
+													return value;
+												},
+												2
+											)}
+										</pre>
+									</div>
+								</details>
+							</div>
+						</div>
+					)}
+				</div>
+			)}
 		</div>
 	);
 };
