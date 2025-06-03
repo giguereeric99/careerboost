@@ -847,8 +847,10 @@ export const cvOptimizerReducer = (
 			case "RESUME_FOUND": {
 				const resumeData = action.payload.resumeData;
 
-				console.log("🔄 RESUME_FOUND: Processing loaded resume data", {
+				console.log("🔄 RESUME_FOUND: Raw resumeData from database", {
 					resumeId: resumeData.id,
+					ats_score: resumeData.ats_score,
+					last_saved_score_ats: resumeData.last_saved_score_ats,
 					hasLastSavedText: !!resumeData.last_saved_text,
 					hasLastSavedScore: resumeData.last_saved_score_ats !== null,
 					suggestionsCount: resumeData.suggestions?.length || 0,
@@ -861,6 +863,13 @@ export const cvOptimizerReducer = (
 						resumeData.keywords?.filter(
 							(k: any) => k.is_applied || k.applied || k.isApplied
 						).length || 0,
+					// DEBUG: Raw suggestions data
+					rawSuggestions: resumeData.suggestions?.map((s: any) => ({
+						id: s.id,
+						text: s.text?.substring(0, 50) + "...",
+						is_applied: s.is_applied,
+						isApplied: s.isApplied,
+					})),
 				});
 
 				// Step 1: Normalize suggestions data from database
