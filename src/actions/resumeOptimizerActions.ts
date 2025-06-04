@@ -884,8 +884,6 @@ export const cvOptimizerReducer = (
 						? {
 								id: resumeData.suggestions[0].id,
 								isApplied: resumeData.suggestions[0].isApplied,
-								is_applied: resumeData.suggestions[0].is_applied,
-								applied: resumeData.suggestions[0].applied,
 						  }
 						: null,
 				});
@@ -1509,8 +1507,20 @@ export const cvOptimizerReducer = (
 				return createNewState(CVOptimizerState.SAVING_CHANGES);
 
 			case "SAVE_SUCCESS": {
+				console.log("🔍 SAVE_SUCCESS - Current state:", state.current);
+
+				// PROTECTION: Only process if we're actually in SAVING_CHANGES
+				if (state.current !== CVOptimizerState.SAVING_CHANGES) {
+					console.log(
+						"🛡️ Already processed SAVE_SUCCESS, ignoring duplicate call"
+					);
+					return state; // Return current state unchanged
+				}
+
+				console.log("✅ Processing SAVE_SUCCESS - Transitioning to EDIT_MODE");
 				const savedResumeData = action.payload.resumeData;
-				return createNewState(CVOptimizerState.PREVIEW_MODE, {
+
+				return createNewState(CVOptimizerState.EDIT_MODE, {
 					resumeData: savedResumeData,
 					optimizedText: getDisplayContent(savedResumeData),
 					currentAtsScore: getDisplayScore(savedResumeData),

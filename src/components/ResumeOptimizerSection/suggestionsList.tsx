@@ -69,16 +69,10 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
 
 	// Calculate cumulative impact of all applied suggestions
 	const cumulativeImpact = useMemo<CumulativeImpact | null>(() => {
-		console.log("🔍 CUMULATIVE IMPACT DEBUG:", {
-			suggestionsCount: suggestions.length,
-			appliedSuggestionsCount: suggestions.filter((s) => s.isApplied).length,
-			currentScore,
-		});
-
 		const appliedSuggestions = suggestions.filter((s) => s.isApplied);
 
 		if (appliedSuggestions.length === 0) {
-			console.log("❌ No applied suggestions, returning null");
+			// console.log("❌ No applied suggestions, returning null");
 			return null;
 		}
 
@@ -166,24 +160,6 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
 	// Check if there are any unsaved applied suggestions
 	const hasUnsavedSuggestions = appliedSuggestionsCount > 0;
 
-	console.log("📋 SuggestionsList DATA SOURCE:", {
-		suggestionsLength: suggestions?.length || 0,
-		appliedSuggestions: suggestions?.filter((s) => s.isApplied).length || 0,
-		firstSuggestion: suggestions?.[0]
-			? {
-					id: suggestions[0].id,
-					isApplied: suggestions[0].isApplied,
-					text: suggestions[0].text.substring(0, 20),
-			  }
-			: null,
-		allSuggestionsAppliedStatus:
-			suggestions?.map((s) => ({
-				id: s.id,
-				text: s.text.substring(0, 30) + "...",
-				isApplied: s.isApplied,
-			})) || [],
-	});
-
 	return (
 		<div className="bg-brand-50 border border-brand-100 rounded-lg p-4">
 			<div className="flex items-center justify-between mb-3">
@@ -236,7 +212,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
 							currentScore={currentScore}
 							newScore={cumulativeImpact.newScore}
 							pointImpact={cumulativeImpact.pointImpact}
-							impactLevel={getImpactLevel(cumulativeImpact.pointImpact / 10)}
+							impactLevel={getImpactLevel(cumulativeImpact.pointImpact)}
 							description={cumulativeImpact.description}
 							isApplied={true}
 							// No button needed since this shows cumulative impact

@@ -224,7 +224,7 @@ const ResumeHeaderEditor: React.FC<ResumeHeaderEditorProps> = ({
 	 */
 	const updateField = useCallback(
 		(field: keyof ResumeHeaderData, value: string) => {
-			console.log(`📝 Updating ${field}:`, value);
+			// console.log(`📝 Updating ${field}:`, value);
 
 			// IMMEDIATE local state update for smooth UI experience
 			setFormData((prev) => {

@@ -304,6 +304,7 @@ export const useResumeOptimizer = (
 	 */
 	const saveResume = useCallback(
 		async (newContent?: string, templateId?: string): Promise<boolean> => {
+			console.log("🔥 saveResume CALLED - Start");
 			const contentToSave =
 				newContent ||
 				(uiStates.isEditing
@@ -348,6 +349,7 @@ export const useResumeOptimizer = (
 				);
 
 				if (!success) {
+					console.log("🔥 saveResume - FAILED, dispatching error");
 					dispatch(
 						actionCreators.error(
 							"Failed to save changes",
@@ -364,8 +366,9 @@ export const useResumeOptimizer = (
 					last_saved_score_ats: context.currentAtsScore,
 					selected_template: templateToSave,
 				};
-
+				console.log("🔥 saveResume - SUCCESS, dispatching saveSuccess");
 				dispatch(actionCreators.saveSuccess(updatedResumeData));
+				console.log("🔥 saveResume CALLED - End");
 				return true;
 			} catch (error) {
 				console.error("Error saving resume:", error);
@@ -1077,10 +1080,8 @@ export const useResumeOptimizer = (
 	const toggleEditMode = useCallback(() => {
 		if (uiStates.isEditing) {
 			dispatch(actionCreators.exitEditMode());
-			toast.message("👁️ Exiting to preview mode...");
 		} else {
 			dispatch(actionCreators.enterEditMode());
-			toast.message("📝 Entering edit mode...");
 		}
 	}, [uiStates.isEditing]);
 
@@ -1343,11 +1344,11 @@ export const useResumeOptimizer = (
 	 * - User is authenticated
 	 */
 	useEffect(() => {
-		console.log("🔄 AutoProcess useEffect triggered");
-		console.log("🔄 Current state:", state);
-		console.log("🔄 Has uploadedFileInfo:", !!context.uploadedFileInfo);
-		console.log("🔄 UploadThing in progress:", context.uploadThingInProgress);
-		console.log("🔄 User authenticated:", !!userId);
+		// console.log("🔄 AutoProcess useEffect triggered");
+		// console.log("🔄 Current state:", state);
+		// console.log("🔄 Has uploadedFileInfo:", !!context.uploadedFileInfo);
+		// console.log("🔄 UploadThing in progress:", context.uploadThingInProgress);
+		// console.log("🔄 User authenticated:", !!userId);
 
 		// Guard: Check target state
 		if (state !== CVOptimizerState.FILE_UPLOAD_COMPLETE) {
@@ -1403,12 +1404,12 @@ export const useResumeOptimizer = (
 		console.log(
 			"🚀 AutoProcess: All guards passed, triggering file processing"
 		);
-		console.log("🚀 AutoProcess: File details:", {
-			name: context.uploadedFileInfo.name,
-			size: context.uploadedFileInfo.size,
-			type: context.uploadedFileInfo.type,
-			hasUrl: !!context.uploadedFileInfo.url,
-		});
+		// console.log("🚀 AutoProcess: File details:", {
+		// 	name: context.uploadedFileInfo.name,
+		// 	size: context.uploadedFileInfo.size,
+		// 	type: context.uploadedFileInfo.type,
+		// 	hasUrl: !!context.uploadedFileInfo.url,
+		// });
 
 		// Async processing execution
 		const executeAutoProcessing = async () => {
@@ -2641,6 +2642,7 @@ INTERESTS
 						CVOptimizerState.SAVING_CHANGES,
 					],
 					[CVOptimizerState.SAVING_CHANGES]: [
+						CVOptimizerState.EDIT_MODE,
 						CVOptimizerState.PREVIEW_MODE,
 						CVOptimizerState.SAVE_ERROR,
 					],

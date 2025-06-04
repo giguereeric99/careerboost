@@ -84,19 +84,12 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
 	 * This shows the total effect of all applied keywords combined
 	 */
 	const cumulativeImpact = useMemo(() => {
-		console.log("🔍 KEYWORDS CUMULATIVE IMPACT DEBUG:", {
-			keywordsCount: keywords.length,
-			appliedKeywordsCount: keywords.filter((k) => k.isApplied || k.applied)
-				.length,
-			currentScore,
-		});
-
 		// Find all keywords that have been applied
 		const appliedKeywords = keywords.filter((k) => k.isApplied || k.applied);
 
 		// If no keywords have been applied, return null
 		if (appliedKeywords.length === 0) {
-			console.log("❌ No applied keywords, returning null");
+			// console.log("❌ No applied keywords, returning null");
 			return null;
 		}
 
@@ -131,9 +124,9 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
 	 * @returns ImpactLevel enum value
 	 */
 	const getImpactLevel = (impact: number): ImpactLevel => {
-		if (impact >= 0.8) return ImpactLevel.CRITICAL;
-		if (impact >= 0.6) return ImpactLevel.HIGH;
-		if (impact >= 0.4) return ImpactLevel.MEDIUM;
+		if (impact >= 6) return ImpactLevel.CRITICAL;
+		if (impact >= 4) return ImpactLevel.HIGH;
+		if (impact >= 2) return ImpactLevel.MEDIUM;
 		return ImpactLevel.LOW;
 	};
 
@@ -291,7 +284,7 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
 							currentScore={currentScore}
 							newScore={cumulativeImpact.newScore}
 							pointImpact={cumulativeImpact.pointImpact}
-							impactLevel={getImpactLevel(cumulativeImpact.pointImpact / 10)}
+							impactLevel={getImpactLevel(cumulativeImpact.pointImpact)}
 							description={cumulativeImpact.description}
 							isApplied={true}
 							// No button needed since this shows cumulative impact

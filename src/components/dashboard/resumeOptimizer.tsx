@@ -390,30 +390,8 @@ const ResumeOptimizer: React.FC = () => {
 	 */
 	const handleSaveWithUpdates = useCallback(
 		async (content: string) => {
-			const toastId = "saving-changes-toast";
-
-			toast.loading("Saving all changes...", {
-				id: toastId,
-				description:
-					"Saving resume content, keywords, suggestions, and template.",
-			});
-
 			// Use unified save method with atomic transaction
 			const result = await saveResume(content, selectedTemplate);
-
-			if (result) {
-				toast.success("All changes saved successfully", {
-					id: toastId,
-					description:
-						"Your resume, keywords, suggestions, and template have been updated.",
-				});
-			} else {
-				toast.error("Failed to save changes", {
-					id: toastId,
-					description:
-						"Please try again. If the problem persists, contact support.",
-				});
-			}
 
 			return result;
 		},

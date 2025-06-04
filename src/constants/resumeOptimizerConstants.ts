@@ -135,8 +135,8 @@ export const VALID_STATE_TRANSITIONS: Record<
 
 	// ===== ACTION STATES =====
 	[CVOptimizerState.SAVING_CHANGES]: [
-		CVOptimizerState.PREVIEW_MODE,
 		CVOptimizerState.EDIT_MODE,
+		CVOptimizerState.PREVIEW_MODE,
 		CVOptimizerState.SAVE_ERROR,
 	],
 
@@ -605,11 +605,26 @@ export const TOAST_CONFIGURATIONS: Partial<
 	[CVOptimizerState.EDIT_MODE]: {
 		type: "message",
 		title: "📝 Entering edit mode...",
+		duration: 2000,
+	},
+
+	[CVOptimizerState.SAVING_CHANGES]: {
+		type: "loading",
+		title: "Saving all changes...",
+		description: "Saving resume content, applied keywords, and suggestions...",
+	},
+
+	[CVOptimizerState.SAVE_SUCCESS]: {
+		type: "success",
+		title: "All changes saved successfully!",
+		description: "Resume content, keywords, and suggestions have been updated.",
+		duration: 4000,
 	},
 
 	[CVOptimizerState.PREVIEW_MODE]: {
 		type: "message",
 		title: "👁️ Exiting to preview mode...",
+		duration: 2000,
 	},
 
 	// EXTENDED: Upload error notifications

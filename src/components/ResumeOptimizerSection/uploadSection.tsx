@@ -219,18 +219,18 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 		// OVERRIDE: Never show during initial states
 		const shouldShow = isInActiveUploadWorkflow && !isInInitialState;
 
-		console.log("🔍 shouldShowLoadingAnalyzeState:", {
-			result: shouldShow,
-			currentStep,
-			hasFileActivity,
-			isInInitialState,
-			isInActiveUploadWorkflow,
-			overallProgress: uploadStatus.overallProgress,
-			selectedFile: !!selectedFile,
-			isActiveUpload,
-			uploadThingInProgress,
-			timestamp: new Date().toISOString(),
-		});
+		// console.log("🔍 shouldShowLoadingAnalyzeState:", {
+		// 	result: shouldShow,
+		// 	currentStep,
+		// 	hasFileActivity,
+		// 	isInInitialState,
+		// 	isInActiveUploadWorkflow,
+		// 	overallProgress: uploadStatus.overallProgress,
+		// 	selectedFile: !!selectedFile,
+		// 	isActiveUpload,
+		// 	uploadThingInProgress,
+		// 	timestamp: new Date().toISOString(),
+		// });
 
 		return shouldShow;
 	}, [
