@@ -17,14 +17,16 @@ import { supabase } from "@/lib/supabase-client";
 import { ResumeData, Suggestion } from "@/types/resumeTypes";
 import { toast } from "sonner";
 import {
-  parseOptimizedText,
-  extractKeywords,
-  calculateAtsScore,
+	parseOptimizedText,
+	extractKeywords,
+	calculateAtsScore,
 } from "./resumeParser";
 import {
-  validateResume,
-  getResumeImprovementSuggestions,
+	validateResume,
+	getResumeImprovementSuggestions,
 } from "./resumeValidation";
+
+import { DEFAULT_SUGGESTION_POINT_IMPACT } from "@/constants/resumeOptimizerConstants";
 
 // Re-export these functions so they can be imported from resumeService
 export { parseOptimizedText, extractKeywords, calculateAtsScore };
@@ -37,41 +39,41 @@ export { parseOptimizedText, extractKeywords, calculateAtsScore };
  * @returns Object containing the file path and any error
  */
 export async function uploadResume(
-  file: File
+	file: File
 ): Promise<{ path: string; error: Error | null }> {
-  try {
-    // Generate a unique file name using random string and timestamp
-    const fileExt = file.name.split(".").pop() || "pdf";
-    const fileName = `${Math.random()
-      .toString(36)
-      .substring(2, 15)}_${Date.now()}.${fileExt}`;
-    const filePath = `resumes/${fileName}`;
+	try {
+		// Generate a unique file name using random string and timestamp
+		const fileExt = file.name.split(".").pop() || "pdf";
+		const fileName = `${Math.random()
+			.toString(36)
+			.substring(2, 15)}_${Date.now()}.${fileExt}`;
+		const filePath = `resumes/${fileName}`;
 
-    // Show upload status toast for user feedback
-    const toastId = toast.loading("Uploading resume...");
+		// Show upload status toast for user feedback
+		const toastId = toast.loading("Uploading resume...");
 
-    // Upload file to Supabase Storage bucket
-    const { error } = await supabase.storage
-      .from("resume-files")
-      .upload(filePath, file);
+		// Upload file to Supabase Storage bucket
+		const { error } = await supabase.storage
+			.from("resume-files")
+			.upload(filePath, file);
 
-    // Handle upload errors
-    if (error) {
-      toast.dismiss(toastId);
-      toast.error("Upload failed", { description: error.message });
-      throw error;
-    }
+		// Handle upload errors
+		if (error) {
+			toast.dismiss(toastId);
+			toast.error("Upload failed", { description: error.message });
+			throw error;
+		}
 
-    // Show success message and return file path
-    toast.dismiss(toastId);
-    toast.success("Resume uploaded successfully");
+		// Show success message and return file path
+		toast.dismiss(toastId);
+		toast.success("Resume uploaded successfully");
 
-    return { path: filePath, error: null };
-  } catch (error: any) {
-    // Log error for debugging and return error object
-    console.error("Error uploading resume:", error);
-    return { path: "", error };
-  }
+		return { path: filePath, error: null };
+	} catch (error: any) {
+		// Log error for debugging and return error object
+		console.error("Error uploading resume:", error);
+		return { path: "", error };
+	}
 }
 
 /**
@@ -82,9 +84,9 @@ export async function uploadResume(
  * @returns Public URL of the file
  */
 export function getFileUrl(filePath: string): string {
-  const { data } = supabase.storage.from("resume-files").getPublicUrl(filePath);
+	const { data } = supabase.storage.from("resume-files").getPublicUrl(filePath);
 
-  return data.publicUrl;
+	return data.publicUrl;
 }
 
 /**
@@ -95,34 +97,34 @@ export function getFileUrl(filePath: string): string {
  * @returns Object containing the parsed data and any error
  */
 export async function parseResume(
-  filePath: string
+	filePath: string
 ): Promise<{ data: ResumeData | null; error: Error | null }> {
-  try {
-    // Show parsing status toast for user feedback
-    const toastId = toast.loading("Analyzing resume structure...");
+	try {
+		// Show parsing status toast for user feedback
+		const toastId = toast.loading("Analyzing resume structure...");
 
-    // Call Supabase Edge Function to parse resume using AI
-    const { data, error } = await supabase.functions.invoke("parse-resume", {
-      body: { filePath },
-    });
+		// Call Supabase Edge Function to parse resume using AI
+		const { data, error } = await supabase.functions.invoke("parse-resume", {
+			body: { filePath },
+		});
 
-    // Handle API errors
-    if (error) {
-      toast.dismiss(toastId);
-      toast.error("Resume analysis failed", { description: error.message });
-      throw error;
-    }
+		// Handle API errors
+		if (error) {
+			toast.dismiss(toastId);
+			toast.error("Resume analysis failed", { description: error.message });
+			throw error;
+		}
 
-    // Show success message and return parsed data
-    toast.dismiss(toastId);
-    toast.success("Resume structure analyzed successfully");
+		// Show success message and return parsed data
+		toast.dismiss(toastId);
+		toast.success("Resume structure analyzed successfully");
 
-    return { data, error: null };
-  } catch (error: any) {
-    // Log error for debugging and return error object
-    console.error("Error parsing resume:", error);
-    return { data: null, error };
-  }
+		return { data, error: null };
+	} catch (error: any) {
+		// Log error for debugging and return error object
+		console.error("Error parsing resume:", error);
+		return { data: null, error };
+	}
 }
 
 /**
@@ -133,56 +135,56 @@ export async function parseResume(
  * @returns Optimized data, suggestions, and any error
  */
 export async function optimizeResume(resumeData: ResumeData): Promise<{
-  optimizedData: ResumeData | null;
-  optimizedText: string | null;
-  suggestions: Suggestion[];
-  keywordSuggestions: string[];
-  atsScore: number;
-  error: Error | null;
+	optimizedData: ResumeData | null;
+	optimizedText: string | null;
+	suggestions: Suggestion[];
+	keywordSuggestions: string[];
+	atsScore: number;
+	error: Error | null;
 }> {
-  try {
-    // Show optimization status toast for user feedback
-    const toastId = toast.loading("Optimizing your resume with AI...");
+	try {
+		// Show optimization status toast for user feedback
+		const toastId = toast.loading("Optimizing your resume with AI...");
 
-    // Call Supabase Edge Function to optimize resume
-    const { data, error } = await supabase.functions.invoke("optimize-resume", {
-      body: { resumeData },
-    });
+		// Call Supabase Edge Function to optimize resume
+		const { data, error } = await supabase.functions.invoke("optimize-resume", {
+			body: { resumeData },
+		});
 
-    // Handle API errors
-    if (error) {
-      toast.dismiss(toastId);
-      toast.error("Optimization failed", { description: error.message });
-      throw error;
-    }
+		// Handle API errors
+		if (error) {
+			toast.dismiss(toastId);
+			toast.error("Optimization failed", { description: error.message });
+			throw error;
+		}
 
-    // Show success message with ATS score
-    toast.dismiss(toastId);
-    toast.success("Resume optimized successfully", {
-      description: `ATS Score: ${data.atsScore}/100`,
-    });
+		// Show success message with ATS score
+		toast.dismiss(toastId);
+		toast.success("Resume optimized successfully", {
+			description: `ATS Score: ${data.atsScore}/100`,
+		});
 
-    // Return comprehensive optimization results
-    return {
-      optimizedData: data.optimizedData,
-      optimizedText: data.optimizedText || null,
-      suggestions: data.suggestions || [],
-      keywordSuggestions: data.keywordSuggestions || [],
-      atsScore: data.atsScore || 60, // Default to 60 if not provided
-      error: null,
-    };
-  } catch (error: any) {
-    // Log error for debugging and return error object
-    console.error("Error optimizing resume:", error);
-    return {
-      optimizedData: null,
-      optimizedText: null,
-      suggestions: [],
-      keywordSuggestions: [],
-      atsScore: 0,
-      error,
-    };
-  }
+		// Return comprehensive optimization results
+		return {
+			optimizedData: data.optimizedData,
+			optimizedText: data.optimizedText || null,
+			suggestions: data.suggestions || [],
+			keywordSuggestions: data.keywordSuggestions || [],
+			atsScore: data.atsScore || 60, // Default to 60 if not provided
+			error: null,
+		};
+	} catch (error: any) {
+		// Log error for debugging and return error object
+		console.error("Error optimizing resume:", error);
+		return {
+			optimizedData: null,
+			optimizedText: null,
+			suggestions: [],
+			keywordSuggestions: [],
+			atsScore: 0,
+			error,
+		};
+	}
 }
 
 /**
@@ -193,89 +195,201 @@ export async function optimizeResume(resumeData: ResumeData): Promise<{
  * @param userId - The ID of the user
  * @returns The optimized resume data or null if not found
  */
+/**
+ * Retrieves the most recent optimized resume for a user
+ * Uses the server API instead of direct database access to avoid RLS issues
+ * FIXED: Proper suggestions and keywords mapping with correct priority handling
+ *
+ * @param userId - The ID of the user
+ * @returns The optimized resume data or null if not found
+ */
 export async function getLatestOptimizedResume(userId: string): Promise<{
-  data: {
-    id: string;
-    original_text: string;
-    optimized_text: string;
-    last_saved_text?: string;
-    language: string;
-    file_name: string;
-    file_type: string;
-    file_size?: number;
-    ats_score: number;
-    keywords?: { text: string; applied: boolean }[];
-    suggestions?: Suggestion[];
-  } | null;
-  error: Error | null;
+	data: {
+		id: string;
+		original_text: string;
+		optimized_text: string;
+		last_saved_text?: string;
+		last_saved_score_ats?: number;
+		language: string;
+		file_name: string;
+		file_type: string;
+		file_size?: number;
+		ats_score: number;
+		keywords?: {
+			text: string;
+			applied: boolean;
+			id: string;
+			isApplied: boolean;
+		}[];
+		suggestions?: Suggestion[];
+	} | null;
+	error: Error | null;
 }> {
-  // Reject empty user IDs early with clear error message
-  if (!userId) {
-    console.log("No user ID provided to getLatestOptimizedResume");
-    return { data: null, error: new Error("User ID is required") };
-  }
+	// Reject empty user IDs early with clear error message
+	if (!userId) {
+		console.log("No user ID provided to getLatestOptimizedResume");
+		return { data: null, error: new Error("User ID is required") };
+	}
 
-  try {
-    console.log("Getting latest resume for user:", userId);
+	try {
+		console.log("Getting latest resume for user:", userId);
 
-    console.log(userId);
+		// Direct RPC call to get resume data
+		const { data: result, error: rpcError } = await supabase.rpc(
+			"get_latest_resume_by_clerk_id",
+			{ p_clerk_id: userId }
+		);
 
-    // NEW - Direct RPC call
-    const { data: result, error: rpcError } = await supabase.rpc(
-      "get_latest_resume_by_clerk_id",
-      { p_clerk_id: userId }
-    );
+		if (rpcError) {
+			console.error("RPC Error:", rpcError);
+			throw new Error(rpcError.message || "Failed to load resume");
+		}
 
-    if (rpcError) {
-      console.error("RPC Error:", rpcError);
-      throw new Error(rpcError.message || "Failed to load resume");
-    }
+		// Check if data exists, but treat "null data" as a valid state (new user)
+		if (result && result.data) {
+			console.log("Resume loaded successfully", result.data.id);
 
-    // IMPORTANT: Check if data exists, but treat "null data" as a valid state (new user)
-    // This clear distinction prevents loading loops
-    if (result && result.data) {
-      console.log("Resume loaded successfully", result.data.id);
+			// ✅ STEP 1: DEBUG - Log raw data structure
+			console.log("🔍 DEBUG: Raw suggestions from database:", {
+				suggestionsCount: result.data.suggestions?.length || 0,
+				rawSuggestions:
+					result.data.suggestions?.map((s: any) => ({
+						id: s.id,
+						text: s.text?.substring(0, 30) + "...",
+						is_applied: s.is_applied,
+						isApplied: s.isApplied,
+						applied: s.applied,
+					})) || [],
+			});
 
-      // Process data for consistency to ensure consistent structure
-      const processedData = {
-        ...result.data,
-        // Ensure keywords have a consistent structure regardless of API format
-        keywords: Array.isArray(result.data.keywords)
-          ? result.data.keywords.map((k: any) => ({
-              text: k.keyword || k.text,
-              applied: k.is_applied || k.applied || false,
-            }))
-          : [],
-        // Ensure suggestions have a consistent structure regardless of API format
-        suggestions: Array.isArray(result.data.suggestions)
-          ? result.data.suggestions.map((s: any) => ({
-              id: s.id,
-              text: s.text,
-              type: s.type || "general",
-              impact: s.impact || "medium",
-              isApplied: s.is_applied || s.isApplied || false,
-            }))
-          : [],
-      };
+			console.log("🔍 DEBUG: Raw keywords from database:", {
+				keywordsCount: result.data.keywords?.length || 0,
+				rawKeywords:
+					result.data.keywords?.map((k: any) => ({
+						id: k.id,
+						keyword: k.keyword || k.text,
+						is_applied: k.is_applied,
+						isApplied: k.isApplied,
+						applied: k.applied,
+					})) || [],
+			});
 
-      return { data: processedData, error: null };
-    } else {
-      // No resume found - this is normal for new users, NOT an error condition
-      // This is key to prevent loading loops
-      console.log("No resume found for user - this is expected for new users");
+			// ✅ STEP 2: FIXED - Process keywords with correct priority
+			const processedKeywords = Array.isArray(result.data.keywords)
+				? result.data.keywords.map((k: any) => {
+						// FIXED: Prioritize is_applied from database, then fallback to other fields
+						const isAppliedValue =
+							k.is_applied !== undefined
+								? k.is_applied
+								: k.applied !== undefined
+								? k.applied
+								: k.isApplied || false;
 
-      // Return null data but NO ERROR - this is key to prevent loops
-      // By returning error: null we signal this is a valid state, not a failure
-      return { data: null, error: null };
-    }
-  } catch (error: any) {
-    // Log the error for debugging
-    console.error("Error loading resume:", error);
-    return {
-      data: null,
-      error: new Error(`Failed to get resume: ${error.message}`),
-    };
-  }
+						const processedKeyword = {
+							id: k.id,
+							text: k.keyword || k.text || "",
+							applied: isAppliedValue,
+							isApplied: isAppliedValue,
+						};
+
+						console.log("🔧 Processed keyword:", {
+							id: k.id,
+							original_is_applied: k.is_applied,
+							original_applied: k.applied,
+							original_isApplied: k.isApplied,
+							final_isApplied: processedKeyword.isApplied,
+						});
+
+						return processedKeyword;
+				  })
+				: [];
+
+			// ✅ STEP 3: FIXED - Process suggestions with correct priority
+			const processedSuggestions = Array.isArray(result.data.suggestions)
+				? result.data.suggestions.map((s: any) => {
+						// FIXED: Prioritize is_applied from database, then fallback to other fields
+						const isAppliedValue =
+							s.is_applied !== undefined
+								? s.is_applied
+								: s.applied !== undefined
+								? s.applied
+								: s.isApplied || false;
+
+						const processedSuggestion = {
+							id: s.id || String(Math.random()),
+							text: s.text || "",
+							type: s.type || "general",
+							impact: s.impact || "This improvement could enhance your resume",
+							isApplied: isAppliedValue,
+							pointImpact:
+								s.pointImpact ||
+								s.point_impact ||
+								DEFAULT_SUGGESTION_POINT_IMPACT,
+						};
+
+						console.log("🔧 Processed suggestion:", {
+							id: s.id,
+							text: s.text?.substring(0, 30) + "...",
+							original_is_applied: s.is_applied,
+							original_applied: s.applied,
+							original_isApplied: s.isApplied,
+							final_isApplied: processedSuggestion.isApplied,
+						});
+
+						return processedSuggestion;
+				  })
+				: [];
+
+			// ✅ STEP 4: Build final processed data
+			const processedData = {
+				...result.data,
+				// Ensure last_saved_score_ats is properly mapped
+				last_saved_score_ats: result.data.last_saved_score_ats,
+
+				// Use processed arrays with fixed isApplied logic
+				keywords: processedKeywords,
+				suggestions: processedSuggestions,
+			};
+
+			// ✅ STEP 5: Validation logging
+			const appliedSuggestionsCount = processedSuggestions.filter(
+				(s: Suggestion) => s.isApplied
+			).length;
+			const appliedKeywordsCount = processedKeywords.filter(
+				(k: {
+					id: string;
+					text: string;
+					applied: boolean;
+					isApplied: boolean;
+				}) => k.isApplied
+			).length;
+
+			console.log("✅ FIXED: Final processed data summary:", {
+				resumeId: processedData.id,
+				last_saved_score_ats: processedData.last_saved_score_ats,
+				ats_score: processedData.ats_score,
+				totalSuggestions: processedSuggestions.length,
+				appliedSuggestions: appliedSuggestionsCount,
+				totalKeywords: processedKeywords.length,
+				appliedKeywords: appliedKeywordsCount,
+				hasLastSavedText: !!processedData.last_saved_text,
+				hasLastSavedScore: processedData.last_saved_score_ats !== null,
+			});
+
+			return { data: processedData, error: null };
+		} else {
+			// No resume found - this is normal for new users
+			console.log("No resume found for user - this is expected for new users");
+			return { data: null, error: null };
+		}
+	} catch (error: any) {
+		// Log the error for debugging
+		console.error("Error loading resume:", error);
+		return {
+			data: null,
+			error: new Error(`Failed to get resume: ${error.message}`),
+		};
+	}
 }
 
 /**
@@ -288,25 +402,25 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
  * @returns Boolean indicating if load should proceed
  */
 export function shouldAttemptResumeLoad(
-  userId: string | null | undefined,
-  attemptCount: number,
-  maxAttempts: number = 2
+	userId: string | null | undefined,
+	attemptCount: number,
+	maxAttempts: number = 2
 ): boolean {
-  // No user ID means no valid load attempt possible
-  if (!userId) {
-    return false;
-  }
+	// No user ID means no valid load attempt possible
+	if (!userId) {
+		return false;
+	}
 
-  // Check if we've exceeded maximum attempts
-  if (attemptCount >= maxAttempts) {
-    console.log(
-      `Maximum resume load attempts (${maxAttempts}) reached for user ${userId}`
-    );
-    return false;
-  }
+	// Check if we've exceeded maximum attempts
+	if (attemptCount >= maxAttempts) {
+		console.log(
+			`Maximum resume load attempts (${maxAttempts}) reached for user ${userId}`
+		);
+		return false;
+	}
 
-  // All checks passed, can attempt to load
-  return true;
+	// All checks passed, can attempt to load
+	return true;
 }
 
 /**
@@ -318,8 +432,8 @@ export function shouldAttemptResumeLoad(
  * @returns Boolean indicating if this is a valid "no resume" state
  */
 export function isValidNoResumeState(response: Response, result: any): boolean {
-  // If response is OK (200) but no data property exists or it's null
-  return response.ok && (!result.data || result.data === null);
+	// If response is OK (200) but no data property exists or it's null
+	return response.ok && (!result.data || result.data === null);
 }
 
 /**
@@ -348,73 +462,73 @@ export function isValidNoResumeState(response: Response, result: any): boolean {
  * @returns Object with success status and error if any
  */
 export async function saveResumeComplete(
-  resumeId: string,
-  content: string,
-  atsScore: number,
-  appliedSuggestionIds: string[],
-  appliedKeywords: string[],
-  selectedTemplate?: string
+	resumeId: string,
+	content: string,
+	atsScore: number,
+	appliedSuggestionIds: string[],
+	appliedKeywords: string[],
+	selectedTemplate?: string
 ): Promise<{ success: boolean; error: Error | null }> {
-  try {
-    // Log debugging information
-    console.log("Saving resume completely with atomic transaction:", {
-      resumeId,
-      contentLength: content.length,
-      atsScore,
-      suggestionCount: appliedSuggestionIds.length,
-      keywordCount: appliedKeywords.length,
-      template: selectedTemplate || "unchanged",
-    });
+	try {
+		// Log debugging information
+		console.log("Saving resume completely with atomic transaction:", {
+			resumeId,
+			contentLength: content.length,
+			atsScore,
+			suggestionCount: appliedSuggestionIds.length,
+			keywordCount: appliedKeywords.length,
+			template: selectedTemplate || "unchanged",
+		});
 
-    // Validate parameters
-    if (!resumeId || !content) {
-      console.error("saveResumeComplete: Missing required parameters");
-      return {
-        success: false,
-        error: new Error("Missing required parameters"),
-      };
-    }
+		// Validate parameters
+		if (!resumeId || !content) {
+			console.error("saveResumeComplete: Missing required parameters");
+			return {
+				success: false,
+				error: new Error("Missing required parameters"),
+			};
+		}
 
-    // Prepare RPC parameters
-    const rpcParams: any = {
-      p_resume_id: resumeId,
-      p_content: content,
-      p_ats_score: atsScore,
-      p_applied_suggestions: appliedSuggestionIds,
-      p_applied_keywords: appliedKeywords,
-    };
+		// Prepare RPC parameters
+		const rpcParams: any = {
+			p_resume_id: resumeId,
+			p_content: content,
+			p_ats_score: atsScore,
+			p_applied_suggestions: appliedSuggestionIds,
+			p_applied_keywords: appliedKeywords,
+		};
 
-    // Add template parameter only if provided
-    if (selectedTemplate) {
-      rpcParams.p_selected_template = selectedTemplate;
-    }
+		// Add template parameter only if provided
+		if (selectedTemplate) {
+			rpcParams.p_selected_template = selectedTemplate;
+		}
 
-    // Call the Supabase RPC function
-    const { data, error } = await supabase.rpc(
-      "save_resume_complete",
-      rpcParams
-    );
+		// Call the Supabase RPC function
+		const { data, error } = await supabase.rpc(
+			"save_resume_complete",
+			rpcParams
+		);
 
-    if (error) {
-      console.error("Error during save_resume_complete RPC call:", error);
-      throw error;
-    }
+		if (error) {
+			console.error("Error during save_resume_complete RPC call:", error);
+			throw error;
+		}
 
-    // data will be true if successful
-    if (data !== true) {
-      console.error("Save failed on server side");
-      throw new Error("Failed to save resume");
-    }
+		// data will be true if successful
+		if (data !== true) {
+			console.error("Save failed on server side");
+			throw new Error("Failed to save resume");
+		}
 
-    console.log(`Resume ${resumeId} saved successfully with all changes`);
+		console.log(`Resume ${resumeId} saved successfully with all changes`);
 
-    // Success - return success status
-    return { success: true, error: null };
-  } catch (error) {
-    // Log the error and return it
-    console.error("Error saving resume completely:", error);
-    return { success: false, error: error as Error };
-  }
+		// Success - return success status
+		return { success: true, error: null };
+	} catch (error) {
+		// Log the error and return it
+		console.error("Error saving resume completely:", error);
+		return { success: false, error: error as Error };
+	}
 }
 
 /**
@@ -426,44 +540,44 @@ export async function saveResumeComplete(
  * @returns Success status and any error
  */
 export async function resetResumeToOriginal(
-  resumeId: string
+	resumeId: string
 ): Promise<{ success: boolean; error: Error | null }> {
-  try {
-    // Validate input
-    if (!resumeId) {
-      console.error(
-        "resetResumeToOriginal: Missing required resumeId parameter"
-      );
-      return { success: false, error: new Error("Resume ID is missing") };
-    }
+	try {
+		// Validate input
+		if (!resumeId) {
+			console.error(
+				"resetResumeToOriginal: Missing required resumeId parameter"
+			);
+			return { success: false, error: new Error("Resume ID is missing") };
+		}
 
-    console.log(`Resetting resume ID ${resumeId} via RPC function...`);
+		console.log(`Resetting resume ID ${resumeId} via RPC function...`);
 
-    // Call the Supabase RPC function
-    const { data, error } = await supabase.rpc("reset_resume", {
-      p_resume_id: resumeId,
-    });
+		// Call the Supabase RPC function
+		const { data, error } = await supabase.rpc("reset_resume", {
+			p_resume_id: resumeId,
+		});
 
-    if (error) {
-      console.error("Error during RPC call:", error);
-      throw error;
-    }
+		if (error) {
+			console.error("Error during RPC call:", error);
+			throw error;
+		}
 
-    // Check the result (function returns true on success)
-    if (data !== true) {
-      console.error("Reset failed on server side");
-      throw new Error("Failed to reset resume");
-    }
+		// Check the result (function returns true on success)
+		if (data !== true) {
+			console.error("Reset failed on server side");
+			throw new Error("Failed to reset resume");
+		}
 
-    console.log(`Resume ${resumeId} successfully reset to original version`);
+		console.log(`Resume ${resumeId} successfully reset to original version`);
 
-    // Success - return success status
-    return { success: true, error: null };
-  } catch (error) {
-    // Log the error and return it
-    console.error("Error resetting resume:", error);
-    return { success: false, error: error as Error };
-  }
+		// Success - return success status
+		return { success: true, error: null };
+	} catch (error) {
+		// Log the error and return it
+		console.error("Error resetting resume:", error);
+		return { success: false, error: error as Error };
+	}
 }
 
 /**
@@ -475,28 +589,28 @@ export async function resetResumeToOriginal(
  * @returns Success status and any error
  */
 export async function updateResumeTemplate(
-  resumeId: string,
-  templateId: string
+	resumeId: string,
+	templateId: string
 ): Promise<{ success: boolean; error: Error | null }> {
-  try {
-    // Update the resume with the selected template
-    const { error } = await supabase
-      .from("resumes")
-      .update({
-        selected_template: templateId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", resumeId);
+	try {
+		// Update the resume with the selected template
+		const { error } = await supabase
+			.from("resumes")
+			.update({
+				selected_template: templateId,
+				updated_at: new Date().toISOString(),
+			})
+			.eq("id", resumeId);
 
-    // Handle update errors
-    if (error) throw error;
+		// Handle update errors
+		if (error) throw error;
 
-    return { success: true, error: null };
-  } catch (error) {
-    // Log error for debugging and return error object
-    console.error("Error updating resume template:", error);
-    return { success: false, error: error as Error };
-  }
+		return { success: true, error: null };
+	} catch (error) {
+		// Log error for debugging and return error object
+		console.error("Error updating resume template:", error);
+		return { success: false, error: error as Error };
+	}
 }
 
 /**
@@ -507,19 +621,19 @@ export async function updateResumeTemplate(
  * @returns Validation result with suggestions
  */
 export async function validateResumeContent(content: string) {
-  // Perform resume validation
-  const validationResult = validateResume(content);
+	// Perform resume validation
+	const validationResult = validateResume(content);
 
-  // Generate improvement suggestions if necessary
-  const improvementSuggestions =
-    getResumeImprovementSuggestions(validationResult);
+	// Generate improvement suggestions if necessary
+	const improvementSuggestions =
+		getResumeImprovementSuggestions(validationResult);
 
-  return {
-    isValid: validationResult.isValid,
-    score: validationResult.score,
-    sections: validationResult.sections,
-    missingElements: validationResult.missingElements,
-    needsImprovement: improvementSuggestions.needsImprovement,
-    suggestions: improvementSuggestions.suggestions,
-  };
+	return {
+		isValid: validationResult.isValid,
+		score: validationResult.score,
+		sections: validationResult.sections,
+		missingElements: validationResult.missingElements,
+		needsImprovement: improvementSuggestions.needsImprovement,
+		suggestions: improvementSuggestions.suggestions,
+	};
 }

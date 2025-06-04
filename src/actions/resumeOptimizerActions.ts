@@ -237,21 +237,41 @@ export const validateTextContent = (
  * Handles different property naming conventions (camelCase vs snake_case)
  */
 export const normalizeSuggestion = (suggestion: any): Suggestion => {
-	return {
-		// Generate ID if missing - critical for operations on suggestions
+	console.log("🔧 normalizeSuggestion input:", {
+		id: suggestion.id,
+		is_applied: suggestion.is_applied,
+		isApplied: suggestion.isApplied,
+		applied: suggestion.applied,
+	});
+
+	// FIXED: Check is_applied FIRST (database format), then frontend formats
+	const isAppliedValue =
+		suggestion.is_applied !== undefined
+			? suggestion.is_applied
+			: suggestion.isApplied !== undefined
+			? suggestion.isApplied
+			: suggestion.applied !== undefined
+			? suggestion.applied
+			: false;
+
+	const result = {
 		id: suggestion.id || suggestion.suggestion_id || String(Math.random()),
-		// Ensure required text properties exist
 		text: suggestion.text || suggestion.original_text || "",
 		type: suggestion.type || "general",
 		impact: suggestion.impact || "This improvement could enhance your resume",
-		// Handle both camelCase and snake_case variations
-		isApplied: suggestion.isApplied || suggestion.is_applied || false,
-		// Include pointImpact for score calculations
+		isApplied: isAppliedValue,
 		pointImpact:
 			suggestion.pointImpact ||
 			suggestion.point_impact ||
 			DEFAULT_SUGGESTION_POINT_IMPACT,
 	};
+
+	console.log("🔧 normalizeSuggestion output:", {
+		id: result.id,
+		isApplied: result.isApplied,
+	});
+
+	return result;
 };
 
 /**
@@ -270,13 +290,21 @@ export const normalizeKeyword = (keyword: any): Keyword => {
 		};
 	}
 
+	// FIXED: Check is_applied FIRST (database format), then frontend formats
+	const isAppliedValue =
+		keyword.is_applied !== undefined
+			? keyword.is_applied
+			: keyword.isApplied !== undefined
+			? keyword.isApplied
+			: keyword.applied !== undefined
+			? keyword.applied
+			: false;
+
 	// Handle keyword as an object with potential varying property names
 	return {
 		id: keyword.id || keyword.keyword_id || String(Math.random()),
 		text: keyword.text || keyword.keyword || "",
-		// Support all possible variations of the applied property
-		isApplied:
-			keyword.isApplied || keyword.is_applied || keyword.applied || false,
+		isApplied: isAppliedValue,
 		relevance: keyword.relevance || 1,
 		pointImpact:
 			keyword.pointImpact ||
@@ -847,69 +875,45 @@ export const cvOptimizerReducer = (
 			case "RESUME_FOUND": {
 				const resumeData = action.payload.resumeData;
 
-				console.log("🔄 RESUME_FOUND: Raw resumeData from database", {
-					resumeId: resumeData.id,
-					ats_score: resumeData.ats_score,
-					last_saved_score_ats: resumeData.last_saved_score_ats,
-					hasLastSavedText: !!resumeData.last_saved_text,
-					hasLastSavedScore: resumeData.last_saved_score_ats !== null,
+				// ✅ DEBUG: Log what's actually in resumeData
+				console.log("🔍 RESUME_FOUND DEBUG: Raw resumeData structure:", {
+					id: resumeData.id,
 					suggestionsCount: resumeData.suggestions?.length || 0,
 					keywordsCount: resumeData.keywords?.length || 0,
-					appliedSuggestionsFromDB:
-						resumeData.suggestions?.filter(
-							(s: any) => s.is_applied || s.isApplied
-						).length || 0,
-					appliedKeywordsFromDB:
-						resumeData.keywords?.filter(
-							(k: any) => k.is_applied || k.applied || k.isApplied
-						).length || 0,
-					// DEBUG: Raw suggestions data
-					rawSuggestions: resumeData.suggestions?.map((s: any) => ({
-						id: s.id,
-						text: s.text?.substring(0, 50) + "...",
-						is_applied: s.is_applied,
-						isApplied: s.isApplied,
-					})),
+					firstSuggestion: resumeData.suggestions?.[0]
+						? {
+								id: resumeData.suggestions[0].id,
+								isApplied: resumeData.suggestions[0].isApplied,
+								is_applied: resumeData.suggestions[0].is_applied,
+								applied: resumeData.suggestions[0].applied,
+						  }
+						: null,
 				});
 
-				// Step 1: Normalize suggestions data from database
-				// Convert database format (is_applied) to interface format (isApplied)
-				const normalizedSuggestions = (resumeData.suggestions || []).map(
-					normalizeSuggestion
-				);
+				// ✅ FIXED: Use the already processed suggestions and keywords from the service
+				// Don't normalize again - they're already processed correctly!
+				const processedSuggestions = resumeData.suggestions || [];
+				const processedKeywords = resumeData.keywords || [];
 
-				// Step 2: Normalize keywords data from database
-				// Convert database format (is_applied) to interface format (isApplied)
-				const normalizedKeywords = (resumeData.keywords || []).map(
-					normalizeKeyword
-				);
+				// ✅ DEBUG: Confirm what we're using
+				console.log("🔧 RESUME_FOUND: Using processed data directly:", {
+					suggestionsCount: processedSuggestions.length,
+					keywordsCount: processedKeywords.length,
+					appliedSuggestions: processedSuggestions.filter((s) => s.isApplied)
+						.length,
+					appliedKeywords: processedKeywords.filter((k) => k.isApplied).length,
+					firstSuggestionApplied: processedSuggestions[0]?.isApplied,
+				});
 
 				// Step 3: Determine content to display based on priority
-				// Priority: last_saved_text > optimized_text
 				const displayContent = getDisplayContent(resumeData);
 
 				// Step 4: Determine score to display based on priority
-				// Priority: last_saved_score_ats > ats_score
 				const displayScore = getDisplayScore(resumeData);
 
 				// Step 5: Extract section titles if available from AI response
 				const aiSectionTitles = (resumeData as any).sectionTitles || {};
 				const resumeLanguageFromData = resumeData.language || "English";
-
-				console.log("✅ RESUME_FOUND: Normalized data ready", {
-					normalizedSuggestionsCount: normalizedSuggestions.length,
-					normalizedKeywordsCount: normalizedKeywords.length,
-					appliedSuggestionsAfterNormalization: normalizedSuggestions.filter(
-						(s) => s.isApplied
-					).length,
-					appliedKeywordsAfterNormalization: normalizedKeywords.filter(
-						(k) => k.isApplied
-					).length,
-					displayContentLength: displayContent.length,
-					displayScore: displayScore,
-					hasAISectionTitles: Object.keys(aiSectionTitles).length > 0,
-					language: resumeLanguageFromData,
-				});
 
 				return createNewState(CVOptimizerState.EXISTING_RESUME_LOADED, {
 					// Core resume data
@@ -925,9 +929,9 @@ export const cvOptimizerReducer = (
 					originalAtsScore: resumeData.ats_score || DEFAULT_ATS_SCORE,
 					currentAtsScore: displayScore,
 
-					// Normalized suggestions and keywords (FIXED)
-					suggestions: normalizedSuggestions,
-					keywords: normalizedKeywords,
+					// ✅ FIXED: Use the already processed data from service
+					suggestions: processedSuggestions,
+					keywords: processedKeywords,
 
 					// Template and UI state
 					selectedTemplate: resumeData.selected_template || "basic",

@@ -261,8 +261,8 @@ export const useResumeOptimizer = (
 						user_id: userId,
 						original_text: apiData.original_text || "",
 						optimized_text: apiData.optimized_text || "",
-						last_saved_text: apiData.last_saved_text ?? undefined,
-						last_saved_score_ats: undefined,
+						last_saved_text: apiData.last_saved_text ?? null,
+						last_saved_score_ats: apiData.last_saved_score_ats ?? null,
 						language: apiData.language || "English",
 						file_name: apiData.file_name || "",
 						file_type: apiData.file_type || "",
@@ -273,26 +273,10 @@ export const useResumeOptimizer = (
 						created_at: (apiData as any).created_at,
 						updated_at: (apiData as any).updated_at,
 
-						keywords: apiData.keywords
-							? apiData.keywords.map((k: any) => ({
-									id: k.id || String(Math.random()),
-									text: k.text || k.keyword || "",
-									isApplied: k.applied || k.is_applied || false,
-									relevance: k.relevance || 1,
-									pointImpact: k.pointImpact || k.point_impact || 1,
-							  }))
-							: [],
-
-						suggestions: apiData.suggestions
-							? apiData.suggestions.map((s: any) => ({
-									id: s.id || String(Math.random()),
-									text: s.text || "",
-									type: s.type || "general",
-									impact: s.impact || "",
-									isApplied: s.applied || s.is_applied || false,
-									pointImpact: s.pointImpact || s.point_impact || 2,
-							  }))
-							: [],
+						// ✅ FIXED: Use the processed data directly from the service
+						// The service already processed these correctly!
+						suggestions: apiData.suggestions || [],
+						keywords: apiData.keywords || [],
 					};
 
 					dispatch(actionCreators.resumeFound(completeResumeData));
@@ -424,8 +408,8 @@ export const useResumeOptimizer = (
 
 			const resetResumeData = {
 				...context.resumeData,
-				last_saved_text: undefined,
-				last_saved_score_ats: undefined,
+				last_saved_text: null,
+				last_saved_score_ats: null,
 			};
 
 			dispatch(actionCreators.resetSuccess(resetResumeData));
@@ -454,7 +438,11 @@ export const useResumeOptimizer = (
 			);
 
 			// CRITICAL: Anti-duplication guard - Check if already completed
-			if (state === CVOptimizerState.OPTIMIZATION_COMPLETE) {
+			if (
+				(state as string) === CVOptimizerState.OPTIMIZATION_COMPLETE ||
+				(state as string) === CVOptimizerState.PREVIEW_MODE ||
+				(state as string) === CVOptimizerState.EDIT_MODE
+			) {
 				console.log(
 					"⚠️ processUploadedFile: Already in OPTIMIZATION_COMPLETE state, skipping API call"
 				);
@@ -530,7 +518,11 @@ export const useResumeOptimizer = (
 				});
 
 				// CRITICAL: Check again before processing response
-				if (state === CVOptimizerState.OPTIMIZATION_COMPLETE) {
+				if (
+					(state as string) === CVOptimizerState.OPTIMIZATION_COMPLETE ||
+					(state as string) === CVOptimizerState.PREVIEW_MODE ||
+					(state as string) === CVOptimizerState.EDIT_MODE
+				) {
 					console.log(
 						"⚠️ processUploadedFile: State changed to OPTIMIZATION_COMPLETE during API call, discarding result"
 					);
@@ -630,7 +622,11 @@ export const useResumeOptimizer = (
 				}
 
 				// CRITICAL: Final guard before dispatching result
-				if (state === CVOptimizerState.OPTIMIZATION_COMPLETE) {
+				if (
+					(state as string) === CVOptimizerState.OPTIMIZATION_COMPLETE ||
+					(state as string) === CVOptimizerState.PREVIEW_MODE ||
+					(state as string) === CVOptimizerState.EDIT_MODE
+				) {
 					console.log(
 						"⚠️ processUploadedFile: State changed to OPTIMIZATION_COMPLETE, discarding API result"
 					);
@@ -645,8 +641,8 @@ export const useResumeOptimizer = (
 					user_id: user.id,
 					original_text: "",
 					optimized_text: optimizeResult.optimizedText,
-					last_saved_text: undefined,
-					last_saved_score_ats: undefined,
+					last_saved_text: null,
+					last_saved_score_ats: null,
 					language: optimizeResult.language || "English",
 					file_name: fileInfo.name,
 					file_type: fileInfo.type,
@@ -975,8 +971,8 @@ export const useResumeOptimizer = (
 					user_id: user.id,
 					original_text: content,
 					optimized_text: analysisResult.optimizedText,
-					last_saved_text: undefined,
-					last_saved_score_ats: undefined,
+					last_saved_text: null,
+					last_saved_score_ats: null,
 					language: analysisResult.language || "English",
 					file_name: context.selectedFile?.name || "text-input.txt",
 					file_type: context.selectedFile?.type || "text/plain",
@@ -2346,8 +2342,8 @@ INTERESTS
 						{
 							resumeId: mockResumeData.id,
 							atsScore: mockResumeData.ats_score,
-							keywordsCount: mockResumeData.keywords.length,
-							suggestionsCount: mockResumeData.suggestions.length,
+							keywordsCount: mockResumeData.keywords?.length || 0,
+							suggestionsCount: mockResumeData.suggestions?.length || 0,
 							contentLength: mockResumeData.optimized_text.length,
 						}
 					);
@@ -2444,6 +2440,18 @@ INTERESTS
 		},
 		[state, userId, context.selectedFile, context.uploadMethod, dispatch]
 	);
+
+	console.log("🎯 Hook DEBUG: Final suggestions before return:", {
+		suggestionsLength: context.suggestions?.length || 0,
+		appliedSuggestions:
+			context.suggestions?.filter((s) => s.isApplied).length || 0,
+		allSuggestions:
+			context.suggestions?.map((s) => ({
+				id: s.id,
+				text: s.text?.substring(0, 30) + "...",
+				isApplied: s.isApplied,
+			})) || [],
+	});
 
 	// ===== RETURN INTERFACE =====
 

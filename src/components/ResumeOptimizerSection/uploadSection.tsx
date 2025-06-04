@@ -438,8 +438,10 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 		console.log("🔄 UploadSection: Showing LoadingAnalyzeState for processing");
 		return (
 			<LoadingAnalyzeState
-				currentStep={uploadStatus.primaryMessage || uploadStatus.currentStep}
-				progress={uploadStatus.overallProgress}
+				{...({
+					currentStep: uploadStatus.primaryMessage || uploadStatus.currentStep,
+					progress: uploadStatus.overallProgress,
+				} as any)}
 			/>
 		);
 	}

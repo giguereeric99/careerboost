@@ -30,7 +30,6 @@ import ResetConfirmationDialog from "@/components/Dialogs/resetConfirmationDialo
 import LoadingState from "@/components/ResumeOptimizerSection/loadingState";
 import EmptyPreviewState from "@/components/ResumeOptimizerSection/emptyPreviewState";
 import ErrorState from "@/components/Dialogs/errorStateDialog";
-import AuthRequiredState from "@/components/ResumeOptimizerSection/authRequiredState";
 import { resumeTemplates } from "@/constants/templates";
 
 // Import the unified state machine hook with enhanced debug capabilities
