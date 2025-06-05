@@ -14,7 +14,7 @@
 
 "use client";
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
@@ -174,10 +174,10 @@ const ResumeOptimizer: React.FC = () => {
 	// ===== LOCAL UI STATE - MINIMIZED =====
 
 	// State for reset confirmation dialog
-	const [showResetDialog, setShowResetDialog] = React.useState(false);
+	const [showResetDialog, setShowResetDialog] = useState(false);
 
 	// Debug panel expansion state
-	const [isDebugExpanded, setIsDebugExpanded] = React.useState(false);
+	const [isDebugExpanded, setIsDebugExpanded] = useState(false);
 
 	// ===== EVENT HANDLERS - SIMPLIFIED WITH UNIFIED STATE =====
 
@@ -816,6 +816,7 @@ const ResumeOptimizer: React.FC = () => {
 									<ResumePreview
 										// Content props
 										optimizedText={currentDisplayContent || optimizedText}
+										sections={currentSections}
 										originalOptimizedText={optimizedText}
 										// Template and display
 										selectedTemplate={selectedTemplate}

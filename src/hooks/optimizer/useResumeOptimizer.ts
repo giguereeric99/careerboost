@@ -98,10 +98,17 @@ export const useResumeOptimizer = (
 
 	// Refs for optimization and tracking
 	const hasInitialized = useRef(false);
+	const initializationComplete = useRef(false);
+	const logProtection = useRef({
+		lastLogTime: 0,
+		lastLogState: null as CVOptimizerState | null,
+		logCount: 0,
+	});
 	const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const retryCountRef = useRef<number>(0);
 	const lastOperationRef = useRef<string | null>(null);
+	const lastProcessedUserIdRef = useRef<string | null>(null);
 
 	// Debug action history ref
 	type ActionHistoryEntry = {
@@ -179,6 +186,12 @@ export const useResumeOptimizer = (
 
 	// Current sections for editing
 	const currentSections = useMemo(() => {
+		console.log("🔧 PARSING HTML - Triggers:", {
+			isEditing: uiStates.isEditing,
+			tempSectionsLength: context.tempSections.length,
+			hasContent: !!currentDisplayContent,
+			contentLength: currentDisplayContent?.length || 0,
+		});
 		if (uiStates.isEditing && context.tempSections.length > 0) {
 			return context.tempSections;
 		}
@@ -1280,46 +1293,60 @@ export const useResumeOptimizer = (
 
 	// ===== EFFECTS =====
 
-	console.log("🔧 Debug Initialize:", {
-		userId,
-		hasInitialized: hasInitialized.current,
-		currentState: state,
-	});
+	// PROTECTED LOGGING: Prevent duplicate logs
+	const now = Date.now();
+	const timeSinceLastLog = now - logProtection.current.lastLogTime;
+	const isSameState = logProtection.current.lastLogState === state;
 
-	// Initialize the hook - handles both authenticated and unauthenticated users
-	useEffect(() => {
-		console.log("🚀 Initialize Effect Triggered:", {
+	// Only log if it's been more than 1 second OR different state
+	if (!isSameState || timeSinceLastLog > 1000) {
+		console.log("🔧 Debug Initialize:", {
 			userId,
 			hasInitialized: hasInitialized.current,
 			currentState: state,
-			contextUserId: context.userId,
-			timestamp: new Date().toISOString(),
+			logCount: ++logProtection.current.logCount,
 		});
+
+		logProtection.current.lastLogTime = now;
+		logProtection.current.lastLogState = state;
+	}
+
+	// Initialize the hook - handles both authenticated and unauthenticated users
+	useEffect(() => {
+		// ULTIMATE GUARD: Only run once per userId change
+		const currentUserId = userId || "anonymous";
+
+		if (lastProcessedUserIdRef.current === currentUserId) {
+			return; // Already processed this userId
+		}
+
+		// ANTI-DUPLICATION: Check if already initialized
+		if (initializationComplete.current && hasInitialized.current) {
+			return;
+		}
+
+		console.log("🚀 Initialize Effect Triggered (OPTIMIZED):", {
+			userId: currentUserId,
+			lastProcessedUserId: lastProcessedUserIdRef.current,
+			hasInitialized: hasInitialized.current,
+			currentState: state,
+		});
+
+		// Mark as processed immediately
+		lastProcessedUserIdRef.current = currentUserId;
 
 		if (!hasInitialized.current) {
 			if (userId) {
-				console.log(
-					"✅ FIRST TIME: Dispatching initialize action for authenticated user"
-				);
+				console.log("✅ FIRST TIME: Dispatching initialize action");
 				dispatch(actionCreators.initialize(userId));
 			} else {
-				console.log(
-					"ℹ️ FIRST TIME: User not authenticated, going to WELCOME_NEW_USER"
-				);
+				console.log("ℹ️ FIRST TIME: User not authenticated");
 				dispatch(actionCreators.setWelcomeState());
 			}
 			hasInitialized.current = true;
-		} else if (
-			userId &&
-			state === CVOptimizerState.WELCOME_NEW_USER &&
-			!context.userId
-		) {
-			console.log(
-				"🔄 SECOND TIME: User signed in after initial load, re-initializing..."
-			);
-			dispatch(actionCreators.initialize(userId));
+			initializationComplete.current = true;
 		}
-	}, [userId, state, context.userId]);
+	}, [userId]);
 
 	// Handle automatic resume loading
 	useEffect(() => {
@@ -2441,18 +2468,6 @@ INTERESTS
 		},
 		[state, userId, context.selectedFile, context.uploadMethod, dispatch]
 	);
-
-	console.log("🎯 Hook DEBUG: Final suggestions before return:", {
-		suggestionsLength: context.suggestions?.length || 0,
-		appliedSuggestions:
-			context.suggestions?.filter((s) => s.isApplied).length || 0,
-		allSuggestions:
-			context.suggestions?.map((s) => ({
-				id: s.id,
-				text: s.text?.substring(0, 30) + "...",
-				isApplied: s.isApplied,
-			})) || [],
-	});
 
 	// ===== RETURN INTERFACE =====
 

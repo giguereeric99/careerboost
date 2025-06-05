@@ -51,16 +51,16 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
 	currentScore = 0,
 	isEditing = false, // Default to false if not provided
 }) => {
-	console.log("📥 SuggestionsList PROPS:", {
-		suggestionsLength: suggestions?.length || 0,
-		appliedSuggestions: suggestions?.filter((s) => s.isApplied).length || 0,
-		firstFewSuggestions:
-			suggestions?.slice(0, 3).map((s) => ({
-				id: s.id,
-				text: s.text?.substring(0, 30) + "...",
-				isApplied: s.isApplied,
-			})) || [],
-	});
+	// console.log("📥 SuggestionsList PROPS:", {
+	// 	suggestionsLength: suggestions?.length || 0,
+	// 	appliedSuggestions: suggestions?.filter((s) => s.isApplied).length || 0,
+	// 	firstFewSuggestions:
+	// 		suggestions?.slice(0, 3).map((s) => ({
+	// 			id: s.id,
+	// 			text: s.text?.substring(0, 30) + "...",
+	// 			isApplied: s.isApplied,
+	// 		})) || [],
+	// });
 
 	// State for tracking suggestion impacts
 	const [suggestionImpacts, setSuggestionImpacts] = useState<

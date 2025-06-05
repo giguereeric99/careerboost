@@ -4,6 +4,7 @@
  * Now shows appropriate loading components instead of basic UI during processing
  * - LoadingState during checking_existing_resume
  * - LoadingAnalyzeState during upload/processing/analysis workflow
+ * FIXED: Textarea analysis now properly shows LoadingAnalyzeState
  */
 
 "use client";
@@ -112,6 +113,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 		isDragOver,
 		canUploadFile,
 		canInputText,
+		uploadMethod, // ✅ ADDED: Need this for text analysis detection
 		// UploadThing states
 		isActiveUpload,
 		uploadThingInProgress,
@@ -138,11 +140,25 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 	const [showValidationDialog, setShowValidationDialog] = useState(false);
 
 	// UploadThing integration (component-specific)
-	const { startUpload, isUploading: isUploadThingActive } =
-		useUploadThing("resumeUploader");
+	const { startUpload, isUploading: isUploadThingActive } = useUploadThing(
+		"resumeUploader",
+		{
+			// ✅ Callbacks déplacés ici depuis UploadButton
+			onClientUploadComplete: onUploadThingComplete,
+			onUploadError: onUploadThingError,
+			onUploadBegin: onUploadThingBegin,
+		}
+	);
 
 	// File input reference
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	// PROTECTED LOGGING REF - MOVED TO TOP TO AVOID HOOK VIOLATION
+	const logProtectionRef = useRef({
+		lastLogTime: 0,
+		lastLogMessage: "",
+		logCount: 0,
+	});
 
 	// Get user authentication status
 	const { isSignedIn, user } = useUser();
@@ -179,16 +195,41 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 
 	/**
 	 * Check if we should show LoadingAnalyzeState (for upload/process/analyze)
-	 * FIXED: More strict conditions to prevent showing during initial states
+	 * FIXED: Enhanced to detect text analysis properly
 	 */
 	const shouldShowLoadingAnalyzeState = useCallback(() => {
+		// ✅ CRITICAL: Priority check - if we're analyzing, always show LoadingAnalyzeState
+		if (isAnalyzing) {
+			console.log(
+				"🔍 shouldShowLoadingAnalyzeState: isAnalyzing = TRUE, showing LoadingAnalyzeState"
+			);
+			return true;
+		}
+
+		// ✅ CRITICAL: Priority check - if we're in active processing, show LoadingAnalyzeState
+		if (safeUploadUIStates.isInActiveProcessing) {
+			console.log(
+				"🔍 shouldShowLoadingAnalyzeState: isInActiveProcessing = TRUE, showing LoadingAnalyzeState"
+			);
+			return true;
+		}
+
 		// Get current step from upload status
 		const currentStep =
 			uploadStatus.currentStep || uploadStatus.primaryMessage || "";
 
-		// CRITICAL: Don't show LoadingAnalyzeState if no file is selected or being processed
+		// ✅ ENHANCED: File activity detection
 		const hasFileActivity =
 			selectedFile || uploadThingFiles.length > 0 || isActiveUpload;
+
+		// ✅ ENHANCED: Text analysis activity detection
+		const hasTextActivity =
+			(uploadMethod === "text" &&
+				resumeTextContent &&
+				resumeTextContent.length >= 50) ||
+			currentStep.includes("AI analysis") ||
+			currentStep.includes("Analyzing") ||
+			currentStep.includes("analysis in progress");
 
 		// CRITICAL: Don't show during initial states (awaiting_upload, etc.)
 		const isInInitialState =
@@ -196,53 +237,65 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 			currentStep.includes("Upload your resume") ||
 			currentStep.includes("Ready");
 
-		// Show LoadingAnalyzeState ONLY during active upload workflow
+		// ✅ ENHANCED: Show LoadingAnalyzeState for ANY active workflow
 		const isInActiveUploadWorkflow =
-			(hasFileActivity || isActiveUpload || uploadThingInProgress) &&
+			(hasFileActivity ||
+				hasTextActivity ||
+				isActiveUpload ||
+				uploadThingInProgress ||
+				isAnalyzing) &&
 			(safeUploadUIStates.isInActiveProcessing ||
 				isUploading ||
 				isProcessingFile ||
-				isAnalyzing ||
+				isAnalyzing || // ✅ CRITICAL: Direct isAnalyzing check
 				uploadStatus.isInUploadPhase ||
 				uploadStatus.isInProcessingPhase ||
 				uploadStatus.isInAnalysisPhase ||
-				// Include file_upload_complete to prevent gap
+				// Include specific step detection
 				currentStep.includes("Upload complete") ||
 				currentStep.includes("Starting file processing") ||
 				currentStep.includes("Processing file") ||
 				currentStep.includes("AI analysis") ||
-				// Progress-based check ONLY if there's file activity
-				(hasFileActivity &&
+				currentStep.includes("Analyzing") ||
+				// Progress-based check for both file and text activity
+				((hasFileActivity || hasTextActivity) &&
 					uploadStatus.overallProgress > 10 &&
 					uploadStatus.overallProgress < 100));
 
 		// OVERRIDE: Never show during initial states
 		const shouldShow = isInActiveUploadWorkflow && !isInInitialState;
 
-		// console.log("🔍 shouldShowLoadingAnalyzeState:", {
-		// 	result: shouldShow,
-		// 	currentStep,
-		// 	hasFileActivity,
-		// 	isInInitialState,
-		// 	isInActiveUploadWorkflow,
-		// 	overallProgress: uploadStatus.overallProgress,
-		// 	selectedFile: !!selectedFile,
-		// 	isActiveUpload,
-		// 	uploadThingInProgress,
-		// 	timestamp: new Date().toISOString(),
-		// });
+		// ✅ ENHANCED: Debug logging for both file and text analysis
+		if (hasTextActivity || uploadMethod === "text") {
+			console.log("🔍 TEXT ANALYSIS shouldShowLoadingAnalyzeState:", {
+				result: shouldShow,
+				isAnalyzing,
+				isInActiveProcessing: safeUploadUIStates.isInActiveProcessing,
+				currentStep,
+				hasTextActivity,
+				uploadMethod,
+				resumeTextContentLength: resumeTextContent?.length || 0,
+				isInAnalysisPhase: uploadStatus.isInAnalysisPhase,
+				overallProgress: uploadStatus.overallProgress,
+				isInActiveUploadWorkflow,
+				isInInitialState,
+			});
+		}
 
 		return shouldShow;
 	}, [
+		// ✅ CRITICAL: Add isAnalyzing as dependency
+		isAnalyzing,
 		safeUploadUIStates.isInActiveProcessing,
 		isUploading,
 		isProcessingFile,
-		isAnalyzing,
 		isActiveUpload,
 		uploadThingInProgress,
 		uploadStatus,
 		selectedFile,
 		uploadThingFiles,
+		uploadMethod,
+		resumeTextContent,
 	]);
 
 	// ===== VALIDATION FUNCTIONS - KEPT LOCAL =====
@@ -358,7 +411,9 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 	 */
 	const handleFileDrop = useCallback(
 		async (file: File) => {
-			// Validate file locally
+			console.log("🎯 Drag & Drop: Starting file drop process for:", file.name);
+
+			// 1. Validate file locally (same as before)
 			const validation = validateFile(file);
 			if (!validation.success) {
 				toast.error("Invalid file", {
@@ -367,33 +422,68 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 				return;
 			}
 
-			// First select the file through unified action
+			// 2. Select the file through unified action (same as before)
 			onFileSelect(file);
 
-			try {
-				// Start UploadThing upload process
-				// This will trigger onBeforeUploadBegin -> onClientUploadComplete chain
-				const uploadResult = await startUpload([file]);
+			// 3. ✅ NEW: Follow the exact same process as UploadButton
+			console.log("🎯 Drag & Drop: Following UploadButton process flow");
 
-				if (!uploadResult?.[0]) {
-					throw new Error("File upload failed");
+			try {
+				// 3a. Trigger onBeforeUploadBegin (same as UploadButton)
+				console.log(
+					"🎯 Drag & Drop: Calling handleUploadThingBeforeUploadBegin"
+				);
+				const processedFiles = handleUploadThingBeforeUploadBegin([file]);
+
+				// Check if validation passed (empty array means validation failed)
+				if (!processedFiles || processedFiles.length === 0) {
+					console.log(
+						"🎯 Drag & Drop: File validation failed in onBeforeUploadBegin"
+					);
+					return;
 				}
 
-				// Success handling is done through UploadThing callbacks
-				console.log("Drag & drop upload initiated successfully");
+				console.log(
+					"🎯 Drag & Drop: File validation passed, starting UploadThing"
+				);
+
+				// 3b. Start UploadThing upload with validated files
+				const uploadResult = await startUpload(processedFiles);
+
+				// 3c. Check upload result (success will be handled by onClientUploadComplete automatically)
+				if (!uploadResult?.[0]) {
+					throw new Error("File upload failed - no result returned");
+				}
+
+				console.log(
+					"🎯 Drag & Drop: UploadThing upload initiated successfully"
+				);
+				console.log(
+					"🎯 Drag & Drop: LoadingAnalyzeState should now be visible"
+				);
+
+				// ✅ SUCCESS: onClientUploadComplete will be called automatically by UploadThing
+				// This will trigger the state machine and show LoadingAnalyzeState
 			} catch (err: any) {
-				console.error("Drag & drop upload error:", err);
-				// ✅ FIXED: Use uploadActions prop
-				onUploadThingError(err);
+				console.error("🎯 Drag & Drop: Upload failed:", err);
+				// 3d. Handle errors (same as UploadButton)
+				handleUploadThingError(err);
 			}
 		},
-		[onFileSelect, startUpload, onUploadThingError] // ✅ FIXED: Correct dependencies
+		[
+			onFileSelect,
+			startUpload,
+			handleUploadThingBeforeUploadBegin,
+			handleUploadThingError,
+		]
 	);
 
 	/**
-	 * Handle text analysis - SIMPLIFIED
+	 * Handle text analysis - ENHANCED FOR LOADING STATE
 	 */
 	const handleTextAnalysis = useCallback(async () => {
+		console.log("📝 Text Analysis: Starting text analysis");
+
 		// Validate content locally
 		const validation = validateResumeContent(resumeTextContent);
 		if (!validation.success) {
@@ -403,13 +493,19 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 			return;
 		}
 
-		// Process through unified action
+		console.log("📝 Text Analysis: Validation passed, calling onTextUpload");
+
+		// ✅ ENHANCED: Process through unified action
+		// This should trigger the state machine and show LoadingAnalyzeState
 		const success = await onTextUpload();
 
 		if (!success) {
+			console.log("📝 Text Analysis: onTextUpload returned false");
 			toast.error("Text analysis failed", {
 				description: "Please check your content and try again.",
 			});
+		} else {
+			console.log("📝 Text Analysis: onTextUpload completed successfully");
 		}
 	}, [resumeTextContent, onTextUpload]);
 
@@ -429,7 +525,20 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 
 	// Show LoadingState for initial checking (checking_existing_resume)
 	if (shouldShowLoadingState()) {
-		console.log("🔄 UploadSection: Showing LoadingState for initial checking");
+		// PROTECTED LOGGING using ref declared at top
+		const now = Date.now();
+		const message =
+			"🔄 UploadSection: Showing LoadingState for initial checking";
+		const timeSinceLastLog = now - logProtectionRef.current.lastLogTime;
+		const isSameMessage = logProtectionRef.current.lastLogMessage === message;
+
+		// Only log if it's been more than 1 second OR different message
+		if (!isSameMessage || timeSinceLastLog > 1000) {
+			console.log(message);
+			logProtectionRef.current.lastLogTime = now;
+			logProtectionRef.current.lastLogMessage = message;
+			logProtectionRef.current.logCount++;
+		}
 		return <LoadingState />;
 	}
 
@@ -499,9 +608,25 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 									)
 										return;
 
+									// ✅ FIXED: Process dropped files using corrected handleFileDrop
 									if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+										// Validate single file
+										if (e.dataTransfer.files.length > 1) {
+											toast.error("Multiple files not supported", {
+												description: "Please drop only one file at a time.",
+												duration: 4000,
+											});
+											return;
+										}
+
 										const file = e.dataTransfer.files[0];
-										handleFileDrop(file);
+										if (file) {
+											console.log(
+												"🎯 onDrop: Calling handleFileDrop for:",
+												file.name
+											);
+											handleFileDrop(file);
+										}
 									}
 								}}
 							>
@@ -546,7 +671,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 												disabled={!safeUploadUIStates.allowNewUpload}
 												onBeforeUploadBegin={handleUploadThingBeforeUploadBegin} // CRITICAL: Hides button immediately
 												onClientUploadComplete={onUploadThingComplete}
-												onUploadError={handleUploadThingError} // ✅ FIXED: Correct function name
+												onUploadError={handleUploadThingError}
 											/>
 										)
 									) : (
@@ -581,7 +706,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 								</div>
 							)}
 
-							{/* ===== TEXT INPUT SECTION - SIMPLIFIED ===== */}
+							{/* ===== TEXT INPUT SECTION - ENHANCED FOR LOADING STATE ===== */}
 							<div className="space-y-4">
 								<div className="flex items-center justify-between">
 									<p className="font-medium">Or paste your resume content:</p>
@@ -601,7 +726,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 									disabled={!safeUploadUIStates.allowTextInput}
 								/>
 
-								{/* Analyze button with unified validation */}
+								{/* ✅ ENHANCED: Analyze button with unified validation and loading detection */}
 								{resumeTextContent &&
 									resumeTextContent.length >= 50 &&
 									!selectedFile && (
@@ -609,13 +734,16 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 											variant="outline"
 											size="sm"
 											onClick={handleTextAnalysis}
-											disabled={!safeUploadUIStates.allowTextInput}
+											disabled={
+												!safeUploadUIStates.allowTextInput ||
+												safeUploadUIStates.isInActiveProcessing
+											}
 											className="w-full"
 										>
 											{safeUploadUIStates.isInActiveProcessing ? (
 												<div className="flex items-center gap-2">
 													<Loader2 className="h-4 w-4 animate-spin" />
-													{uploadStatus.primaryMessage}
+													{uploadStatus.primaryMessage || "Analyzing..."}
 												</div>
 											) : (
 												"Analyze & Preview"
@@ -692,10 +820,10 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 							</div>
 						)}
 
-						{/* ===== DEBUG INFO - DEVELOPMENT ONLY ===== */}
+						{/* ===== ENHANCED DEBUG INFO - DEVELOPMENT ONLY ===== */}
 						{process.env.NODE_ENV === "development" && (
 							<div className="mt-4 p-3 bg-yellow-50 border rounded text-xs">
-								<h4 className="font-bold">UploadSection Debug:</h4>
+								<h4 className="font-bold">UploadSection Debug (Enhanced):</h4>
 								<p>
 									<strong>shouldShowLoadingState:</strong>{" "}
 									{shouldShowLoadingState() ? "✅ TRUE" : "❌ FALSE"}
@@ -713,10 +841,25 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 									{uploadStatus.primaryMessage || "undefined"}
 								</p>
 								<p>
+									<strong>uploadMethod:</strong> {uploadMethod || "undefined"}
+								</p>
+								<p>
+									<strong>resumeTextContent.length:</strong>{" "}
+									{resumeTextContent?.length || 0}
+								</p>
+								<p>
 									<strong>isInActiveProcessing:</strong>{" "}
 									{safeUploadUIStates.isInActiveProcessing
 										? "✅ TRUE"
 										: "❌ FALSE"}
+								</p>
+								<p>
+									<strong>isAnalyzing:</strong>{" "}
+									{isAnalyzing ? "✅ TRUE" : "❌ FALSE"}
+								</p>
+								<p>
+									<strong>isInAnalysisPhase:</strong>{" "}
+									{uploadStatus.isInAnalysisPhase ? "✅ TRUE" : "❌ FALSE"}
 								</p>
 							</div>
 						)}

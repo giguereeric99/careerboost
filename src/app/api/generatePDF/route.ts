@@ -129,12 +129,12 @@ export async function POST(request: NextRequest) {
 			timeout: 60000,
 		};
 
-		console.log("Taking screenshot for debugging...");
-		const screenshot = await page.screenshot({
-			fullPage: true,
-			type: "png",
-			path: "./technical-preview.png", // Sauvegarde temporaire
-		});
+		// console.log("Taking screenshot for debugging...");
+		// const screenshot = await page.screenshot({
+		// 	fullPage: true,
+		// 	type: "png",
+		// 	path: "./technical-preview.png", // Sauvegarde temporaire
+		// });
 
 		// Generate PDF
 		console.log("Generating PDF...");

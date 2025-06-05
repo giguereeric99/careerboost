@@ -1130,9 +1130,10 @@ export const cvOptimizerReducer = (
 					});
 				}
 
-				return createNewState(CVOptimizerState.PROCESSING_FILE, {
+				return createNewState(CVOptimizerState.ANALYZING_CONTENT, {
 					resumeTextContent: content,
 					uploadMethod: "text",
+					originalText: content, // Set original text for analysis
 					errorMessage: undefined,
 					errorContext: undefined,
 				});
@@ -1201,15 +1202,27 @@ export const cvOptimizerReducer = (
 				});
 			}
 
-			case "SET_DRAG_OVER":
+			case "SET_DRAG_OVER": {
+				// ✅ PROTECTION : Ne traiter le drag over que si nécessaire
+				const newIsDragOver = action.payload.isDragOver;
+
+				// Si l'état drag over est identique, ne rien faire
+				if (state.context.isDragOver === newIsDragOver) {
+					// console.log("🛡️ SET_DRAG_OVER: État identique, skipping");
+					return state; // Retourne le même état sans modification
+				}
+
+				console.log("🔄 SET_DRAG_OVER: Updating drag state:", newIsDragOver);
+
 				// Context-only update
 				return {
 					...state,
 					context: {
 						...state.context,
-						isDragOver: action.payload.isDragOver,
+						isDragOver: newIsDragOver,
 					},
 				};
+			}
 
 			case "UPDATE_TEXT_CONTENT":
 				// Context-only update
@@ -1334,7 +1347,7 @@ export const cvOptimizerReducer = (
 					name: fileInfo.name,
 					size: fileInfo.size,
 					type: fileInfo.type,
-					urlExists: !!fileInfo.url,
+					urlExists: !!fileInfo.ufsUrl,
 				});
 
 				// === STEP 5: TRANSITION TO FILE_UPLOAD_COMPLETE STATE ===

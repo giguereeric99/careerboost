@@ -29,7 +29,7 @@ export const OurFileRouter = {
 			const returnData = {
 				success: true,
 				fileName: file.name,
-				fileUrl: file.url,
+				fileUrl: file.ufsUrl,
 				timestamp: Date.now(),
 			};
 
