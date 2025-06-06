@@ -133,12 +133,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 		onSetUploadThingActive,
 	} = uploadActions;
 
-	// ===== LOCAL UI STATE - ONLY COMPONENT-SPECIFIC =====
-
-	// Resume validation state (specific to this component)
-	const [validationErrors, setValidationErrors] = useState<any>(null);
-	const [showValidationDialog, setShowValidationDialog] = useState(false);
-
 	// UploadThing integration (component-specific)
 	const { startUpload, isUploading: isUploadThingActive } = useUploadThing(
 		"resumeUploader",
@@ -198,6 +192,13 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 	 * FIXED: Enhanced to detect text analysis properly
 	 */
 	const shouldShowLoadingAnalyzeState = useCallback(() => {
+		// ✅ CRITICAL: Don't show loading if we have validation errors
+		if (uploadState.validationErrors) {
+			console.log(
+				"🔍 shouldShowLoadingAnalyzeState: validationErrors present, NOT showing LoadingAnalyzeState"
+			);
+			return false;
+		}
 		// ✅ CRITICAL: Priority check - if we're analyzing, always show LoadingAnalyzeState
 		if (isAnalyzing) {
 			console.log(
@@ -296,6 +297,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 		uploadThingFiles,
 		uploadMethod,
 		resumeTextContent,
+		uploadState.validationErrors,
 	]);
 
 	// ===== VALIDATION FUNCTIONS - KEPT LOCAL =====
@@ -392,19 +394,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 	);
 
 	// ===== OTHER EVENT HANDLERS =====
-
-	/**
-	 * Handle validation dialog close
-	 */
-	const handleCloseValidationDialog = useCallback(() => {
-		setShowValidationDialog(false);
-		setValidationErrors(null);
-
-		// Reset file selection through unified action
-		onFileSelect(null);
-
-		toast.info("You can upload a new file");
-	}, [onFileSelect]);
 
 	/**
 	 * Handle file dropped via drag and drop - ENHANCED WITH UPLOADTHING
@@ -869,10 +858,26 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 
 			{/* Resume validation dialog - KEPT FOR SPECIFIC USE CASE */}
 			<ResumeValidationDialog
-				open={showValidationDialog}
-				onOpenChange={setShowValidationDialog}
-				validationResult={validationErrors}
-				onClose={handleCloseValidationDialog}
+				open={!!uploadState.validationErrors}
+				onOpenChange={(open) => {
+					if (!open) {
+						// Clear validation errors through clear action
+						if (uploadActions.clearValidationErrors) {
+							uploadActions.clearValidationErrors();
+						}
+						uploadActions.onFileSelect(null);
+						toast.info("You can upload a new file");
+					}
+				}}
+				validationResult={uploadState.validationErrors}
+				onClose={() => {
+					// Clear validation errors through clear action
+					if (uploadActions.clearValidationErrors) {
+						uploadActions.clearValidationErrors();
+					}
+					uploadActions.onFileSelect(null);
+					toast.info("You can upload a new file");
+				}}
 			/>
 		</>
 	);

@@ -264,19 +264,6 @@ const ErrorState: React.FC<ErrorStateProps> = ({
 								</div>
 							</details>
 						)}
-
-					{/* Support Contact */}
-					<div className="mt-6 pt-4 border-t border-gray-200">
-						<p className="text-xs text-gray-500">
-							Need help?{" "}
-							<Link
-								href="mailto:support@careerboost.com"
-								className="text-blue-600 hover:text-blue-700 underline"
-							>
-								Contact Support
-							</Link>
-						</p>
-					</div>
 				</CardContent>
 			</Card>
 		</div>

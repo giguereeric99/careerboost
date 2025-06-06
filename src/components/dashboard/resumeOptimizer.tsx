@@ -101,6 +101,11 @@ const ResumeOptimizer: React.FC = () => {
 		uploadThingInProgress,
 		uploadThingFiles,
 
+		// Validation state
+		validationErrors,
+		showValidationDialog,
+		clearValidationErrors,
+
 		// ===== LOADING STATES - GRANULAR =====
 		isLoading,
 		isSaving,
@@ -747,7 +752,7 @@ const ResumeOptimizer: React.FC = () => {
 				{/* Upload tab - Now uses integrated upload functionality */}
 				<TabsContent value="upload" className="space-y-4">
 					{/* Error state with retry functionality */}
-					{isInErrorState && (
+					{isInErrorState && !validationErrors && (
 						<ErrorState
 							message={uploadStatus.errorMessage || "An error occurred"}
 							canRetry={isRetryable}
@@ -757,7 +762,7 @@ const ResumeOptimizer: React.FC = () => {
 					)}
 
 					{/* Upload section with complete UploadThing integration */}
-					{!isInErrorState && (
+					{(!isInErrorState || validationErrors) && (
 						<UploadSection
 							uploadState={{
 								isUploading,
@@ -772,6 +777,7 @@ const ResumeOptimizer: React.FC = () => {
 								isActiveUpload,
 								uploadThingInProgress,
 								uploadThingFiles,
+								validationErrors,
 							}}
 							uploadActions={{
 								onFileSelect: handleFileSelect,
@@ -783,6 +789,7 @@ const ResumeOptimizer: React.FC = () => {
 								onUploadThingComplete: handleUploadThingComplete,
 								onUploadThingError: handleUploadThingError,
 								onSetUploadThingActive: setUploadThingActive,
+								clearValidationErrors,
 							}}
 							uploadStatus={uploadStatus}
 							uploadUIStates={uploadUIStates}

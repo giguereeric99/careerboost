@@ -1676,18 +1676,38 @@ export const cvOptimizerReducer = (
 				});
 			}
 
-			case "CLEAR_ERROR":
-				// Context-only update
+			case "CLEAR_ERROR": {
+				// Clear errors and transition to appropriate state
+				const clearedContext = {
+					...state.context,
+					errorMessage: undefined,
+					lastError: undefined,
+					errorContext: undefined,
+					validationErrors: undefined,
+				};
+
+				// If we're in an error state, transition to a valid state
+				if (isErrorState(state.current)) {
+					// If user has existing resume, go to preview
+					if (clearedContext.hasExistingResume && clearedContext.resumeData) {
+						return createNewState(
+							CVOptimizerState.PREVIEW_MODE,
+							clearedContext
+						);
+					}
+					// Otherwise go back to awaiting upload
+					return createNewState(
+						CVOptimizerState.AWAITING_UPLOAD,
+						clearedContext
+					);
+				}
+
+				// If not in error state, just update context
 				return {
 					...state,
-					context: {
-						...state.context,
-						errorMessage: undefined,
-						lastError: undefined,
-						errorContext: undefined,
-						validationErrors: undefined,
-					},
+					context: clearedContext,
 				};
+			}
 
 			case "RETRY_LAST_OPERATION": {
 				// Reset error state and attempt to return to a recoverable state

@@ -87,6 +87,7 @@ export const VALID_STATE_TRANSITIONS: Record<
 		CVOptimizerState.ANALYZING_CONTENT, // Standard flow: processing -> analysis
 		CVOptimizerState.OPTIMIZATION_COMPLETE, // FIXED: Direct completion when API handles everything
 		CVOptimizerState.FILE_PROCESSING_ERROR,
+		CVOptimizerState.UPLOAD_ERROR,
 		CVOptimizerState.AWAITING_UPLOAD, // Allow re-upload on processing issues
 	],
 

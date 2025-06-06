@@ -641,6 +641,7 @@ export interface UploadSectionProps {
 		isActiveUpload: boolean;
 		uploadThingInProgress: boolean;
 		uploadThingFiles: File[];
+		validationErrors: any;
 	};
 
 	/** Upload actions from unified hook - replaces multiple callback props */
