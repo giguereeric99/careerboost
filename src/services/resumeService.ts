@@ -292,13 +292,13 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
 							isApplied: isAppliedValue,
 						};
 
-						console.log("🔧 Processed keyword:", {
-							id: k.id,
-							original_is_applied: k.is_applied,
-							original_applied: k.applied,
-							original_isApplied: k.isApplied,
-							final_isApplied: processedKeyword.isApplied,
-						});
+						// console.log("🔧 Processed keyword:", {
+						// 	id: k.id,
+						// 	original_is_applied: k.is_applied,
+						// 	original_applied: k.applied,
+						// 	original_isApplied: k.isApplied,
+						// 	final_isApplied: processedKeyword.isApplied,
+						// });
 
 						return processedKeyword;
 				  })
@@ -327,14 +327,14 @@ export async function getLatestOptimizedResume(userId: string): Promise<{
 								DEFAULT_SUGGESTION_POINT_IMPACT,
 						};
 
-						console.log("🔧 Processed suggestion:", {
-							id: s.id,
-							text: s.text?.substring(0, 30) + "...",
-							original_is_applied: s.is_applied,
-							original_applied: s.applied,
-							original_isApplied: s.isApplied,
-							final_isApplied: processedSuggestion.isApplied,
-						});
+						// console.log("🔧 Processed suggestion:", {
+						// 	id: s.id,
+						// 	text: s.text?.substring(0, 30) + "...",
+						// 	original_is_applied: s.is_applied,
+						// 	original_applied: s.applied,
+						// 	original_isApplied: s.isApplied,
+						// 	final_isApplied: processedSuggestion.isApplied,
+						// });
 
 						return processedSuggestion;
 				  })

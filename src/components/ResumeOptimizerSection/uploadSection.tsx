@@ -140,7 +140,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({
 			// ✅ Callbacks déplacés ici depuis UploadButton
 			onClientUploadComplete: onUploadThingComplete,
 			onUploadError: onUploadThingError,
-			onUploadBegin: onUploadThingBegin,
 		}
 	);
 

@@ -176,6 +176,8 @@ const ResumeOptimizer: React.FC = () => {
 		debug,
 	} = useResumeOptimizer(user?.id);
 
+	const { context } = debug;
+
 	// ===== LOCAL UI STATE - MINIMIZED =====
 
 	// State for reset confirmation dialog
@@ -778,6 +780,7 @@ const ResumeOptimizer: React.FC = () => {
 								uploadThingInProgress,
 								uploadThingFiles,
 								validationErrors,
+								uploadMethod,
 							}}
 							uploadActions={{
 								onFileSelect: handleFileSelect,
@@ -823,7 +826,6 @@ const ResumeOptimizer: React.FC = () => {
 									<ResumePreview
 										// Content props
 										optimizedText={currentDisplayContent || optimizedText}
-										sections={currentSections}
 										originalOptimizedText={optimizedText}
 										// Template and display
 										selectedTemplate={selectedTemplate}
@@ -907,7 +909,8 @@ const ResumeOptimizer: React.FC = () => {
 				</TabsContent>
 			</Tabs>
 
-			{/* ENHANCED DEBUG PANEL - NOW USING NEW HOOK SYSTEM */}
+			{/* ENHANCED DEBUG PANEL - NOW WITH COMPLETE WORKFLOW COVERAGE */}
+			{/* ENHANCED DEBUG PANEL - NOW WITH COMPLETE WORKFLOW COVERAGE */}
 			{process.env.NODE_ENV === "development" && (
 				<div className="mt-8 bg-gray-50 border rounded-lg">
 					{/* Debug Panel Header */}
@@ -938,7 +941,7 @@ const ResumeOptimizer: React.FC = () => {
 					{isDebugExpanded && (
 						<div className="p-4 space-y-6">
 							{/* Current State Information */}
-							<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+							<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 								<div className="bg-white p-4 rounded border">
 									<h4 className="font-semibold mb-3 text-blue-800">
 										📊 Current State Info
@@ -1030,20 +1033,6 @@ const ResumeOptimizer: React.FC = () => {
 											</span>
 										</div>
 										<div className="flex justify-between">
-											<span className="font-medium">
-												UploadThing In Progress:
-											</span>
-											<span
-												className={`px-2 py-1 rounded text-white text-xs ${
-													uploadThingInProgress
-														? "bg-orange-500"
-														: "bg-gray-500"
-												}`}
-											>
-												{uploadThingInProgress?.toString()}
-											</span>
-										</div>
-										<div className="flex justify-between">
 											<span className="font-medium">Selected File:</span>
 											<span
 												className="bg-gray-100 px-2 py-1 rounded text-gray-700 text-xs max-w-32 truncate"
@@ -1064,133 +1053,405 @@ const ResumeOptimizer: React.FC = () => {
 										</div>
 									</div>
 								</div>
+
+								{/* NEW: Edit State Info */}
+								<div className="bg-white p-4 rounded border">
+									<h4 className="font-semibold mb-3 text-purple-800">
+										✏️ Edit State Info
+									</h4>
+									<div className="text-sm space-y-2">
+										<div className="flex justify-between">
+											<span className="font-medium">Is Editing:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													isEditing ? "bg-purple-500" : "bg-gray-500"
+												}`}
+											>
+												{isEditing?.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Content Modified:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													context.contentModified
+														? "bg-orange-500"
+														: "bg-gray-500"
+												}`}
+											>
+												{context.contentModified?.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Score Modified:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													context.scoreModified
+														? "bg-orange-500"
+														: "bg-gray-500"
+												}`}
+											>
+												{context.scoreModified?.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Template Modified:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													context.templateModified
+														? "bg-orange-500"
+														: "bg-gray-500"
+												}`}
+											>
+												{context.templateModified?.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Has Unsaved Changes:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													hasUnsavedChanges() ? "bg-red-500" : "bg-green-500"
+												}`}
+											>
+												{hasUnsavedChanges().toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Can Save:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													canSave ? "bg-green-500" : "bg-gray-500"
+												}`}
+											>
+												{canSave?.toString()}
+											</span>
+										</div>
+										<div className="flex justify-between">
+											<span className="font-medium">Can Reset:</span>
+											<span
+												className={`px-2 py-1 rounded text-white text-xs ${
+													canReset ? "bg-green-500" : "bg-gray-500"
+												}`}
+											>
+												{canReset?.toString()}
+											</span>
+										</div>
+									</div>
+								</div>
 							</div>
 
-							{/* Enhanced Step-by-Step Controls */}
+							{/* Enhanced Step-by-Step Controls - COMPLETELY REORGANIZED */}
 							<div className="bg-white p-4 rounded border">
 								<h4 className="font-semibold mb-3 text-purple-800">
-									🎮 Step-by-Step Debug Controls
+									🎮 Complete Workflow Debug Controls
 								</h4>
 								<p className="text-sm text-gray-600 mb-4">
-									Use these buttons to simulate each step of the upload process.
-									Buttons are automatically enabled/disabled based on current
-									state.
+									Simulate every step of the CareerBoost workflow. Buttons are
+									automatically enabled/disabled based on current state.
 								</p>
 
-								{/* Primary Flow Controls */}
-								<div className="space-y-3">
+								{/* WORKFLOW 1: Upload & Analysis */}
+								<div className="space-y-4 mb-6">
 									<div className="flex items-center gap-2 text-sm">
-										<span className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+										<span className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
 											1
 										</span>
-										<span className="font-medium">File Selection & Upload</span>
+										<span className="font-medium text-blue-700">
+											Upload & Analysis Workflow
+										</span>
 									</div>
-									<div className="grid grid-cols-2 md:grid-cols-4 gap-2 ml-6 mb-4">
+									<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 ml-8">
 										<button
-											onClick={handleDebugSelectFile}
-											className="bg-blue-500 text-white px-3 py-2 rounded text-xs hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-											disabled={
-												![
-													"welcome_new_user",
-													"awaiting_upload",
-													"initializing",
-												].includes(currentState)
+											onClick={() =>
+												debug.simulateAction("SIMULATE_FILE_SELECT")
 											}
+											className="bg-blue-500 text-white px-3 py-2 rounded text-xs hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Current state: ${currentState}`}
 										>
 											Select File
 										</button>
 										<button
-											onClick={handleDebugStartUpload}
+											onClick={() =>
+												debug.simulateAction("SIMULATE_UPLOAD_START")
+											}
 											className="bg-green-500 text-white px-3 py-2 rounded text-xs hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-											disabled={currentState !== "awaiting_upload"}
+											disabled={false}
+											title={`Current state: ${currentState}`}
 										>
 											Start Upload
 										</button>
 										<button
-											onClick={handleDebugCompleteUpload}
+											onClick={() =>
+												debug.simulateAction("SIMULATE_UPLOAD_COMPLETE")
+											}
 											className="bg-emerald-500 text-white px-3 py-2 rounded text-xs hover:bg-emerald-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-											disabled={currentState !== "uploading_file"}
+											disabled={false}
+											title={`Current state: ${currentState}`}
 										>
 											Complete Upload
 										</button>
-									</div>
-
-									<div className="flex items-center gap-2 text-sm">
-										<span className="w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
-											2
-										</span>
-										<span className="font-medium">File Processing</span>
-									</div>
-									<div className="grid grid-cols-2 md:grid-cols-4 gap-2 ml-6 mb-4">
 										<button
-											onClick={handleDebugStartProcessing}
+											onClick={() =>
+												debug.simulateAction("SIMULATE_PROCESSING_START")
+											}
 											className="bg-yellow-500 text-white px-3 py-2 rounded text-xs hover:bg-yellow-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-											disabled={currentState !== "file_upload_complete"}
+											disabled={false}
+											title={`Current state: ${currentState}`}
 										>
 											Start Processing
 										</button>
 										<button
-											onClick={handleDebugCompleteProcessing}
+											onClick={() =>
+												debug.simulateAction("SIMULATE_PROCESSING_COMPLETE")
+											}
 											className="bg-orange-500 text-white px-3 py-2 rounded text-xs hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-											disabled={currentState !== "processing_file"}
+											disabled={false}
+											title={`Current state: ${currentState}`}
 										>
 											Complete Processing
 										</button>
-									</div>
-
-									<div className="flex items-center gap-2 text-sm">
-										<span className="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
-											3
-										</span>
-										<span className="font-medium">AI Analysis</span>
-									</div>
-									<div className="grid grid-cols-2 md:grid-cols-4 gap-2 ml-6 mb-4">
 										<button
-											onClick={handleDebugStartAnalysis}
-											className="bg-purple-500 text-white px-3 py-2 rounded text-xs hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-											disabled={currentState !== "processing_file"}
-										>
-											Start Analysis
-										</button>
-										<button
-											onClick={handleDebugCompleteAnalysis}
+											onClick={() =>
+												debug.simulateAction("SIMULATE_ANALYSIS_COMPLETE")
+											}
 											className="bg-indigo-500 text-white px-3 py-2 rounded text-xs hover:bg-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-											disabled={currentState !== "analyzing_content"}
+											disabled={false}
+											title={`Current state: ${currentState}`}
 										>
 											Complete Analysis
 										</button>
 									</div>
 								</div>
 
-								{/* Utility Controls */}
-								<div className="border-t pt-4 mt-4">
-									<h5 className="font-medium mb-2 text-gray-700">
-										🛠️ Utility Controls
-									</h5>
-									<div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+								{/* WORKFLOW 2: Edit Mode */}
+								<div className="space-y-4 mb-6">
+									<div className="flex items-center gap-2 text-sm">
+										<span className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+											2
+										</span>
+										<span className="font-medium text-purple-700">
+											Edit Mode Workflow
+										</span>
+									</div>
+									<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 ml-8">
 										<button
-											onClick={handleDebugReset}
-											className="bg-gray-500 text-white px-3 py-2 rounded text-xs hover:bg-gray-600 transition-colors"
+											onClick={() =>
+												debug.simulateAction("SIMULATE_ENTER_EDIT_MODE")
+											}
+											className="bg-purple-500 text-white px-3 py-2 rounded text-xs hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Can edit: ${canEdit}, Is editing: ${isEditing}`}
 										>
-											🔄 Reset All
+											Enter Edit Mode
 										</button>
 										<button
-											onClick={handleDebugSimulateError}
+											onClick={() =>
+												debug.simulateAction("SIMULATE_UPDATE_CONTENT")
+											}
+											className="bg-pink-500 text-white px-3 py-2 rounded text-xs hover:bg-pink-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Is editing: ${isEditing}`}
+										>
+											Update Content
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_UPDATE_SECTION")
+											}
+											className="bg-rose-500 text-white px-3 py-2 rounded text-xs hover:bg-rose-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Is editing: ${isEditing}`}
+										>
+											Update Section
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_UPDATE_TEMPLATE")
+											}
+											className="bg-violet-500 text-white px-3 py-2 rounded text-xs hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Is editing: ${isEditing}`}
+										>
+											Change Template
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_APPLY_SUGGESTION")
+											}
+											className="bg-cyan-500 text-white px-3 py-2 rounded text-xs hover:bg-cyan-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={!suggestions.length}
+											title={`Suggestions available: ${suggestions.length}`}
+										>
+											Apply Suggestion
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_APPLY_KEYWORD")
+											}
+											className="bg-teal-500 text-white px-3 py-2 rounded text-xs hover:bg-teal-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={!keywords.length}
+											title={`Keywords available: ${keywords.length}`}
+										>
+											Apply Keyword
+										</button>
+									</div>
+								</div>
+
+								{/* WORKFLOW 3: Save Operations */}
+								<div className="space-y-4 mb-6">
+									<div className="flex items-center gap-2 text-sm">
+										<span className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+											3
+										</span>
+										<span className="font-medium text-green-700">
+											Save Workflow
+										</span>
+									</div>
+									<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 ml-8">
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_START_SAVING")
+											}
+											className="bg-green-600 text-white px-3 py-2 rounded text-xs hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Can save: ${canSave}`}
+										>
+											Start Saving
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_SAVE_SUCCESS")
+											}
+											className="bg-emerald-600 text-white px-3 py-2 rounded text-xs hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Current state: ${currentState}`}
+										>
+											Save Success
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_SAVE_ERROR")
+											}
+											className="bg-red-600 text-white px-3 py-2 rounded text-xs hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Current state: ${currentState}`}
+										>
+											Save Error
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_EXIT_EDIT_MODE")
+											}
+											className="bg-gray-600 text-white px-3 py-2 rounded text-xs hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Is editing: ${isEditing}`}
+										>
+											Exit Edit Mode
+										</button>
+									</div>
+								</div>
+
+								{/* WORKFLOW 4: Reset Operations */}
+								<div className="space-y-4 mb-6">
+									<div className="flex items-center gap-2 text-sm">
+										<span className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+											4
+										</span>
+										<span className="font-medium text-red-700">
+											Reset Workflow
+										</span>
+									</div>
+									<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 ml-8">
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_START_RESET")
+											}
+											className="bg-red-600 text-white px-3 py-2 rounded text-xs hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Can reset: ${canReset}`}
+										>
+											Start Reset
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_RESET_SUCCESS")
+											}
+											className="bg-orange-600 text-white px-3 py-2 rounded text-xs hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Current state: ${currentState}`}
+										>
+											Reset Success
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_RESET_ERROR")
+											}
+											className="bg-red-800 text-white px-3 py-2 rounded text-xs hover:bg-red-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Current state: ${currentState}`}
+										>
+											Reset Error
+										</button>
+									</div>
+								</div>
+
+								{/* WORKFLOW 5: Navigation & Utilities */}
+								<div className="space-y-4">
+									<div className="flex items-center gap-2 text-sm">
+										<span className="w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+											5
+										</span>
+										<span className="font-medium text-gray-700">
+											Navigation & Utilities
+										</span>
+									</div>
+									<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 ml-8">
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_SWITCH_TO_UPLOAD")
+											}
+											className="bg-blue-600 text-white px-3 py-2 rounded text-xs hover:bg-blue-700 transition-colors"
+										>
+											📤 Upload Tab
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_SWITCH_TO_PREVIEW")
+											}
+											className="bg-indigo-600 text-white px-3 py-2 rounded text-xs hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Can access preview: ${canAccessPreview}`}
+										>
+											👁️ Preview Tab
+										</button>
+										<button
+											onClick={() =>
+												debug.simulateAction("SIMULATE_CLEAR_ERROR")
+											}
+											className="bg-yellow-600 text-white px-3 py-2 rounded text-xs hover:bg-yellow-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+											disabled={false}
+											title={`Is in error state: ${isInErrorState}`}
+										>
+											✅ Clear Error
+										</button>
+										<button
+											onClick={() => debug.simulateAction("SIMULATE_ERROR")}
 											className="bg-red-500 text-white px-3 py-2 rounded text-xs hover:bg-red-600 transition-colors"
 										>
 											❌ Simulate Error
+										</button>
+										<button
+											onClick={() => debug.simulateAction("SIMULATE_RESET")}
+											className="bg-gray-500 text-white px-3 py-2 rounded text-xs hover:bg-gray-600 transition-colors"
+										>
+											🔄 Reset All
 										</button>
 										<button
 											onClick={handleDebugValidateState}
 											className="bg-teal-500 text-white px-3 py-2 rounded text-xs hover:bg-teal-600 transition-colors"
 										>
 											✅ Validate State
-										</button>
-										<button
-											onClick={handleDebugLogFullState}
-											className="bg-orange-500 text-white px-3 py-2 rounded text-xs hover:bg-orange-600 transition-colors"
-										>
-											📝 Log Full State
 										</button>
 									</div>
 								</div>
@@ -1302,18 +1563,6 @@ const ResumeOptimizer: React.FC = () => {
 													}
 												>
 													{uploadUIStates?.shouldHideUploadButton?.toString()}
-												</span>
-											</div>
-											<div>
-												shouldReallyHideUploadButton:{" "}
-												<span
-													className={
-														uploadUIStates?.shouldReallyHideUploadButton
-															? "text-red-600"
-															: "text-green-600"
-													}
-												>
-													{uploadUIStates?.shouldReallyHideUploadButton?.toString()}
 												</span>
 											</div>
 											<div>

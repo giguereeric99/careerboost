@@ -1857,6 +1857,11 @@ export const useResumeOptimizer = (
 			// Log current state before dispatch
 			console.log("🎯 Debug: State BEFORE dispatch:", {
 				currentState: state,
+				isEditing: uiStates.isEditing,
+				hasUnsavedChanges: hasUnsavedChanges(),
+				contentModified: context.contentModified,
+				scoreModified: context.scoreModified,
+				templateModified: context.templateModified,
 				selectedFile: context.selectedFile?.name || "none",
 				uploadMethod: context.uploadMethod || "none",
 				hasUploadedFileInfo: !!context.uploadedFileInfo,
@@ -2181,7 +2186,7 @@ INTERESTS
 		</ul>
 	</section>
 </div>
-			`.trim(),
+		`.trim(),
 				last_saved_text: undefined,
 				last_saved_score_ats: undefined,
 				language: "English",
@@ -2301,6 +2306,7 @@ INTERESTS
 
 			// Create actions based on simulation type
 			switch (actionType) {
+				// ===== UPLOAD WORKFLOW ACTIONS =====
 				case "SIMULATE_FILE_SELECT":
 					action = actionCreators.selectFile(mockFile);
 					console.log(
@@ -2377,6 +2383,192 @@ INTERESTS
 					);
 					break;
 
+				// ===== EDIT MODE ACTIONS =====
+				case "SIMULATE_ENTER_EDIT_MODE":
+					action = actionCreators.enterEditMode();
+					console.log("🎯 Debug: Entering edit mode");
+					break;
+
+				case "SIMULATE_EXIT_EDIT_MODE":
+					action = actionCreators.exitEditMode();
+					console.log("🎯 Debug: Exiting edit mode");
+					break;
+
+				// ===== SAVE WORKFLOW ACTIONS =====
+				case "SIMULATE_START_SAVING":
+					action = actionCreators.startSaving();
+					console.log("🎯 Debug: Starting save operation");
+					break;
+
+				case "SIMULATE_SAVE_SUCCESS":
+					// Use existing resume data or create mock data for save success
+					const saveResumeData = context.resumeData || mockResumeData;
+					const updatedSaveData = {
+						...saveResumeData,
+						last_saved_text: saveResumeData.optimized_text,
+						last_saved_score_ats: 92, // Simulate improved score after save
+						selected_template: context.selectedTemplate || "basic",
+					};
+					action = actionCreators.saveSuccess(updatedSaveData);
+					console.log(
+						"🎯 Debug: Simulating successful save with updated data:",
+						{
+							resumeId: updatedSaveData.id,
+							lastSavedScore: updatedSaveData.last_saved_score_ats,
+							template: updatedSaveData.selected_template,
+						}
+					);
+					break;
+
+				case "SIMULATE_SAVE_ERROR":
+					action = actionCreators.error(
+						"Simulated save error for testing",
+						new Error("Mock save operation failed"),
+						"save",
+						{
+							operation: "save",
+							step: "simulate_save_error",
+							retryable: true,
+							userMessage:
+								"Failed to save changes. This is a simulated error for testing.",
+							technicalDetails:
+								"Debug simulation save error - not a real issue",
+						}
+					);
+					console.log("🎯 Debug: Simulating save error");
+					break;
+
+				// ===== RESET WORKFLOW ACTIONS =====
+				case "SIMULATE_START_RESET":
+					action = actionCreators.startReset();
+					console.log("🎯 Debug: Starting reset operation");
+					break;
+
+				case "SIMULATE_RESET_SUCCESS":
+					// Use existing resume data or create mock data for reset success
+					const resetResumeData = context.resumeData || mockResumeData;
+					const resetData = {
+						...resetResumeData,
+						last_saved_text: null, // Clear saved changes
+						last_saved_score_ats: null, // Clear saved score
+						// Reset all suggestions and keywords to unapplied
+						suggestions:
+							resetResumeData.suggestions?.map((s) => ({
+								...s,
+								isApplied: false,
+							})) || [],
+						keywords:
+							resetResumeData.keywords?.map((k) => ({
+								...k,
+								isApplied: false,
+							})) || [],
+					};
+					action = actionCreators.resetSuccess(resetData);
+					console.log(
+						"🎯 Debug: Simulating successful reset to original state:",
+						{
+							resumeId: resetData.id,
+							clearedSavedText: resetData.last_saved_text === null,
+							clearedSavedScore: resetData.last_saved_score_ats === null,
+						}
+					);
+					break;
+
+				case "SIMULATE_RESET_ERROR":
+					action = actionCreators.error(
+						"Simulated reset error for testing",
+						new Error("Mock reset operation failed"),
+						"reset",
+						{
+							operation: "reset",
+							step: "simulate_reset_error",
+							retryable: true,
+							userMessage:
+								"Failed to reset resume. This is a simulated error for testing.",
+							technicalDetails:
+								"Debug simulation reset error - not a real issue",
+						}
+					);
+					console.log("🎯 Debug: Simulating reset error");
+					break;
+
+				// ===== SUGGESTION ACTIONS =====
+				case "SIMULATE_APPLY_SUGGESTION":
+					// Apply the first available suggestion
+					const firstSuggestion = context.suggestions?.[0];
+					if (firstSuggestion) {
+						action = actionCreators.applySuggestion(
+							firstSuggestion.id,
+							!firstSuggestion.isApplied
+						);
+						console.log("🎯 Debug: Toggling suggestion application:", {
+							suggestionId: firstSuggestion.id,
+							newState: !firstSuggestion.isApplied,
+							suggestionText: firstSuggestion.text.substring(0, 50) + "...",
+						});
+					} else {
+						console.warn("🎯 Debug: No suggestions available to apply");
+						return;
+					}
+					break;
+
+				// ===== KEYWORD ACTIONS =====
+				case "SIMULATE_APPLY_KEYWORD":
+					// Apply the first available keyword
+					const firstKeyword = context.keywords?.[0];
+					if (firstKeyword) {
+						action = actionCreators.applyKeyword(
+							firstKeyword.id,
+							!firstKeyword.isApplied
+						);
+						console.log("🎯 Debug: Toggling keyword application:", {
+							keywordId: firstKeyword.id,
+							newState: !firstKeyword.isApplied,
+							keywordText: firstKeyword.text,
+						});
+					} else {
+						console.warn("🎯 Debug: No keywords available to apply");
+						return;
+					}
+					break;
+
+				// ===== CONTENT UPDATE ACTIONS =====
+				case "SIMULATE_UPDATE_CONTENT":
+					const mockContent = `<div class="resume-content">
+					<h2>UPDATED CONTENT - Debug Simulation</h2>
+					<p>This content was updated via debug simulation at ${new Date().toISOString()}</p>
+					${context.optimizedText || mockResumeData.optimized_text}
+				</div>`;
+					action = actionCreators.updateContent(mockContent);
+					console.log(
+						"🎯 Debug: Updating resume content with simulated changes"
+					);
+					break;
+
+				case "SIMULATE_UPDATE_SECTION":
+					const mockSectionContent = `<h3>Updated Section</h3><p>This section was updated via debug simulation at ${new Date().toISOString()}</p>`;
+					action = actionCreators.updateSection(
+						"resume-summary",
+						mockSectionContent
+					);
+					console.log(
+						"🎯 Debug: Updating resume-summary section with simulated content"
+					);
+					break;
+
+				// ===== TEMPLATE ACTIONS =====
+				case "SIMULATE_UPDATE_TEMPLATE":
+					const currentTemplate = context.selectedTemplate || "basic";
+					const newTemplate =
+						currentTemplate === "basic" ? "professional" : "basic";
+					action = actionCreators.updateTemplate(newTemplate);
+					console.log("🎯 Debug: Switching template:", {
+						from: currentTemplate,
+						to: newTemplate,
+					});
+					break;
+
+				// ===== ERROR AND UTILITY ACTIONS =====
 				case "SIMULATE_ERROR":
 					action = actionCreators.error(
 						"Simulated error for testing purposes",
@@ -2393,19 +2585,25 @@ INTERESTS
 					console.log("🎯 Debug: Simulating error state");
 					break;
 
+				case "SIMULATE_CLEAR_ERROR":
+					action = actionCreators.clearError();
+					console.log("🎯 Debug: Clearing error state");
+					break;
+
 				case "SIMULATE_RESET":
 					action = actionCreators.logout();
 					console.log("🎯 Debug: Resetting to initial state");
 					break;
 
-				case "SIMULATE_ENTER_EDIT_MODE":
-					action = actionCreators.enterEditMode();
-					console.log("🎯 Debug: Entering edit mode");
+				// ===== TAB SWITCHING ACTIONS =====
+				case "SIMULATE_SWITCH_TO_UPLOAD":
+					action = actionCreators.switchTab("upload");
+					console.log("🎯 Debug: Switching to upload tab");
 					break;
 
-				case "SIMULATE_EXIT_EDIT_MODE":
-					action = actionCreators.exitEditMode();
-					console.log("🎯 Debug: Exiting edit mode");
+				case "SIMULATE_SWITCH_TO_PREVIEW":
+					action = actionCreators.switchTab("preview");
+					console.log("🎯 Debug: Switching to preview tab");
 					break;
 
 				default:
@@ -2459,6 +2657,27 @@ INTERESTS
 						"🎯 Debug: Verify file exists at: public/test-files/debug-resume.txt"
 					);
 				}
+
+				// Special logging for edit mode changes
+				if (actionType.includes("EDIT_MODE")) {
+					console.log(
+						"🎯 Debug: Edit mode state change - check UI for accordion sections"
+					);
+				}
+
+				// Special logging for save operations
+				if (actionType.includes("SAVE")) {
+					console.log(
+						"🎯 Debug: Save operation - check modification flags and content state"
+					);
+				}
+
+				// Special logging for reset operations
+				if (actionType.includes("RESET")) {
+					console.log(
+						"🎯 Debug: Reset operation - check suggestions/keywords reset state"
+					);
+				}
 			} catch (error) {
 				historyEntry.success = false;
 				(historyEntry as { error?: string }).error = (error as Error).message;
@@ -2466,7 +2685,7 @@ INTERESTS
 				console.error(`❌ Debug simulation ${actionType} failed:`, error);
 			}
 		},
-		[state, userId, context.selectedFile, context.uploadMethod, dispatch]
+		[state, userId, context, uiStates.isEditing, hasUnsavedChanges, dispatch]
 	);
 
 	// ===== RETURN INTERFACE =====

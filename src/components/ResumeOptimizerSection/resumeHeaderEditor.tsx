@@ -213,7 +213,7 @@ const ResumeHeaderEditor: React.FC<ResumeHeaderEditorProps> = ({
 					console.error("❌ Error generating HTML:", error);
 					isUpdatingRef.current = false;
 				}
-			}, 1000); // Slightly longer delay to ensure stability
+			}, 700); // Slightly longer delay to ensure stability
 		},
 		[onChange]
 	);

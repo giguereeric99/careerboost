@@ -94,7 +94,7 @@ const SuggestionsList: React.FC<SuggestionsListProps> = ({
 			appliedCount: appliedSuggestions.length,
 		};
 
-		console.log("✅ CUMULATIVE IMPACT RESULT:", result);
+		// console.log("✅ CUMULATIVE IMPACT RESULT:", result);
 		return result;
 	}, [suggestions, currentScore]);
 

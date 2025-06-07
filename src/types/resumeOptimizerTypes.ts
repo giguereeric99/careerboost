@@ -642,6 +642,7 @@ export interface UploadSectionProps {
 		uploadThingInProgress: boolean;
 		uploadThingFiles: File[];
 		validationErrors: any;
+		uploadMethod: "file" | "text" | null;
 	};
 
 	/** Upload actions from unified hook - replaces multiple callback props */
@@ -656,6 +657,7 @@ export interface UploadSectionProps {
 		onUploadThingComplete: (results: any[]) => void;
 		onUploadThingError: (error: Error) => void;
 		onSetUploadThingActive: (isActive: boolean) => void;
+		clearValidationErrors: () => void;
 	};
 
 	/** Upload status from unified hook - replaces progress tracking */

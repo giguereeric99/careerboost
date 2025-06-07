@@ -428,7 +428,9 @@ export const actionCreators = {
 	}),
 
 	// Edit mode actions
-	enterEditMode: (): CVOptimizerAction => ({
+	enterEditMode: (
+		origin: "manual" | "automatic" = "manual"
+	): CVOptimizerAction => ({
 		type: "ENTER_EDIT_MODE",
 	}),
 
@@ -1337,7 +1339,7 @@ export const cvOptimizerReducer = (
 					name: firstResult.name,
 					size: firstResult.size,
 					type: firstResult.type,
-					url: firstResult.ufsUrl,
+					url: firstResult.url,
 				};
 
 				console.log(
@@ -1347,7 +1349,7 @@ export const cvOptimizerReducer = (
 					name: fileInfo.name,
 					size: fileInfo.size,
 					type: fileInfo.type,
-					urlExists: !!fileInfo.ufsUrl,
+					urlExists: !!fileInfo.url,
 				});
 
 				// === STEP 5: TRANSITION TO FILE_UPLOAD_COMPLETE STATE ===

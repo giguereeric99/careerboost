@@ -112,7 +112,7 @@ const KeywordsList: React.FC<KeywordsListProps> = ({
 			appliedCount: appliedKeywords.length,
 		};
 
-		console.log("✅ KEYWORDS CUMULATIVE IMPACT RESULT:", result);
+		// console.log("✅ KEYWORDS CUMULATIVE IMPACT RESULT:", result);
 		return result;
 	}, [keywords, currentScore]);
 

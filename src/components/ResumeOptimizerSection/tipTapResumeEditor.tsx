@@ -128,7 +128,7 @@ const TipTapResumeEditor: React.FC<TipTapResumeEditorProps> = ({
 					// Ensure flag is reset even on error
 					isUpdatingRef.current = false;
 				}
-			}, 1000); // 300ms debounce delay - same as ResumeHeaderEditor
+			}, 700); // 300ms debounce delay - same as ResumeHeaderEditor
 		},
 		[onChange]
 	);

@@ -467,6 +467,7 @@ export const GENERAL_LOADING_ANIMATION_STATES: CVOptimizerState[] = [
  */
 export const EDIT_ALLOWED_STATES: CVOptimizerState[] = [
 	CVOptimizerState.EDIT_MODE,
+	CVOptimizerState.SAVING_CHANGES,
 ];
 
 /**
@@ -603,23 +604,10 @@ export const TOAST_CONFIGURATIONS: Partial<
 		duration: 4000,
 	},
 
-	[CVOptimizerState.EDIT_MODE]: {
-		type: "message",
-		title: "📝 Entering edit mode...",
-		duration: 2000,
-	},
-
 	[CVOptimizerState.SAVING_CHANGES]: {
 		type: "loading",
 		title: "Saving all changes...",
 		description: "Saving resume content, applied keywords, and suggestions...",
-	},
-
-	[CVOptimizerState.SAVE_SUCCESS]: {
-		type: "success",
-		title: "All changes saved successfully!",
-		description: "Resume content, keywords, and suggestions have been updated.",
-		duration: 4000,
 	},
 
 	[CVOptimizerState.PREVIEW_MODE]: {

@@ -15,6 +15,11 @@
  * - Fallback to language-aware getSectionName function
  * - Prevents empty sections from showing English titles in other languages
  *
+ * FIXED: RESET CONTENT ISSUE
+ * - Replaced displayedContent with currentDisplayContent for proper reset handling
+ * - Now uses state machine content directly instead of local preview state
+ * - Ensures content resets properly when reset button is clicked
+ *
  * Features:
  * - Toggle between view and edit modes
  * - Real-time preview of edits without saving
@@ -159,6 +164,7 @@ interface ResumePreviewProps {
  * ResumePreview Component - PERFORMANCE OPTIMIZED VERSION WITH MULTILINGUAL SECTION TITLES
  *
  * Main component for displaying and editing resume content with enhanced performance and language support
+ * FIXED: Now uses currentDisplayContent consistently for proper reset handling
  */
 const ResumePreview: React.FC<ResumePreviewProps> = ({
 	optimizedText,
@@ -227,6 +233,16 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 	const effectiveLanguage = useMemo(() => {
 		return resumeLanguage || language || "English";
 	}, [resumeLanguage, language]);
+
+	// FIXED: Use currentDisplayContent consistently for proper state machine integration
+	const currentDisplayContent = useMemo(() => {
+		if (editMode && previewContent) {
+			// In edit mode, use preview content if available for real-time updates
+			return previewContent;
+		}
+		// Always use optimizedText from state machine as source of truth
+		return optimizedText;
+	}, [editMode, previewContent, optimizedText]);
 
 	// ===== UTILITY FUNCTIONS =====
 
@@ -323,9 +339,9 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 			// Create placeholder content for the section with appropriate heading
 			const content = `<h2 class="section-title">${title}</h2><p></p>`;
 
-			console.log(
-				`Creating empty section ${sectionId} with title: "${title}" (language: ${effectiveLanguage})`
-			);
+			// console.log(
+			// 	`Creating empty section ${sectionId} with title: "${title}" (language: ${effectiveLanguage})`
+			// );
 
 			return {
 				id: sectionId,
@@ -403,12 +419,13 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 	 * Handle internal reset action
 	 * Reset content to original version without saving to database
 	 * This is for local UI reset functionality
+	 * FIXED: Now properly clears previewContent to ensure currentDisplayContent works
 	 */
 	const handleLocalReset = useCallback(() => {
 		if (!originalOptimizedText) return;
 
-		// Reset preview content to original
-		setPreviewContent(originalOptimizedText);
+		// FIXED: Clear previewContent to let currentDisplayContent take over
+		setPreviewContent("");
 
 		// Parse original content to reset sections
 		try {
@@ -430,8 +447,9 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 			// Notify parent of content change back to original
 			onTextChange(originalOptimizedText);
 
-			// Note: Success toast commented out to reduce UI noise
-			// toast.success("Content reset to original version");
+			console.log(
+				"✅ Local reset completed - previewContent cleared, using currentDisplayContent"
+			);
 		} catch (error) {
 			console.error("Error resetting content:", error);
 			toast.error("Failed to reset content");
@@ -447,6 +465,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 	 * Handle reset button click
 	 * Calls parent reset function and also resets local state
 	 * This handles both local and database reset operations
+	 * FIXED: Ensures proper cleanup of local preview state
 	 */
 	const handleReset = useCallback(() => {
 		// First reset local content
@@ -457,13 +476,15 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 			onReset();
 		}
 
-		// Force a re-render of the preview content
-		setPreviewContent(originalOptimizedText || "");
+		// FIXED: Clear local preview content to ensure currentDisplayContent is used
+		setPreviewContent("");
 
 		// Also reset content modified state
 		setContentModified(false);
 		setHasBeenModified(false);
-	}, [handleLocalReset, onReset, originalOptimizedText]);
+
+		console.log("✅ Complete reset executed - local state cleared");
+	}, [handleLocalReset, onReset]);
 
 	// ===== EFFECTS FOR STATE MANAGEMENT =====
 
@@ -471,6 +492,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 	 * Parse the resume HTML into sections when optimizedText changes
 	 * This effect handles the initial loading and parsing of content
 	 * PERFORMANCE OPTIMIZED: Only runs when not in edit mode to prevent disruption
+	 * FIXED: Better handling of previewContent during reset scenarios
 	 */
 	useEffect(() => {
 		// Skip if we're currently in edit mode to prevent editor state from being reset
@@ -509,10 +531,15 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 
 			setHasLoadedInitialContent(true);
 
-			// Set initial preview content only if it doesn't exist already
-			if (!previewContent) {
+			// FIXED: Only set initial preview content if it doesn't exist and we're not resetting
+			// This allows currentDisplayContent to take precedence during resets
+			if (!previewContent && normalizedContent) {
 				setPreviewContent(normalizedContent);
 			}
+
+			console.log(
+				"📄 Content parsed and sections initialized from optimizedText"
+			);
 		} catch (error) {
 			console.error("Error parsing optimized text into sections:", error);
 			// Fallback to simple section if parsing fails
@@ -530,9 +557,6 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 				},
 			]);
 			setHasLoadedInitialContent(true);
-			if (!previewContent) {
-				setPreviewContent(optimizedText || "");
-			}
 		}
 	}, [
 		optimizedText,
@@ -571,7 +595,8 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 				"Edit mode activated, preparing sections with multilingual titles..."
 			);
 
-			const contentToLoad = previewContent || optimizedText;
+			// FIXED: Use currentDisplayContent instead of previewContent for consistency
+			const contentToLoad = currentDisplayContent;
 
 			if (contentToLoad) {
 				try {
@@ -730,28 +755,23 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 				return;
 			}
 
-			// Note: Loading toast commented out to reduce UI noise
-			// toast.loading("Saving all changes...", {
-			//   id: "save-changes-toast",
-			//   description: "Saving resume content, applied keywords, and suggestions...",
-			// });
-
 			// Call parent save handler and await its result
 			const saveResult = await Promise.resolve(onSave(combinedHtml));
 
 			// Handle success case
 			if (saveResult) {
-				// Note: Success toast commented out to reduce UI noise
-				// toast.success("All changes saved successfully", {
-				//   id: "save-changes-toast",
-				//   description: "Resume content, keywords, and suggestions have been updated.",
-				// });
+				toast.dismiss();
+				toast.success("Changes saved successfully!", {
+					description: "Your resume has been updated with all modifications.",
+					duration: 4000,
+				});
 
 				// Update local state
 				setContentModified(false);
 
-				// Update preview content with saved content
+				// FIXED: Update preview content with saved content and notify parent
 				setPreviewContent(combinedHtml);
+				onTextChange(combinedHtml);
 
 				// Update sections state with the saved content
 				try {
@@ -772,9 +792,6 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 						sectionError
 					);
 				}
-
-				// Notify parent component of the changes
-				onTextChange(combinedHtml);
 
 				// Exit edit mode after saving if we're in uncontrolled mode
 				if (isEditing === undefined) {
@@ -813,11 +830,12 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 	/**
 	 * Open preview in modal
 	 * Updated to use the ResumePreviewModal component instead of opening in a new window
+	 * FIXED: Uses currentDisplayContent for consistent content display
 	 */
 	const openPreview = useCallback(() => {
 		try {
-			// Get the content to preview (different if in edit mode)
-			const contentToUse = previewContent || optimizedText;
+			// FIXED: Use currentDisplayContent for consistency
+			const contentToUse = currentDisplayContent;
 
 			// Open the modal instead of a new window
 			setIsPreviewModalOpen(true);
@@ -829,7 +847,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 			console.error("Error opening preview:", error);
 			toast.error("Failed to open preview");
 		}
-	}, [selectedTemplate, previewContent, optimizedText]);
+	}, [selectedTemplate, currentDisplayContent]);
 
 	/**
 	 * Handle closing the preview modal
@@ -848,11 +866,19 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 		if (isEditing !== undefined) {
 			// In controlled mode, notify parent to toggle edit mode
 			if (onEditModeChange) {
+				if (!isEditing) {
+					toast.message("📝 Entering edit mode...");
+				}
 				onEditModeChange(!isEditing);
 			}
 		} else {
 			// In uncontrolled mode, toggle local state
-			setLocalEditMode((prev) => !prev);
+			setLocalEditMode((prev) => {
+				if (!prev) {
+					toast.message("📝 Entering edit mode...");
+				}
+				return !prev;
+			});
 		}
 	}, [isEditing, onEditModeChange]);
 
@@ -870,23 +896,7 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 		};
 	}, []);
 
-	// ===== EARLY RETURNS =====
-
-	/**
-	 * Show loading state during optimization
-	 * Early return to prevent rendering the main UI during processing
-	 */
-	// if (isOptimizing) {
-	// 	return <LoadingState />;
-	// }
-
 	// ===== COMPUTED VALUES FOR RENDER =====
-
-	/**
-	 * Content to use for preview - prefers preview content if available
-	 * Falls back to optimizedText prop if no preview content
-	 */
-	const displayedContent = previewContent || optimizedText;
 
 	/**
 	 * Determine if save button should be enabled
@@ -985,9 +995,10 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 				</div>
 			) : (
 				// ===== PREVIEW MODE CONTENT =====
+				// FIXED: Use currentDisplayContent consistently instead of displayedContent
 				<PreviewContent
-					optimizedText={displayedContent}
-					combinedSections={previewContent || optimizedText}
+					optimizedText={currentDisplayContent}
+					combinedSections={currentDisplayContent}
 					sanitizeHtml={sanitizeHtml}
 					template={template}
 					onDownload={onDownload}
@@ -1012,10 +1023,11 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
 			)}
 
 			{/* Resume Preview Modal - for full-screen template preview */}
+			{/* FIXED: Use currentDisplayContent for modal preview consistency */}
 			<ResumePreviewModal
 				open={isPreviewModalOpen}
 				onClose={handleClosePreviewModal}
-				resumeContent={editMode ? combineAllSections() : displayedContent}
+				resumeContent={editMode ? combineAllSections() : currentDisplayContent}
 				selectedTemplate={template}
 			/>
 		</div>
